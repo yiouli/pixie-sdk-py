@@ -1,0 +1,3 @@
+[TYPECHECK]
+# This allows any member named 'from_pydantic' or 'to_pydantic' on any object
+generated-members=.*\.from_pydantic,.*\.to_pydantic
