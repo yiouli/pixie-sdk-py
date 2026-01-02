@@ -3,78 +3,67 @@
 import asyncio
 import pytest
 from pixie.types import (
-    PauseConfig,
-    ExecutionContext,
-    AppRunUpdate,
-    Breakpoint,
+    BreakpointConfig,
+    BreakpointDetail,
 )
 from pixie import execution_context as exec_ctx
 
 
+@pytest.fixture(autouse=True)
+def reset_execution_context():
+    """Reset execution context state between tests."""
+    yield
+    exec_ctx._execution_context.set(None)
+    exec_ctx._active_runs.clear()
+
+
 def test_pause_config_creation():
     """Test creating pause config."""
-    config = PauseConfig(
-        mode="BEFORE",
-        pausible_points=["LLM", "TOOL"],
+    config = BreakpointConfig(
+        id="bp-1",
+        timing="BEFORE",
+        breakpoint_types=["LLM", "TOOL"],
     )
-    assert config.mode == "BEFORE"
-    assert len(config.pausible_points) == 2
+    assert config.timing == "BEFORE"
+    assert len(config.breakpoint_types) == 2
 
 
 @pytest.mark.asyncio
 async def test_execution_context_management():
     """Test execution context registration and retrieval."""
     run_id = "test-run-123"
-    queue = asyncio.Queue()
-    resume_event = asyncio.Event()
 
-    ctx = ExecutionContext(
-        run_id=run_id,
-        status_queue=queue,
-        resume_event=resume_event,
-    )
+    ctx = exec_ctx.init_run(run_id)
+    assert ctx.run_id == run_id
+    assert isinstance(ctx.status_queue, asyncio.Queue)
 
-    # Register run
-    exec_ctx.register_run(ctx)
-    assert exec_ctx.is_run_active(run_id)
-
-    # Retrieve context
     retrieved_ctx = exec_ctx.get_run_context(run_id)
     assert retrieved_ctx is not None
     assert retrieved_ctx.run_id == run_id
+    assert exec_ctx.get_current_breakpoint_config() is None
 
-    # Unregister run
     exec_ctx.unregister_run(run_id)
-    assert not exec_ctx.is_run_active(run_id)
+    assert exec_ctx.get_run_context(run_id) is None
 
 
 @pytest.mark.asyncio
 async def test_pause_config_setting():
     """Test setting pause config for a run."""
     run_id = "test-run-456"
-    ctx = ExecutionContext(run_id=run_id)
-    exec_ctx.register_run(ctx)
+    exec_ctx.init_run(run_id)
 
-    config = PauseConfig(
-        mode="AFTER",
-        pausible_points=["LLM"],
-    )
+    exec_ctx.set_breakpoint(run_id, timing="AFTER", types=["LLM"])
 
-    # Set pause config
-    success = exec_ctx.set_pause_config(run_id, config)
-    assert success
-
-    # Verify config was set
     retrieved_ctx = exec_ctx.get_run_context(run_id)
     assert retrieved_ctx is not None
-    assert retrieved_ctx.pause_config is not None
-    assert retrieved_ctx.pause_config.mode == "AFTER"
+    assert retrieved_ctx.breakpoint_config is not None
+    assert retrieved_ctx.breakpoint_config.timing == "AFTER"
+    assert retrieved_ctx.breakpoint_config.breakpoint_types == ["LLM"]
 
-    # Clear pause config
-    exec_ctx.clear_pause_config(run_id)
-    retrieved_ctx = exec_ctx.get_run_context(run_id)
-    assert retrieved_ctx is not None
-    assert retrieved_ctx.pause_config is None
+    # Simulate resume to clear breakpoint config via wait_for_resume
+    retrieved_ctx.resume_event.set()
+    exec_ctx.wait_for_resume()
+    assert retrieved_ctx.breakpoint_config is None
 
     exec_ctx.unregister_run(run_id)
 
@@ -83,32 +72,25 @@ async def test_pause_config_setting():
 async def test_pause_and_resume():
     """Test pause and resume flow."""
     run_id = "test-run-789"
-    queue = asyncio.Queue()
-    resume_event = asyncio.Event()
-    resume_event.set()  # Start resumed
+    ctx = exec_ctx.init_run(run_id)
+    assert ctx is not None
 
-    ctx = ExecutionContext(
-        run_id=run_id,
-        status_queue=queue,
-        resume_event=resume_event,
-    )
-    exec_ctx.register_run(ctx)
-
-    # Initially not paused
-    assert not exec_ctx.is_run_paused(run_id)
-
-    # Simulate pause by clearing event
-    resume_event.clear()
-    assert exec_ctx.is_run_paused(run_id)
+    # Initially not resumed
+    assert not ctx.resume_event.is_set()
 
     # Resume
-    success = exec_ctx.trigger_resume(run_id)
+    success = exec_ctx.resume_run(run_id)
     assert success
-    assert not exec_ctx.is_run_paused(run_id)
+    assert ctx.resume_event.is_set()
 
-    # Verify status update was queued
-    update = await asyncio.wait_for(queue.get(), timeout=1.0)
-    assert update.status == "resumed"
+    # Second resume is a no-op
+    assert not exec_ctx.resume_run(run_id)
+
+    # Emit an explicit status update to the queue
+    await exec_ctx.emit_status_update(status="running")
+    update = await asyncio.wait_for(ctx.status_queue.get(), timeout=1.0)
+    assert update is not None
+    assert update.status == "running"
 
     exec_ctx.unregister_run(run_id)
 
@@ -117,30 +99,19 @@ async def test_pause_and_resume():
 async def test_status_update_emission():
     """Test emitting status updates to queue."""
     run_id = "test-run-abc"
-    queue = asyncio.Queue()
+    ctx = exec_ctx.init_run(run_id)
 
-    ctx = ExecutionContext(
-        run_id=run_id,
-        status_queue=queue,
-    )
-
-    # Set context
-    exec_ctx.set_execution_context(ctx)
-    exec_ctx.register_run(ctx)
-
-    # Emit status update
-    update = AppRunUpdate(
-        run_id=run_id,
+    await exec_ctx.emit_status_update(
         status="paused",
         data='{"span_type": "LLM", "span_name": "openai.chat.completions"}',
     )
-    await exec_ctx.emit_status_update(update)
 
-    # Verify update was queued
-    received_update = await asyncio.wait_for(queue.get(), timeout=1.0)
+    received_update = await asyncio.wait_for(ctx.status_queue.get(), timeout=1.0)
+    assert received_update is not None
     assert received_update.status == "paused"
     import json
 
+    assert received_update.data is not None
     data = json.loads(received_update.data)
     assert data["span_type"] == "LLM"
 
@@ -151,25 +122,21 @@ async def test_status_update_emission():
 async def test_invalid_run_id():
     """Test operations with invalid run ID."""
     # Try to set pause config for non-existent run
-    config = PauseConfig(
-        mode="BEFORE",
-        pausible_points=["TOOL"],
-    )
-    success = exec_ctx.set_pause_config("non-existent-run", config)
-    assert not success
+    with pytest.raises(ValueError):
+        exec_ctx.set_breakpoint("non-existent-run", timing="BEFORE", types=["TOOL"])
 
     # Try to resume non-existent run
-    success = exec_ctx.trigger_resume("non-existent-run")
-    assert not success
+    with pytest.raises(ValueError):
+        exec_ctx.resume_run("non-existent-run")
 
     # Check if non-existent run is active
-    assert not exec_ctx.is_run_active("non-existent-run")
+    assert exec_ctx.get_run_context("non-existent-run") is None
 
 
 @pytest.mark.asyncio
 async def test_breakpoint_data():
     """Test breakpoint data creation."""
-    bp = Breakpoint(
+    bp = BreakpointDetail(
         span_name="openai.chat.completions.analyze",
         breakpoint_type="LLM",
         breakpoint_timing="BEFORE",
@@ -192,19 +159,10 @@ async def test_breakpoint_data():
 async def test_status_update_with_breakpoint():
     """Test status update emission with breakpoint data."""
     run_id = "test-run-breakpoint"
-    queue = asyncio.Queue()
-
-    ctx = ExecutionContext(
-        run_id=run_id,
-        status_queue=queue,
-    )
-
-    # Set context
-    exec_ctx.set_execution_context(ctx)
-    exec_ctx.register_run(ctx)
+    ctx = exec_ctx.init_run(run_id)
 
     # Create breakpoint data
-    bp = Breakpoint(
+    bp = BreakpointDetail(
         span_name="tool.search_knowledge_base",
         breakpoint_type="TOOL",
         breakpoint_timing="AFTER",
@@ -212,23 +170,24 @@ async def test_status_update_with_breakpoint():
     )
 
     # Emit status update with breakpoint
-    update = AppRunUpdate(
-        run_id=run_id,
+    await exec_ctx.emit_status_update(
         status="paused",
         data='{"span_type": "TOOL", "span_name": "tool.search_knowledge_base"}',
-        breakpoint=bp,
+        breakpt=bp,
     )
-    await exec_ctx.emit_status_update(update)
 
     # Verify update was queued
-    received_update = await asyncio.wait_for(queue.get(), timeout=1.0)
+    received_update = await asyncio.wait_for(ctx.status_queue.get(), timeout=1.0)
+    assert received_update is not None
     assert received_update.status == "paused"
     import json
 
+    assert received_update.data is not None
     data = json.loads(received_update.data)
     assert data["span_type"] == "TOOL"
     assert received_update.breakpoint is not None
     assert received_update.breakpoint.breakpoint_timing == "AFTER"
+    assert received_update.breakpoint.span_attributes is not None
     assert (
         received_update.breakpoint.span_attributes["tool.name"]
         == "search_knowledge_base"

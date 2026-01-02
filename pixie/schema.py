@@ -3,26 +3,24 @@
 import asyncio
 import json
 import logging
-import threading
 import uuid
 from enum import Enum
 from typing import AsyncGenerator, Optional, cast
 
+from graphql import GraphQLError
 from pydantic import JsonValue
 import strawberry
 import strawberry.experimental.pydantic
 from strawberry.scalars import JSON
 
+from langfuse import get_client
 from pixie.registry import call_application, get_application
 from pixie.types import (
-    PauseConfig,
-    ExecutionContext,
-    Breakpoint as PydanticBreakpoint,
+    BreakpointDetail as PydanticBreakpointDetail,
     AppRunUpdate as PydanticAppRunUpdate,
-    PauseResult as PydanticPauseResult,
-    ResumeResult as PydanticResumeResult,
 )
-from pixie import execution_context as exec_ctx
+
+import pixie.execution_context as exec_ctx
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +43,25 @@ class BreakpointType(Enum):
     CUSTOM = "CUSTOM"
 
 
+@strawberry.enum
+class AppRunStatus(Enum):
+    """Status of an application run."""
+
+    RUNNING = "running"
+    COMPLETED = "completed"
+    ERROR = "error"
+    PAUSED = "paused"
+
+
 # Convert Pydantic models to Strawberry types with explicit field types
-@strawberry.experimental.pydantic.type(model=PydanticBreakpoint)
-class Breakpoint:
+@strawberry.experimental.pydantic.type(model=PydanticBreakpointDetail)
+class BreakpointDetail:
+    """Represents the details of a breakpoint in execution.
+
+    This class is a data model used to define the structure of a breakpoint,
+    including its name, type, timing, and optional attributes.
+    """
+
     span_name: strawberry.auto
     breakpoint_type: BreakpointType
     breakpoint_timing: BreakpointTiming
@@ -56,25 +70,22 @@ class Breakpoint:
 
 @strawberry.experimental.pydantic.type(model=PydanticAppRunUpdate)
 class AppRunUpdate:
+    """Represents updates for an application run.
+
+    This class is used to define the structure of updates related to an application run,
+    including the run ID, status, data, and optional breakpoint details.
+
+    Attributes:
+        run_id: The unique identifier of the application run.
+        status: The current status of the application run.
+        data: Additional data associated with the application run.
+        breakpoint: Optional details about a breakpoint in the application run.
+    """
+
     run_id: strawberry.ID
-    status: strawberry.auto
+    status: AppRunStatus
     data: strawberry.auto
-    breakpoint: Optional[Breakpoint]
-
-
-@strawberry.experimental.pydantic.type(model=PydanticPauseResult)
-class PauseResult:
-    success: strawberry.auto
-    message: strawberry.auto
-    run_id: strawberry.auto
-    paused_state: JSON | None = None
-
-
-@strawberry.experimental.pydantic.type(model=PydanticResumeResult)
-class ResumeResult:
-    success: strawberry.auto
-    message: strawberry.auto
-    run_id: strawberry.auto
+    breakpoint: Optional[BreakpointDetail]
 
 
 @strawberry.type
@@ -96,136 +107,40 @@ class Mutation:
     async def pause_run(
         self,
         run_id: str,
-        pause_mode: BreakpointTiming = BreakpointTiming.BEFORE,
-        pausible_points: list[BreakpointType] | None = None,
-    ) -> PauseResult:
-        """Pause a running execution.
+        timing: BreakpointTiming = BreakpointTiming.BEFORE,
+        breakpoint_types: list[BreakpointType] | None = None,
+    ) -> str:
+        """Pause a run at a specific breakpoint.
 
         Args:
-            run_id: The ID of the run to pause
-            pause_mode: Whether to pause before or after the next pausible point
-            pausible_points: Types of pausible points to pause at
+            run_id: The unique identifier of the run to pause.
+            timing: The timing of the breakpoint (BEFORE or AFTER).
+            breakpoint_types: A list of breakpoint types to apply, or None for all.
 
         Returns:
-            PauseResult: Result of the pause operation
+            The ID of the created breakpoint configuration.
         """
-        logger.info(
-            "Pause request received for run_id=%s, mode=%s", run_id, pause_mode.value
-        )
-
-        # Check if run exists and is active
-        if not exec_ctx.is_run_active(run_id):
-            logger.warning(
-                "Pause failed: run_id=%s not found or already completed", run_id
+        try:
+            breakpt_config = exec_ctx.set_breakpoint(
+                run_id,
+                timing.value,
+                [t.value for t in (breakpoint_types or BreakpointType)],
             )
-            pydantic_result = PydanticPauseResult(
-                success=False,
-                message="Run not found or already completed",
-                run_id=run_id,
-            )
-            return PauseResult.from_pydantic(pydantic_result)  # type: ignore[attr-defined]
-
-        # Convert Strawberry enums to string literals for Pydantic
-        pydantic_mode = pause_mode.value
-        pydantic_points = [
-            p.value
-            for p in (
-                pausible_points if pausible_points is not None else BreakpointType
-            )
-        ]
-
-        # Create pause config
-        pause_config = PauseConfig(
-            mode=pydantic_mode,  # type: ignore[arg-type]
-            pausible_points=pydantic_points,  # type: ignore[arg-type]
-        )
-
-        # Set pause config for the run
-        success = exec_ctx.set_pause_config(run_id, pause_config)
-
-        if not success:
-            logger.error("Failed to set pause configuration for run_id=%s", run_id)
-            pydantic_result = PydanticPauseResult(
-                success=False,
-                message="Failed to set pause configuration",
-                run_id=run_id,
-            )
-            return PauseResult.from_pydantic(pydantic_result)  # type: ignore[attr-defined]
-
-        # Emit pause_requested status
-        await exec_ctx.emit_status_update(
-            PydanticAppRunUpdate(
-                run_id=run_id,
-                status="pause_requested",
-                data=json.dumps({"mode": pydantic_mode, "points": pydantic_points}),
-            )
-        )
-        logger.info("Pause requested successfully for run_id=%s", run_id)
-
-        pydantic_result = PydanticPauseResult(
-            success=True,
-            message="Pause requested successfully",
-            run_id=run_id,
-        )
-        return PauseResult.from_pydantic(pydantic_result)  # type: ignore[attr-defined]
+            return breakpt_config.id
+        except ValueError as e:
+            raise GraphQLError(str(e)) from e
 
     @strawberry.mutation
-    async def resume_run(self, run_id: str) -> ResumeResult:
-        """Resume a paused execution.
-
-        This mutation unblocks execution that was paused via pauseRun.
-        The paused execution is blocking indefinitely until this mutation is called.
+    async def resume_run(self, run_id: str) -> bool:
+        """Resume a paused run.
 
         Args:
-            run_id: The ID of the run to resume
+            run_id: The unique identifier of the run to resume.
 
         Returns:
-            ResumeResult: Result of the resume operation
+            A boolean indicating whether the run was successfully resumed.
         """
-        logger.info("Resume request received for run_id=%s", run_id)
-
-        # Check if run exists
-        if not exec_ctx.is_run_active(run_id):
-            logger.warning(
-                "Resume failed: run_id=%s not found or already completed", run_id
-            )
-            pydantic_result = PydanticResumeResult(
-                success=False,
-                message="Run not found or already completed",
-                run_id=run_id,
-            )
-            return ResumeResult.from_pydantic(pydantic_result)  # type: ignore[attr-defined]
-
-        # Check if run is actually paused
-        if not exec_ctx.is_run_paused(run_id):
-            logger.warning("Resume failed: run_id=%s is not currently paused", run_id)
-            pydantic_result = PydanticResumeResult(
-                success=False,
-                message="Cannot resume: run is not currently paused",
-                run_id=run_id,
-            )
-            return ResumeResult.from_pydantic(pydantic_result)  # type: ignore[attr-defined]
-
-        # Trigger resume
-        success = exec_ctx.trigger_resume(run_id)
-
-        if not success:
-            logger.error("Failed to resume execution for run_id=%s", run_id)
-            pydantic_result = PydanticResumeResult(
-                success=False,
-                message="Failed to resume execution",
-                run_id=run_id,
-            )
-            return ResumeResult.from_pydantic(pydantic_result)  # type: ignore[attr-defined]
-
-        logger.info("Execution resumed successfully for run_id=%s", run_id)
-        return ResumeResult.from_pydantic(
-            PydanticResumeResult(
-                success=True,
-                message="Execution resumed successfully",
-                run_id=run_id,
-            )
-        )
+        return exec_ctx.resume_run(run_id)
 
 
 def _serialize_data(value: JsonValue | str | None) -> str | None:
@@ -259,6 +174,13 @@ class Subscription:
         run_id = str(uuid.uuid4())
         logger.info("Starting subscription for app=%s, run_id=%s", name, run_id)
 
+        langfuse = get_client()
+
+        if langfuse.auth_check():
+            logger.info("Langfuse client initialized successfully.")
+        else:
+            logger.warning("Langfuse client authentication failed.")
+
         # Check if application exists
         if not get_application(name):
             logger.error("Application '%s' not found for run_id=%s", name, run_id)
@@ -267,125 +189,80 @@ class Subscription:
                 status="error",
                 data=json.dumps({"error": f"Application '{name}' not found"}),
             )
-            yield AppRunUpdate.from_pydantic(pydantic_update)  # type: ignore[attr-defined]
+            yield AppRunUpdate.from_pydantic(pydantic_update)
             return
 
-        # Create execution context with status queue and resume event
-        status_queue: asyncio.Queue[PydanticAppRunUpdate] = asyncio.Queue()
-        resume_event = asyncio.Event()
-        resume_event.set()  # Start in resumed state
-
-        sync_resume_event = threading.Event()
-        sync_resume_event.set()  # Start in resumed state
-
-        logger.debug("Registered run_id=%s and set execution context", run_id)
-
-        # Start streaming status updates
+        task: Optional[asyncio.Task[None]] = None
         try:
+            ctx = exec_ctx.init_run(run_id)
+            status_queue = ctx.status_queue
+
             # Send initial running status
             pydantic_update = PydanticAppRunUpdate(
                 run_id=run_id,
                 status="running",
                 data=json.dumps({"run_id": run_id}),
             )
-            yield AppRunUpdate.from_pydantic(pydantic_update)  # type: ignore[attr-defined]
-
-            # Register run and set context BEFORE creating the task
-            ctx = ExecutionContext(
-                run_id=run_id,
-                status_queue=status_queue,
-                resume_event=resume_event,
-                sync_resume_event=sync_resume_event,
-            )
-            exec_ctx.register_run(ctx)
-            exec_ctx.set_execution_context(ctx)
+            yield AppRunUpdate.from_pydantic(pydantic_update)
+            # set the context again after yield -- the fastapi/strawberry framework resets execution context
+            exec_ctx.reload_run_context(run_id)
 
             # Create task for application execution
             async def run_application():
                 try:
-                    logger.debug("Starting application execution for run_id=%s", run_id)
-                    # Context is already set, so it will be copied into this task
-                    ctx = exec_ctx.get_execution_context()
-                    logger.info(
-                        "Execution context inside run_application for run_id=%s: %s",
-                        run_id,
-                        ctx,
-                    )
+                    logger.info("Starting application execution for run_id=%s", run_id)
+                    exec_ctx.reload_run_context(run_id)
 
                     async for item in call_application(
                         name,
                         cast(JsonValue, input_data),
                     ):
-                        await status_queue.put(
-                            PydanticAppRunUpdate(
-                                run_id=run_id,
-                                status="running",
-                                data=_serialize_data(item),
-                            )
+                        await exec_ctx.emit_status_update(
+                            status="running", data=_serialize_data(item)
                         )
 
-                    await status_queue.put(
-                        PydanticAppRunUpdate(
-                            run_id=run_id,
-                            status="completed",
-                        )
-                    )
+                    await exec_ctx.emit_status_update(status="completed")
                     logger.info("Application execution completed for run_id=%s", run_id)
                 except (ValueError, TypeError, RuntimeError) as e:
                     logger.error(
                         "Application execution error for run_id=%s: %s", run_id, str(e)
                     )
-                    await status_queue.put(
-                        PydanticAppRunUpdate(
-                            run_id=run_id,
-                            status="error",
-                            data=json.dumps({"error": str(e)}),
-                        )
+                    await exec_ctx.emit_status_update(
+                        status="error", data=json.dumps({"error": str(e)})
                     )
+                finally:
+                    logger.debug(
+                        "Application execution task ending for run_id=%s", run_id
+                    )
+                    langfuse.flush()
+                    await exec_ctx.emit_status_update(status=None)
 
-            # Start application execution
-            app_task = asyncio.create_task(run_application())
+            task = asyncio.create_task(
+                asyncio.to_thread(asyncio.run, run_application())
+            )
 
             # Stream status updates from queue
             while True:
                 # Wait for status update with timeout
-                try:
-                    pydantic_update = await asyncio.wait_for(
-                        status_queue.get(), timeout=0.1
-                    )
-                    yield AppRunUpdate.from_pydantic(pydantic_update)  # type: ignore[attr-defined]
+                pydantic_update = await status_queue.get()
+                if pydantic_update is None:
+                    break
 
-                    # Break on terminal status
-                    if pydantic_update.status in ("completed", "error"):
-                        break
-
-                except asyncio.TimeoutError:
-                    # Check if application task is done
-                    if app_task.done():
-                        # If task completed without putting terminal status, something went wrong
-                        try:
-                            await app_task  # Re-raise any exception
-                        except Exception as e:  # Replace with specific exceptions
-                            logger.error(
-                                "Unexpected error in application task for run_id=%s: %s",
-                                run_id,
-                                str(e),
-                            )
-                            pydantic_update = PydanticAppRunUpdate(
-                                run_id=run_id,
-                                status="error",
-                                data=json.dumps(
-                                    {"error": f"Unexpected error: {str(e)}"}
-                                ),
-                            )
-                            yield AppRunUpdate.from_pydantic(pydantic_update)  # type: ignore[attr-defined]
-                            raise
-                        break
-                    # Continue waiting for updates
-                    continue
+                yield AppRunUpdate.from_pydantic(pydantic_update)
+                # set the context again after yield -- the fastapi/strawberry framework resets execution context
+                exec_ctx.reload_run_context(run_id)
 
         finally:
+            # Cancel the background task if it's still running
+            if task is not None and not task.done():
+                logger.info("Cancelling application task for run_id=%s", run_id)
+                task.cancel()
+                try:
+                    await task  # Wait for cancellation to complete
+                except asyncio.CancelledError:
+                    pass  # Expected
             # Cleanup
+
             logger.debug("Unregistering run_id=%s", run_id)
             exec_ctx.unregister_run(run_id)
 

@@ -24,7 +24,6 @@ from typing import (
 import inspect
 from pydantic import BaseModel, JsonValue
 
-from . import execution_context
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +39,13 @@ class RegistryItem:
         input_type: Optional[type[BaseModel]],
         output_type: Optional[type[BaseModel]],
     ):
+        """Initialize a RegistryItem.
+
+        Args:
+            stream_handler (Callable[[JsonValue], AsyncGenerator[JsonValue, None]]): The handler function for streaming.
+            input_type (Optional[type[BaseModel]]): The expected input Pydantic model type.
+            output_type (Optional[type[BaseModel]]): The expected output Pydantic model type.
+        """
         self.stream_handler = stream_handler
         self.input_type = input_type
         self.output_type = output_type
@@ -265,6 +271,26 @@ def pixie_app(
     *,
     name: str | None = None,
 ) -> F | Callable[[F], F]:
+    """Register an application in the Pixie registry.
+
+    This function can be used to register synchronous or asynchronous callables,
+    as well as asynchronous generator functions. The registered application
+    can then be invoked by name with automatic type conversion.
+
+    Parameters
+    ----------
+    func : Callable, optional
+        The function to be registered. If not provided, the decorator can be
+        used with additional arguments.
+    name : str, optional
+        The name to register the application under. If not provided, the
+        function's name will be used.
+
+    Returns:
+    -------
+    Callable
+        The original function, unmodified.
+    """
     if func is None:
         return cast(Callable[[F], F], partial(pixie_app, name=name))
 
@@ -310,8 +336,6 @@ async def call_application(
 
     app_info = _registry[name]
     handler = app_info.stream_handler
-    ctx_obj = execution_context.get_execution_context()
-    logger.info("Execution context inside call application '%s': %s", name, ctx_obj)
 
     async for output in handler(input_data):
         yield output

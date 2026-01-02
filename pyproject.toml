@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "pixie"
+name = "pixie-sdk"
 packages = [
     { include = "pixie" },
     { include = "langfuse" },
@@ -28,12 +28,13 @@ strawberry-graphql = "^0.288.1"
 uvicorn = "^0.40.0"
 colorlog = "^6.10.1"
 dotenv = "^0.9.9"
+pydantic-ai = "^1.39.0"
+nest-asyncio = "^1.6.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=7.4,<9.0"
 pytest-timeout = "^2.1.0"
 pytest-xdist = "^3.3.1"
-pre-commit = "^3.2.2"
 pytest-asyncio = ">=0.21.1,<1.2.0"
 pytest-httpserver = "^1.0.8"
 ruff = ">=0.1.8,<0.13.0"
@@ -42,7 +43,6 @@ langchain-openai = ">=0.0.5,<0.4"
 langchain = ">=1"
 langgraph = ">=1"
 autoevals = "^0.0.130"
-opentelemetry-instrumentation-threading = "^0.59b0"
 
 [tool.poetry.group.docs.dependencies]
 pdoc = "^15.0.4"

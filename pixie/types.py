@@ -24,15 +24,16 @@ class ExecutionStatus(BaseModel):
 
 
 # Pause/Resume Types
-PauseModeType = Literal["BEFORE", "AFTER"]
-PausiblePointType = Literal["LLM", "TOOL", "CUSTOM"]
+BreakpointTiming = Literal["BEFORE", "AFTER"]
+BreakpointType = Literal["LLM", "TOOL", "CUSTOM"]
 
 
-class PauseConfig(BaseModel):
+class BreakpointConfig(BaseModel):
     """Configuration for pause behavior."""
 
-    mode: PauseModeType
-    pausible_points: list[PausiblePointType]
+    id: str
+    timing: BreakpointTiming
+    breakpoint_types: list[BreakpointType]
 
 
 class PauseResult(BaseModel):
@@ -52,22 +53,30 @@ class ResumeResult(BaseModel):
     run_id: Optional[str] = None
 
 
-class Breakpoint(BaseModel):
+class BreakpointDetail(BaseModel):
     """Information about a breakpoint where execution paused."""
 
     span_name: str
-    breakpoint_type: PausiblePointType
-    breakpoint_timing: PauseModeType
+    breakpoint_type: BreakpointType
+    breakpoint_timing: BreakpointTiming
     span_attributes: Optional[dict] = None
+
+
+AppRunStatus = Literal[
+    "running",
+    "paused",
+    "completed",
+    "error",
+]
 
 
 class AppRunUpdate(BaseModel):
     """Status update from running an application."""
 
     run_id: str
-    status: str
+    status: AppRunStatus
     data: Optional[str] = None
-    breakpoint: Optional[Breakpoint] = None
+    breakpoint: Optional[BreakpointDetail] = None
 
 
 @dataclass
@@ -75,9 +84,7 @@ class ExecutionContext:
     """Context for a running execution."""
 
     run_id: str
-    pause_config: Optional[PauseConfig] = None
-    status_queue: Optional["asyncio.Queue[AppRunUpdate]"] = None
-    resume_event: Optional[asyncio.Event] = None
-    pause_start_time: Optional[float] = None
-    # Threading event for synchronous waiting
-    sync_resume_event: Optional["threading.Event"] = None
+    # None is the sentinel to end the stream
+    status_queue: asyncio.Queue[AppRunUpdate | None]
+    resume_event: threading.Event
+    breakpoint_config: Optional[BreakpointConfig] = None

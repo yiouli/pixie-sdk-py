@@ -9,9 +9,13 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI
 from strawberry.fastapi import GraphQLRouter
+import nest_asyncio
 
 from pixie.schema import schema
-from pixie import execution_context as exec_ctx
+
+
+nest_asyncio.apply()
+
 
 logger = logging.getLogger(__name__)
 
@@ -43,27 +47,20 @@ def discover_and_load_applications():
         ):
             continue
 
-        try:
-            # Quick check if file imports register_application
-            content = py_file.read_text()
-            if not re.search(
-                r"\bfrom\s+pixie(?:\.[\w]+)*\s+import\s+pixie_app\b", content
-            ):
-                continue
+        # Quick check if file imports register_application
+        content = py_file.read_text()
+        if not re.search(r"\bfrom\s+pixie(?:\.[\w]+)*\s+import\s+pixie_app\b", content):
+            continue
 
-            # Load the module with a unique name based on path
-            relative_path = py_file.relative_to(cwd)
-            module_name = str(relative_path.with_suffix("")).replace("/", ".")
-            spec = importlib.util.spec_from_file_location(module_name, py_file)
-            if spec and spec.loader:
-                module = importlib.util.module_from_spec(spec)
-                sys.modules[module_name] = module
-                spec.loader.exec_module(module)
-                loaded_count += 1
-        except ImportError:
-            pass
-        except Exception:
-            pass
+        # Load the module with a unique name based on path
+        relative_path = py_file.relative_to(cwd)
+        module_name = str(relative_path.with_suffix("")).replace("/", ".")
+        spec = importlib.util.spec_from_file_location(module_name, py_file)
+        if spec and spec.loader:
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+            loaded_count += 1
 
 
 def setup_logging():
@@ -103,18 +100,6 @@ def create_app() -> FastAPI:
         version="0.1.0",
     )
 
-    # Add startup event to start cleanup task
-    @app.on_event("startup")
-    async def startup_event():
-        """Start background tasks on server startup."""
-        exec_ctx.start_cleanup_task()
-
-    # Add shutdown event to stop cleanup task
-    @app.on_event("shutdown")
-    async def shutdown_event():
-        """Stop background tasks on server shutdown."""
-        exec_ctx.stop_cleanup_task()
-
     # Add GraphQL router with GraphiQL enabled
     graphql_app = GraphQLRouter(
         schema,
@@ -137,8 +122,7 @@ def create_app() -> FastAPI:
 def start_server(
     host: str = "127.0.0.1", port: int = 8000, reload: bool = False
 ) -> None:
-    """
-    Start the SDK server.
+    """Start the SDK server.
 
     Args:
         host: Host to bind to
