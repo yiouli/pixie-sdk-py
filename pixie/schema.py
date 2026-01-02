@@ -5,7 +5,7 @@ import json
 import logging
 import uuid
 from enum import Enum
-from typing import AsyncGenerator, Optional, cast
+from typing import AsyncGenerator, Callable, Coroutine, Optional, cast
 
 from graphql import GraphQLError
 from pydantic import JsonValue
@@ -16,6 +16,7 @@ from strawberry.scalars import JSON
 from langfuse import get_client
 from pixie.registry import call_application, get_application
 from pixie.types import (
+    AppRunCancelled,
     BreakpointDetail as PydanticBreakpointDetail,
     AppRunUpdate as PydanticAppRunUpdate,
 )
@@ -151,6 +152,14 @@ def _serialize_data(value: JsonValue | str | None) -> str | None:
     return json.dumps(value)
 
 
+def _create_app_run_in_thread(run: Coroutine) -> tuple[Coroutine, Callable[[], bool]]:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    task = loop.create_task(run)
+
+    return asyncio.to_thread(lambda: loop.run_until_complete(task)), task.cancel
+
+
 @strawberry.type
 class Subscription:
     """GraphQL subscriptions."""
@@ -193,6 +202,7 @@ class Subscription:
             return
 
         task: Optional[asyncio.Task[None]] = None
+        cancel: Optional[Callable[[], bool]] = None
         try:
             ctx = exec_ctx.init_run(run_id)
             status_queue = ctx.status_queue
@@ -223,13 +233,18 @@ class Subscription:
 
                     await exec_ctx.emit_status_update(status="completed")
                     logger.info("Application execution completed for run_id=%s", run_id)
-                except (ValueError, TypeError, RuntimeError) as e:
+                except (asyncio.CancelledError, AppRunCancelled):
+                    logger.info("Application execution cancelled for run_id=%s", run_id)
+                    await exec_ctx.emit_status_update(status="cancelled")
+                    raise
+                except Exception as e:  # pylint: disable=broad-except
                     logger.error(
                         "Application execution error for run_id=%s: %s", run_id, str(e)
                     )
                     await exec_ctx.emit_status_update(
                         status="error", data=json.dumps({"error": str(e)})
                     )
+                    raise
                 finally:
                     logger.debug(
                         "Application execution task ending for run_id=%s", run_id
@@ -237,9 +252,8 @@ class Subscription:
                     langfuse.flush()
                     await exec_ctx.emit_status_update(status=None)
 
-            task = asyncio.create_task(
-                asyncio.to_thread(asyncio.run, run_application())
-            )
+            run, cancel = _create_app_run_in_thread(run_application())
+            task = asyncio.create_task(run)
 
             # Stream status updates from queue
             while True:
@@ -256,11 +270,16 @@ class Subscription:
             # Cancel the background task if it's still running
             if task is not None and not task.done():
                 logger.info("Cancelling application task for run_id=%s", run_id)
+
+                # Set cancellation flag to stop the child thread
+                exec_ctx.cancel_run()
+
+                # Cancel the child thread running the application
+                if cancel:
+                    cancel()
+
+                # Cancel the asyncio task wrapper
                 task.cancel()
-                try:
-                    await task  # Wait for cancellation to complete
-                except asyncio.CancelledError:
-                    pass  # Expected
             # Cleanup
 
             logger.debug("Unregistering run_id=%s", run_id)

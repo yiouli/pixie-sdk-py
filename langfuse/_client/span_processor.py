@@ -212,64 +212,57 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
         return False
 
     def _check_breakpoint(self, span: ReadableSpan | Span, is_before: bool) -> None:
-        try:
-            # Get execution context
-            breakpt_config = exec_ctx.get_current_breakpoint_config()
+        # Get execution context
+        breakpt_config = exec_ctx.get_current_breakpoint_config()
 
-            # no breakpoint set
-            if not breakpt_config:
-                return
+        # no breakpoint set
+        if not breakpt_config:
+            return
 
-            # Check if timing matches
-            if is_before != (breakpt_config.timing == "BEFORE"):
-                return
+        # Check if timing matches
+        if is_before != (breakpt_config.timing == "BEFORE"):
+            return
 
-            # Determine span type
-            span_type = self._get_breakpoint_type(span)
+        # Determine span type
+        span_type = self._get_breakpoint_type(span)
 
-            langfuse_logger.debug(
-                "Breakpoint found at span: '%s', span type: %s, breakpoint config: %s",
-                span.name,
-                span_type,
-                breakpt_config,
-            )
+        langfuse_logger.debug(
+            "Breakpoint found at span: '%s', span type: %s, breakpoint config: %s",
+            span.name,
+            span_type,
+            breakpt_config,
+        )
 
-            # Check if this span type should trigger a pause
-            if span_type not in breakpt_config.breakpoint_types:
-                return
+        # Check if this span type should trigger a pause
+        if span_type not in breakpt_config.breakpoint_types:
+            return
 
-            langfuse_logger.info(
-                "Pausing execution at span '%s' (type=%s, timing=%s)",
-                span.name,
-                span_type,
-                "BEFORE" if is_before else "AFTER",
-            )
-            # Mark span as pausible if it's a Span (not ReadableSpan)
-            if isinstance(span, Span):
-                span.set_attribute("pixie.pause.triggered", True)
+        langfuse_logger.info(
+            "Pausing execution at span '%s' (type=%s, timing=%s)",
+            span.name,
+            span_type,
+            "BEFORE" if is_before else "AFTER",
+        )
+        # Mark span as pausible if it's a Span (not ReadableSpan)
+        if isinstance(span, Span):
+            span.set_attribute("pixie.pause.triggered", True)
 
-            # Extract span attributes
-            span_attributes = {}
-            if hasattr(span, "attributes") and span.attributes:
-                span_attributes = dict(span.attributes)
+        # Extract span attributes
+        span_attributes = {}
+        if hasattr(span, "attributes") and span.attributes:
+            span_attributes = dict(span.attributes)
 
-            breakpt = BreakpointDetail(
-                span_name=span.name,
-                breakpoint_type=span_type,
-                breakpoint_timing="BEFORE" if is_before else "AFTER",
-                span_attributes=span_attributes,
-            )
+        breakpt = BreakpointDetail(
+            span_name=span.name,
+            breakpoint_type=span_type,
+            breakpoint_timing="BEFORE" if is_before else "AFTER",
+            span_attributes=span_attributes,
+        )
 
-            # Put paused event in queue (using asyncio)
-            asyncio.run(exec_ctx.emit_status_update(status="paused", breakpt=breakpt))
-            exec_ctx.wait_for_resume()
-            asyncio.run(exec_ctx.emit_status_update(status="running"))
-
-        except Exception as e:
-            # Don't break application due to pause infrastructure errors
-            langfuse_logger.error(
-                "Pause logic failed for span '%s': %s", span.name, str(e)
-            )
+        # Put paused event in queue (using asyncio)
+        asyncio.run(exec_ctx.emit_status_update(status="paused", breakpt=breakpt))
+        exec_ctx.wait_for_resume()
+        asyncio.run(exec_ctx.emit_status_update(status="running"))
 
     def _get_breakpoint_type(
         self,

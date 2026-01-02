@@ -67,6 +67,7 @@ AppRunStatus = Literal[
     "paused",
     "completed",
     "error",
+    "cancelled",
 ]
 
 
@@ -88,3 +89,8 @@ class ExecutionContext:
     status_queue: asyncio.Queue[AppRunUpdate | None]
     resume_event: threading.Event
     breakpoint_config: Optional[BreakpointConfig] = None
+    cancelled: bool = False
+
+
+class AppRunCancelled(Exception):
+    """Exception raised when an application run is cancelled."""

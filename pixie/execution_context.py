@@ -8,6 +8,7 @@ from typing import Dict, Optional, Sequence
 from uuid import uuid4
 
 from pixie.types import (
+    AppRunCancelled,
     AppRunStatus,
     BreakpointDetail,
     BreakpointTiming,
@@ -134,6 +135,11 @@ def wait_for_resume() -> None:
 
     logger.debug("Waiting for resume for run_id=%s, waiting for resume...", ctx.run_id)
     ctx.resume_event.wait()
+    # Check one more time after waking up
+    if ctx.cancelled:
+        logger.info("Run cancelled during pause for run_id=%s", ctx.run_id)
+        raise AppRunCancelled(f"Run {ctx.run_id} was cancelled")
+
     ctx.breakpoint_config = None
     logger.debug("Cleared pause config for run %s", ctx.run_id)
     ctx.resume_event.clear()
@@ -156,4 +162,34 @@ def resume_run(run_id: str) -> bool:
 
     ctx.resume_event.set()
     logger.debug("Trigger resume for run_id=%s", run_id)
+    return True
+
+
+def cancel_run() -> bool:
+    """Cancel a running or paused run.
+
+    Sets the cancellation flag which will cause the run to terminate.
+    If the run is paused, it will also trigger the resume event to unblock it.
+
+    Args:
+        run_id: The ID of the run to cancel
+
+    Returns:
+        True if the run was found and cancelled, False otherwise
+    """
+    ctx = _execution_context.get()
+    if not ctx:
+        logger.warning(
+            "No execution context found in current context, cannot cancel run"
+        )
+        return False
+
+    if ctx.cancelled:
+        logger.info("Run_id=%s is already cancelled", ctx.run_id)
+        return False
+
+    ctx.cancelled = True
+    ctx.resume_event.set()
+    logger.info("Resume run and set cancellation flag for run_id=%s", ctx.run_id)
+
     return True
