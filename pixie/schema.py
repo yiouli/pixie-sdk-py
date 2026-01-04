@@ -20,6 +20,19 @@ from pixie.types import (
     BreakpointDetail as PydanticBreakpointDetail,
     AppRunUpdate as PydanticAppRunUpdate,
 )
+from pixie.otel_types import (
+    OTLPKeyValue as PydanticOTLPKeyValue,
+    OTLPSpanEvent as PydanticOTLPSpanEvent,
+    OTLPSpanLink as PydanticOTLPSpanLink,
+    OTLPStatus as PydanticOTLPStatus,
+    OTLPSpan as PydanticOTLPSpan,
+    OTLPInstrumentationScope as PydanticOTLPInstrumentationScope,
+    OTLPScopeSpans as PydanticOTLPScopeSpans,
+    OTLPResource as PydanticOTLPResource,
+    OTLPResourceSpans as PydanticOTLPResourceSpans,
+    OTLPTraceData as PydanticOTLPTraceData,
+    PartialTraceData as PydanticPartialTraceData,
+)
 
 import pixie.execution_context as exec_ctx
 
@@ -54,6 +67,16 @@ class AppRunStatus(Enum):
     PAUSED = "paused"
 
 
+@strawberry.enum
+class TraceEventType(Enum):
+    """Type of trace event.
+
+    Indicates whether the trace data is from a span starting or other event.
+    """
+
+    SPAN_START = "span_start"
+
+
 # Convert Pydantic models to Strawberry types with explicit field types
 @strawberry.experimental.pydantic.type(model=PydanticBreakpointDetail)
 class BreakpointDetail:
@@ -69,7 +92,93 @@ class BreakpointDetail:
     span_attributes: JSON | None = None
 
 
-@strawberry.experimental.pydantic.type(model=PydanticAppRunUpdate)
+# OTLP Trace Data Strawberry Types
+@strawberry.experimental.pydantic.type(model=PydanticOTLPKeyValue)
+class OTLPKeyValue:
+    """OTLP key-value attribute."""
+
+    key: strawberry.auto
+    value: JSON  # Dict with string_value, int_value, etc.
+
+
+@strawberry.experimental.pydantic.type(model=PydanticOTLPStatus, all_fields=True)
+class OTLPStatus:
+    """OTLP span status."""
+
+
+@strawberry.experimental.pydantic.type(model=PydanticOTLPSpanEvent, all_fields=True)
+class OTLPSpanEvent:
+    """OTLP span event."""
+
+
+@strawberry.experimental.pydantic.type(model=PydanticOTLPSpanLink, all_fields=True)
+class OTLPSpanLink:
+    """OTLP span link."""
+
+
+@strawberry.experimental.pydantic.type(model=PydanticOTLPSpan, all_fields=True)
+class OTLPSpan:
+    """OTLP span representation."""
+
+
+@strawberry.experimental.pydantic.type(
+    model=PydanticOTLPInstrumentationScope, all_fields=True
+)
+class OTLPInstrumentationScope:
+    """OTLP instrumentation scope (library info)."""
+
+
+@strawberry.experimental.pydantic.type(model=PydanticOTLPScopeSpans, all_fields=True)
+class OTLPScopeSpans:
+    """OTLP scope spans - groups spans by instrumentation scope."""
+
+
+@strawberry.experimental.pydantic.type(model=PydanticOTLPResource, all_fields=True)
+class OTLPResource:
+    """OTLP resource - describes the entity producing telemetry."""
+
+
+@strawberry.experimental.pydantic.type(model=PydanticOTLPResourceSpans, all_fields=True)
+class OTLPResourceSpans:
+    """OTLP resource spans - groups spans by resource."""
+
+
+@strawberry.experimental.pydantic.type(model=PydanticOTLPTraceData, all_fields=True)
+class OTLPTraceData:
+    """Complete OTLP trace data structure.
+
+    This matches the ExportTraceServiceRequest protobuf structure
+    that Langfuse sends to its observability server.
+    """
+
+
+@strawberry.experimental.pydantic.type(model=PydanticPartialTraceData)
+class PartialTraceData:
+    """Partial trace data emitted at span start.
+
+    Contains only the information available when a span begins,
+    before it completes.
+    """
+
+    event: TraceEventType
+    span_name: strawberry.auto
+    trace_id: strawberry.auto
+    span_id: strawberry.auto
+    parent_span_id: strawberry.auto
+    start_time_unix_nano: strawberry.auto
+    kind: strawberry.auto
+    attributes: JSON | None = None
+
+
+@strawberry.type
+class TraceDataUnion:
+    """Union type for trace data - either complete OTLP or partial."""
+
+    otlp_trace: Optional[OTLPTraceData] = None
+    partial_trace: Optional[PartialTraceData] = None
+
+
+@strawberry.type
 class AppRunUpdate:
     """Represents updates for an application run.
 
@@ -81,12 +190,27 @@ class AppRunUpdate:
         status: The current status of the application run.
         data: Additional data associated with the application run.
         breakpoint: Optional details about a breakpoint in the application run.
+        trace: Optional trace data (either complete OTLP or partial).
     """
 
     run_id: strawberry.ID
     status: AppRunStatus
-    data: strawberry.auto
+    data: Optional[str]
     breakpoint: Optional[BreakpointDetail]
+    trace: Optional[TraceDataUnion]
+
+    @classmethod
+    def from_pydantic(cls, instance: PydanticAppRunUpdate):
+        """Convert from Pydantic AppRunUpdate to Strawberry AppRunUpdate."""
+        return cls(
+            run_id=strawberry.ID(instance.run_id),
+            status=AppRunStatus(instance.status),
+            data=instance.data,
+            breakpoint=BreakpointDetail.from_pydantic(instance.breakpoint)
+            if instance.breakpoint
+            else None,
+            trace=_convert_trace_to_union(instance.trace),
+        )
 
 
 @strawberry.type
@@ -150,6 +274,34 @@ def _serialize_data(value: JsonValue | str | None) -> str | None:
     if isinstance(value, str):
         return value
     return json.dumps(value)
+
+
+def _convert_trace_to_union(trace_dict: dict | None) -> Optional[TraceDataUnion]:
+    """Convert trace data dict to TraceDataUnion.
+
+    Args:
+        trace_dict: Dict containing either OTLP trace data or partial trace data
+
+    Returns:
+        TraceDataUnion with the appropriate field set, or None
+    """
+    if trace_dict is None:
+        return None
+
+    # Check if it's a partial trace (has 'event' field)
+    if trace_dict.get("event") == "span_start":
+        partial = PydanticPartialTraceData(**trace_dict)
+        return TraceDataUnion(
+            partial_trace=PartialTraceData.from_pydantic(partial),
+            otlp_trace=None,
+        )
+
+    # Otherwise it's a complete OTLP trace
+    otlp = PydanticOTLPTraceData(**trace_dict)
+    return TraceDataUnion(
+        otlp_trace=OTLPTraceData.from_pydantic(otlp),
+        partial_trace=None,
+    )
 
 
 def _create_app_run_in_thread(run: Coroutine) -> tuple[Coroutine, Callable[[], bool]]:

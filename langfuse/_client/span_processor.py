@@ -12,13 +12,15 @@ Key features:
 - Pause/resume support for execution control
 """
 
-import asyncio
 import base64
 import os
+import time
 from typing import Dict, List, Optional
 
+from google.protobuf.json_format import MessageToDict
 from opentelemetry import context as context_api
 from opentelemetry.context import Context
+from opentelemetry.exporter.otlp.proto.common.trace_encoder import encode_spans
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.trace import ReadableSpan, Span
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -149,6 +151,9 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
         # Check for pause before span starts (BEFORE_NEXT mode)
         self._check_breakpoint(span, is_before=True)
 
+        # Emit partial trace at span start
+        self._emit_trace_to_execution_context(span, is_start=True)
+
         return super().on_start(span, parent_context)
 
     def on_end(self, span: ReadableSpan) -> None:
@@ -181,6 +186,9 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
         # Check for pause after span ends (AFTER_NEXT mode)
         self._check_breakpoint(span, is_before=False)
 
+        # Emit trace data to execution context queue if available
+        self._emit_trace_to_execution_context(span, is_start=False)
+
         super().on_end(span)
 
     @staticmethod
@@ -212,6 +220,12 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
         return False
 
     def _check_breakpoint(self, span: ReadableSpan | Span, is_before: bool) -> None:
+        """Check and handle breakpoints with pause timing adjustment.
+
+        This method ensures that pause duration is NOT counted in the span's duration
+        by adjusting the span's start_time (for BEFORE pauses) or recording the pause
+        as a separate event (for AFTER pauses).
+        """
         # Get execution context
         breakpt_config = exec_ctx.get_current_breakpoint_config()
 
@@ -243,6 +257,7 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
             span_type,
             "BEFORE" if is_before else "AFTER",
         )
+
         # Mark span as pausible if it's a Span (not ReadableSpan)
         if isinstance(span, Span):
             span.set_attribute("pixie.pause.triggered", True)
@@ -259,10 +274,61 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
             span_attributes=span_attributes,
         )
 
+        # Record pause start time (in nanoseconds to match OTel)
+        pause_start_ns = time.time_ns()
+
+        # Emit pause start event
+        self._emit_pause_event(span, "pause_start", pause_start_ns)
+
         # Put paused event in queue (using asyncio)
-        asyncio.run(exec_ctx.emit_status_update(status="paused", breakpt=breakpt))
+        exec_ctx.emit_status_update_sync(status="paused", breakpt=breakpt)
+
+        # Wait for resume (this blocks)
         exec_ctx.wait_for_resume()
-        asyncio.run(exec_ctx.emit_status_update(status="running"))
+
+        # Record pause end time
+        pause_end_ns = time.time_ns()
+        pause_duration_ns = pause_end_ns - pause_start_ns
+
+        langfuse_logger.info(
+            "Resumed execution at span '%s', pause duration: %.3f seconds",
+            span.name,
+            pause_duration_ns / 1e9,
+        )
+
+        # Emit pause end event with duration
+        self._emit_pause_event(
+            span, "pause_end", pause_end_ns, pause_duration_ns=pause_duration_ns
+        )
+
+        # Adjust span timing to exclude pause duration
+        if is_before and isinstance(span, Span):
+            # For BEFORE pauses: adjust the span's start time forward
+            # This ensures the pause time is NOT included in the span's duration
+            # pylint: disable=protected-access
+            if hasattr(span, "_start_time"):
+                original_start = span._start_time
+                span._start_time = original_start + pause_duration_ns
+                # pylint: enable=protected-access
+                langfuse_logger.debug(
+                    "Adjusted span '%s' start_time by %d ns (%.3f seconds)",
+                    span.name,
+                    pause_duration_ns,
+                    pause_duration_ns / 1e9,
+                )
+                # Add pause adjustment as span attribute
+                span.set_attribute("pixie.pause.duration_ns", pause_duration_ns)
+                span.set_attribute("pixie.pause.adjusted", True)
+        elif not is_before and isinstance(span, ReadableSpan):
+            # For AFTER pauses: the span has already ended, so just record the pause
+            # The pause happens AFTER the span completes, so it doesn't affect duration
+            # We emit the pause event separately
+            langfuse_logger.debug(
+                "Pause occurred AFTER span '%s' completed (duration not affected)",
+                span.name,
+            )
+
+        exec_ctx.emit_status_update_sync(status="running")
 
     def _get_breakpoint_type(
         self,
@@ -298,3 +364,188 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
                 return "TOOL"
 
         return None
+
+    def _emit_trace_to_execution_context(
+        self, span: ReadableSpan | Span, is_start: bool = False
+    ) -> None:
+        """Emit trace data to execution context queue for GraphQL subscription.
+
+        This converts the span to OTLP JSON format (same as sent to Langfuse server)
+        and emits it via the execution context queue if available.
+
+        Args:
+            span: The span to emit (ReadableSpan for completion, Span for start)
+            is_start: True if emitting at span start, False if at span end
+        """
+        try:
+            # Check if execution context exists using public API
+            ctx = exec_ctx.get_current_context()
+            if ctx is None:
+                return
+
+            if is_start:
+                # For span start, emit partial trace data with available info
+                trace_data = self._create_partial_trace_data(span)
+            else:
+                # For span end, convert full span to OTLP protobuf format
+                proto_message = encode_spans([span])
+
+                # Convert protobuf to JSON dict (same format as sent to Langfuse server)
+                trace_data = MessageToDict(
+                    proto_message,
+                    preserving_proto_field_name=True,
+                    always_print_fields_with_no_presence=True,
+                )
+
+            langfuse_logger.debug(
+                "Emitting %s trace to execution context for span '%s'",
+                "start" if is_start else "end",
+                span.name,
+            )
+
+            # Emit using sync helper
+            exec_ctx.emit_status_update_sync(
+                status="running",
+                trace=trace_data,
+            )
+
+        except Exception as e:  # pylint: disable=broad-except
+            # Don't let trace emission failures break the span export
+            langfuse_logger.warning(
+                "Failed to emit trace to execution context: %s",
+                str(e),
+                exc_info=True,
+            )
+
+    def _create_partial_trace_data(self, span: ReadableSpan | Span) -> dict:
+        """Create partial trace data for span start.
+
+        Args:
+            span: The span that is starting
+
+        Returns:
+            Dict with partial trace information available at span start
+        """
+        from opentelemetry.trace import format_trace_id
+
+        trace_data = {
+            "event": "span_start",
+            "span_name": span.name,
+            "start_time_unix_nano": str(span.start_time)
+            if hasattr(span, "start_time")
+            else None,
+        }
+
+        # Add context information if available
+        if hasattr(span, "context") and span.context:
+            trace_data["trace_id"] = format_trace_id(span.context.trace_id)
+            trace_data["span_id"] = format_span_id(span.context.span_id)
+
+        # Add parent span id if available
+        if hasattr(span, "parent") and span.parent:
+            trace_data["parent_span_id"] = format_span_id(span.parent.span_id)
+
+        # Add attributes if available
+        if hasattr(span, "attributes") and span.attributes:
+            trace_data["attributes"] = dict(span.attributes)
+
+        # Add kind if available
+        if hasattr(span, "kind"):
+            trace_data["kind"] = span.kind.name
+
+        return trace_data
+
+    def _emit_pause_event(
+        self,
+        span: ReadableSpan | Span,
+        event_type: str,
+        event_time_ns: int,
+        pause_duration_ns: Optional[int] = None,
+    ) -> None:
+        """Emit a pause-related event to both Langfuse and the subscription queue.
+
+        Creates a custom trace event representing pause start/end and emits it via:
+        1. The execution context queue (for GraphQL subscription updates)
+        2. As span events in the OpenTelemetry span (exported to Langfuse)
+
+        Args:
+            span: The span where the pause occurred
+            event_type: Type of pause event ("pause_start" or "pause_end")
+            event_time_ns: Timestamp of the event in nanoseconds
+            pause_duration_ns: Duration of the pause in nanoseconds (for pause_end events)
+        """
+        try:
+            from opentelemetry.trace import format_trace_id
+
+            # Create pause event data
+            pause_event = {
+                "event": event_type,
+                "timestamp_ns": event_time_ns,
+                "span_name": span.name,
+            }
+
+            # Add context information if available
+            if hasattr(span, "context") and span.context:
+                pause_event["trace_id"] = format_trace_id(span.context.trace_id)
+                pause_event["span_id"] = format_span_id(span.context.span_id)
+
+            # Add parent span id if available
+            if hasattr(span, "parent") and span.parent:
+                pause_event["parent_span_id"] = format_span_id(span.parent.span_id)
+
+            # Add pause duration for end events
+            if pause_duration_ns is not None:
+                pause_event["pause_duration_ns"] = pause_duration_ns
+                pause_event["pause_duration_seconds"] = pause_duration_ns / 1e9
+
+            # Add span attributes if available
+            if hasattr(span, "attributes") and span.attributes:
+                pause_event["span_attributes"] = dict(span.attributes)
+
+            langfuse_logger.debug(
+                "Emitting pause event '%s' for span '%s'",
+                event_type,
+                span.name,
+            )
+
+            # 1. Emit to execution context queue for subscription updates
+            ctx = exec_ctx.get_current_context()
+            if ctx is not None:
+                exec_ctx.emit_status_update_sync(
+                    status="running",
+                    trace=pause_event,
+                )
+
+            # 2. Add as OpenTelemetry span event (will be exported to Langfuse)
+            if isinstance(span, Span):
+                # Add event attributes
+                event_attributes = {
+                    "pixie.event.type": event_type,
+                    "pixie.pause.timestamp_ns": event_time_ns,
+                }
+                if pause_duration_ns is not None:
+                    event_attributes["pixie.pause.duration_ns"] = pause_duration_ns
+                    event_attributes["pixie.pause.duration_seconds"] = (
+                        pause_duration_ns / 1e9
+                    )
+
+                # Add event to span
+                span.add_event(
+                    name=f"pixie.{event_type}",
+                    attributes=event_attributes,
+                    timestamp=event_time_ns,
+                )
+
+                langfuse_logger.debug(
+                    "Added '%s' event to span '%s' (will be exported to Langfuse)",
+                    event_type,
+                    span.name,
+                )
+
+        except Exception as e:  # pylint: disable=broad-except
+            # Don't let pause event emission failures break the pause/resume flow
+            langfuse_logger.warning(
+                "Failed to emit pause event: %s",
+                str(e),
+                exc_info=True,
+            )

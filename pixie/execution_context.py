@@ -63,6 +63,15 @@ def get_current_breakpoint_config() -> Optional[BreakpointConfig]:
     return None
 
 
+def get_current_context() -> Optional[ExecutionContext]:
+    """Get the current execution context.
+
+    Returns:
+        The current ExecutionContext if available, None otherwise.
+    """
+    return _execution_context.get()
+
+
 def unregister_run(run_id: str) -> None:
     """Unregister a run from the global active runs registry."""
     if run_id in _active_runs:
@@ -79,6 +88,7 @@ async def emit_status_update(
     status: AppRunStatus | None,
     data: Optional[str] = None,
     breakpt: Optional[BreakpointDetail] = None,
+    trace: Optional[dict] = None,
 ) -> None:
     """Emit a status update to the status queue if available."""
     ctx = _execution_context.get()
@@ -92,11 +102,49 @@ async def emit_status_update(
                 status=status,
                 data=data,
                 breakpoint=breakpt,
+                trace=trace,
             )
             logger.debug(
                 "Emitted status update: %s for run %s", update.status, ctx.run_id
             )
         await ctx.status_queue.put(update)
+
+
+def emit_status_update_sync(
+    status: AppRunStatus | None,
+    data: Optional[str] = None,
+    breakpt: Optional[BreakpointDetail] = None,
+    trace: Optional[dict] = None,
+) -> None:
+    """Emit a status update synchronously using put_nowait.
+
+    This is a synchronous wrapper for emit_status_update that uses put_nowait
+    instead of async put. Use this when you need to emit updates from
+    synchronous code (e.g., span processors).
+
+    Args:
+        status: The status to emit, or None to end the stream
+        data: Optional data string
+        breakpt: Optional breakpoint details
+        trace: Optional trace data dict
+    """
+    ctx = _execution_context.get()
+    if ctx:
+        if status is None:
+            update = None
+            logger.debug("Emitted terminal status update for run %s", ctx.run_id)
+        else:
+            update = AppRunUpdate(
+                run_id=ctx.run_id,
+                status=status,
+                data=data,
+                breakpoint=breakpt,
+                trace=trace,
+            )
+            logger.debug(
+                "Emitted status update: %s for run %s", update.status, ctx.run_id
+            )
+        ctx.status_queue.put_nowait(update)
 
 
 def set_breakpoint(

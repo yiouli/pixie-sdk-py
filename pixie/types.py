@@ -3,8 +3,13 @@
 import asyncio
 import threading
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Literal, Optional, Any
 from pydantic import BaseModel
+
+
+# Forward import to avoid circular dependency
+# The actual types are defined in otel_types.py
+TraceDataType = dict[str, Any]  # Will be OTLPTraceData | PartialTraceData
 
 
 class ExecutionInput(BaseModel):
@@ -78,6 +83,7 @@ class AppRunUpdate(BaseModel):
     status: AppRunStatus
     data: Optional[str] = None
     breakpoint: Optional[BreakpointDetail] = None
+    trace: Optional[TraceDataType] = None
 
 
 @dataclass

@@ -26,9 +26,6 @@ dmypy.json
 
 .DS_Store
 
-# Docs
-docs
-
 # Llamaindex
 tests/mocks/llama-index-storage
 
