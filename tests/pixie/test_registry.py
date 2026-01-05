@@ -55,7 +55,7 @@ class TestBasicRegistration:
         """Test registering with a custom name."""
 
         @pixie_app(name="custom_name")
-        def my_app(_input_data: JsonValue) -> JsonValue:  # noqa: ARG001
+        def my_app(_input_data: JsonValue) -> JsonValue:
             return {"result": "ok"}
 
         assert "custom_name" in list_applications()
@@ -65,20 +65,20 @@ class TestBasicRegistration:
         """Test that registering duplicate names raises an error."""
 
         @pixie_app(name="duplicate")
-        def app1(_input_data: JsonValue) -> JsonValue:  # noqa: ARG001
+        def app1(_input_data: JsonValue) -> JsonValue:
             return {"app": "1"}
 
         with pytest.raises(ValueError, match="already registered"):
 
             @pixie_app(name="duplicate")
-            def app2(_input_data: JsonValue) -> JsonValue:  # noqa: ARG001
+            def app2(_input_data: JsonValue) -> JsonValue:
                 return {"app": "2"}
 
     def test_decorator_with_parentheses(self):
         """Test using decorator with parentheses."""
 
-        @pixie_app()
-        def app_with_parens(_input_data: JsonValue) -> JsonValue:  # noqa: ARG001
+        @pixie_app
+        def app_with_parens(_input_data: JsonValue) -> JsonValue:
             return {"decorated": True}
 
         assert "app_with_parens" in list_applications()

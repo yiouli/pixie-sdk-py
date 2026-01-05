@@ -1,7 +1,7 @@
 """Test pause/resume functionality."""
 
 import asyncio
-from typing import Generator
+from typing import Generator, cast
 import pytest
 from pixie.types import (
     BreakpointConfig,
@@ -110,10 +110,9 @@ async def test_status_update_emission() -> None:
     received_update = await asyncio.wait_for(ctx.status_queue.get(), timeout=1.0)
     assert received_update is not None
     assert received_update.status == "paused"
-    import json
 
     assert received_update.data is not None
-    data = json.loads(received_update.data)
+    data = cast(dict, received_update.data)
     assert data["span_type"] == "LLM"
 
     exec_ctx.unregister_run(run_id)
@@ -181,10 +180,9 @@ async def test_status_update_with_breakpoint() -> None:
     received_update = await asyncio.wait_for(ctx.status_queue.get(), timeout=1.0)
     assert received_update is not None
     assert received_update.status == "paused"
-    import json
 
     assert received_update.data is not None
-    data = json.loads(received_update.data)
+    data = cast(dict, received_update.data)
     assert data["span_type"] == "TOOL"
     assert received_update.breakpoint is not None
     assert received_update.breakpoint.breakpoint_timing == "AFTER"

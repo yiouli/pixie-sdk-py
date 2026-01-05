@@ -14,6 +14,7 @@ from typing import (
     Callable,
     Dict,
     Optional,
+    Tuple,
     TypeVar,
     cast,
     get_args,
@@ -23,6 +24,8 @@ from typing import (
 )
 import inspect
 from pydantic import BaseModel, JsonValue
+
+from pixie.types import PixieGenerator, UserInputRequirement
 
 
 logger = logging.getLogger(__name__)
@@ -35,19 +38,24 @@ class RegistryItem:
 
     def __init__(
         self,
-        stream_handler: Callable[[JsonValue], AsyncGenerator[JsonValue, None]],
+        stream_handler: Callable[
+            [JsonValue], AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]
+        ],
         input_type: Optional[type[BaseModel]],
+        user_input_type: Optional[type[BaseModel]],
         output_type: Optional[type[BaseModel]],
     ):
         """Initialize a RegistryItem.
 
         Args:
-            stream_handler (Callable[[JsonValue], AsyncGenerator[JsonValue, None]]): The handler function for streaming.
+            stream_handler: The handler function for streaming.
             input_type (Optional[type[BaseModel]]): The expected input Pydantic model type.
+            user_input_type (Optional[type[BaseModel]]): The expected user input Pydantic model type.
             output_type (Optional[type[BaseModel]]): The expected output Pydantic model type.
         """
         self.stream_handler = stream_handler
         self.input_type = input_type
+        self.user_input_type = user_input_type
         self.output_type = output_type
 
 
@@ -63,30 +71,45 @@ ApplicationCallable = Callable[
 # Both are consumed the same way: async for item in func(input)
 ApplicationGenerator = Callable[
     [JsonValue | BaseModel],
-    AsyncGenerator[BaseModel | JsonValue, None]
-    | Awaitable[AsyncGenerator[BaseModel | JsonValue, None]],
+    PixieGenerator | Awaitable[PixieGenerator],
 ]
 Application = ApplicationCallable | ApplicationGenerator
 
 # TypeVars for decorator overloads
-P = TypeVar("P", bound=BaseModel | JsonValue)  # Input parameter type (covariant-like)
-R = TypeVar("R", bound=BaseModel | JsonValue)  # Return type (covariant)
+P = TypeVar("P", bound=BaseModel | JsonValue)  # Input parameter type
+R = TypeVar("R", bound=BaseModel | JsonValue)  # Return type
+T = TypeVar("T", bound=BaseModel | JsonValue)  # user Input type for
 
 
-def _get_pydantic_model_class(type_hint: Any) -> Optional[type[BaseModel]]:
-    """Check if a type hint is a Pydantic model and return the class."""
-    try:
-        if inspect.isclass(type_hint) and issubclass(type_hint, BaseModel):
-            return type_hint
+def _get_async_generator_model_types(
+    type_hint: Any,
+) -> Tuple[Optional[type[BaseModel]], Optional[type[BaseModel]]]:
+    """Extract both the yield and send types from an AsyncGenerator type hint.
 
-        origin = get_origin(type_hint)
-        if origin in {AsyncGenerator, ABCAsyncGenerator, AsyncIterable, AsyncIterator}:
-            args = get_args(type_hint)
-            if args:
-                return _get_pydantic_model_class(args[0])
-    except TypeError:
-        pass
-    return None
+    Returns a tuple of (yield_type, send_type) if both are Pydantic models or None.
+    Raises a TypeError if the provided type_hint is not an AsyncGenerator.
+    """
+    origin = get_origin(type_hint)
+    if origin not in {AsyncGenerator, ABCAsyncGenerator}:
+        raise TypeError("Provided type_hint is not an AsyncGenerator")
+
+    args = get_args(type_hint)
+    if len(args) != 2:
+        return None, None
+
+    yield_type, send_type = args
+    yield_model = (
+        yield_type
+        if inspect.isclass(yield_type) and issubclass(yield_type, BaseModel)
+        else None
+    )
+    send_model = (
+        send_type
+        if inspect.isclass(send_type) and issubclass(send_type, BaseModel)
+        else None
+    )
+
+    return yield_model, send_model
 
 
 def _is_async_generator_hint(type_hint: Any) -> bool:
@@ -105,34 +128,48 @@ def _extract_input_type(func: Application) -> Optional[type[BaseModel]]:
             return None
 
         param_name = params[0].name
-        return _get_pydantic_model_class(hints.get(param_name))
+        param_type = hints.get(param_name)
+        if inspect.isclass(param_type) and issubclass(param_type, BaseModel):
+            return param_type
+        return None
     except (TypeError, ValueError, AttributeError):
         return None
 
 
-def _normalize_value(value: JsonValue | BaseModel) -> JsonValue:
+def _value_to_json(
+    value: JsonValue | BaseModel | UserInputRequirement,
+) -> JsonValue | UserInputRequirement:
+    if isinstance(value, UserInputRequirement):
+        return value
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json", exclude_unset=True)
     return value
 
 
+def _json_to_value(
+    json_data: JsonValue,
+    model_type: Optional[type[BaseModel]],
+) -> JsonValue | BaseModel:
+    if model_type and isinstance(json_data, dict):
+        return model_type(**json_data)
+    return json_data
+
+
 def _wrap_callable_handler(
     func: ApplicationCallable,
     input_type: Optional[type[BaseModel]],
-) -> Callable[[JsonValue], AsyncGenerator[JsonValue, None]]:
-    async def stream_handler(input_data: JsonValue) -> AsyncGenerator[JsonValue, None]:
-        processed_input: JsonValue | BaseModel = input_data
-        if input_type and isinstance(input_data, dict):
-            processed_input = input_type(**input_data)
-
-        result_or_awaitable = func(processed_input)
+) -> Callable[[JsonValue], AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]]:
+    async def stream_handler(
+        input_data: JsonValue,
+    ) -> AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]:
+        result_or_awaitable = func(_json_to_value(input_data, input_type))
 
         if inspect.isawaitable(result_or_awaitable):
             result = await result_or_awaitable
         else:
             result = result_or_awaitable
 
-        yield _normalize_value(result)
+        yield _value_to_json(result)
 
     return stream_handler
 
@@ -140,11 +177,12 @@ def _wrap_callable_handler(
 def _wrap_generator_handler(
     func: ApplicationGenerator,
     input_type: Optional[type[BaseModel]],
-) -> Callable[[JsonValue], AsyncGenerator[JsonValue, None]]:
-    async def stream_handler(input_data: JsonValue) -> AsyncGenerator[JsonValue, None]:
-        processed_input: JsonValue | BaseModel = input_data
-        if input_type and isinstance(input_data, dict):
-            processed_input = input_type(**input_data)
+    user_input_type: Optional[type[BaseModel]],
+) -> Callable[[JsonValue], AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]]:
+    async def stream_handler(
+        input_data: JsonValue,
+    ) -> AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]:
+        processed_input: JsonValue | BaseModel = _json_to_value(input_data, input_type)
 
         generator_or_awaitable = func(processed_input)
 
@@ -154,8 +192,14 @@ def _wrap_generator_handler(
         else:
             generator = generator_or_awaitable
 
-        async for result in generator:
-            yield _normalize_value(result)
+        try:
+            user_input: JsonValue | BaseModel | None = None
+            while True:
+                result = await generator.asend(user_input)
+                user_input_orig = yield _value_to_json(result)
+                user_input = _json_to_value(user_input_orig, user_input_type)
+        except StopAsyncIteration:
+            return
 
     return stream_handler
 
@@ -167,9 +211,13 @@ def _register_callable(
     """Register a callable application that returns a single result."""
     input_type = _extract_input_type(func)
 
+    output_type: Optional[type[BaseModel]] = None
     try:
         hints = get_type_hints(func)
-        output_type = _get_pydantic_model_class(hints.get("return"))
+        output_hint = hints.get("return")
+        if inspect.isclass(output_hint) and issubclass(output_hint, BaseModel):
+            output_type = output_hint
+
     except (TypeError, ValueError, AttributeError):
         output_type = None
 
@@ -178,6 +226,7 @@ def _register_callable(
     _registry[registry_key] = RegistryItem(
         stream_handler=stream_handler,
         input_type=input_type,
+        user_input_type=None,
         output_type=output_type,
     )
 
@@ -189,24 +238,27 @@ def _register_generator(
     """Register a generator application that yields multiple results."""
     input_type = _extract_input_type(func)
 
+    output_type: Optional[type[BaseModel]] = None
+    user_input_type: Optional[type[BaseModel]] = None
     try:
         hints = get_type_hints(func)
         return_hint = hints.get("return")
-        # For AsyncGenerator[T, None], extract T as the output type
-        output_type = _get_pydantic_model_class(return_hint)
+        output_type, user_input_type = _get_async_generator_model_types(return_hint)
     except (TypeError, ValueError, AttributeError):
-        output_type = None
+        pass
 
-    stream_handler = _wrap_generator_handler(func, input_type)
-
+    stream_handler = _wrap_generator_handler(func, input_type, user_input_type)
     _registry[registry_key] = RegistryItem(
         stream_handler=stream_handler,
         input_type=input_type,
+        user_input_type=user_input_type,
         output_type=output_type,
     )
 
 
 # Overloads for common application patterns with specific type preservation
+
+# When called with just func parameter (direct decoration: @pixie_app)
 
 
 # Sync callable returning value
@@ -230,47 +282,71 @@ def pixie_app(
 # Async generator function
 @overload
 def pixie_app(
-    func: Callable[[P], AsyncGenerator[R, None]],
+    func: Callable[[P], PixieGenerator[T, R]],
     *,
     name: str | None = None,
-) -> Callable[[P], AsyncGenerator[R, None]]: ...
+) -> Callable[[P], PixieGenerator[T, R]]: ...
 
 
 # Async function returning async generator
 @overload
 def pixie_app(
-    func: Callable[[P], Awaitable[AsyncGenerator[R, None]]],
+    func: Callable[[P], Awaitable[PixieGenerator[T, R]]],
     *,
     name: str | None = None,
-) -> Callable[[P], Awaitable[AsyncGenerator[R, None]]]: ...
+) -> Callable[[P], Awaitable[PixieGenerator[T, R]]]: ...
 
 
-F = TypeVar(
-    "F",
-    bound=Callable[
-        [Any],
-        BaseModel
-        | JsonValue
-        | Awaitable[BaseModel | JsonValue]
-        | AsyncGenerator[BaseModel | JsonValue, None]
-        | Awaitable[AsyncGenerator[BaseModel | JsonValue, None]],
-    ],
-)
+# When called with only keyword arguments (parameterized decoration: @pixie_app(name="..."))
+# Returns a decorator function
 
 
+# Sync callable returning value
 @overload
 def pixie_app(
     func: None = None,
     *,
-    name: str | None = None,
-) -> Callable[[F], F]: ...
+    name: str,
+) -> Callable[[Callable[[P], R]], Callable[[P], R]]: ...
+
+
+# Async callable returning value
+@overload
+def pixie_app(
+    func: None = None,
+    *,
+    name: str,
+) -> Callable[[Callable[[P], Awaitable[R]]], Callable[[P], Awaitable[R]]]: ...
+
+
+# Async generator function
+@overload
+def pixie_app(
+    func: None = None,
+    *,
+    name: str,
+) -> Callable[
+    [Callable[[P], PixieGenerator[T, R]]], Callable[[P], PixieGenerator[T, R]]
+]: ...
+
+
+# Async function returning async generator
+@overload
+def pixie_app(
+    func: None = None,
+    *,
+    name: str,
+) -> Callable[
+    [Callable[[P], Awaitable[PixieGenerator[T, R]]]],
+    Callable[[P], Awaitable[PixieGenerator[T, R]]],
+]: ...
 
 
 def pixie_app(
-    func: F | None = None,
+    func: Callable | None = None,
     *,
     name: str | None = None,
-) -> F | Callable[[F], F]:
+) -> Callable:
     """Register an application in the Pixie registry.
 
     This function can be used to register synchronous or asynchronous callables,
@@ -292,7 +368,7 @@ def pixie_app(
         The original function, unmodified.
     """
     if func is None:
-        return cast(Callable[[F], F], partial(pixie_app, name=name))
+        return partial(pixie_app, name=name)
 
     registry_key = name if name is not None else func.__name__
 
@@ -321,7 +397,7 @@ def pixie_app(
 async def call_application(
     name: str,
     input_data: JsonValue,
-) -> AsyncGenerator[JsonValue, None]:
+) -> AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]:
     """Call a registered application with automatic type conversion.
 
     Args:
@@ -335,10 +411,15 @@ async def call_application(
         raise ValueError(f"Application '{name}' not found")
 
     app_info = _registry[name]
-    handler = app_info.stream_handler
+    generator = app_info.stream_handler(input_data)
 
-    async for output in handler(input_data):
-        yield output
+    user_input: JsonValue | None = None
+    try:
+        while True:
+            output = await generator.asend(user_input)
+            user_input = yield output
+    except StopAsyncIteration:
+        return
 
 
 def get_application(name: str) -> Optional[RegistryItem]:

@@ -7,6 +7,8 @@ import threading
 from typing import Dict, Optional, Sequence
 from uuid import uuid4
 
+from pydantic import JsonValue
+
 from pixie.types import (
     AppRunCancelled,
     AppRunStatus,
@@ -16,6 +18,7 @@ from pixie.types import (
     ExecutionContext,
     BreakpointConfig,
     AppRunUpdate,
+    UserInputRequirement,
 )
 
 # ContextVar for storing execution context per async task
@@ -86,7 +89,9 @@ def get_run_context(run_id: str) -> Optional[ExecutionContext]:
 
 async def emit_status_update(
     status: AppRunStatus | None,
-    data: Optional[str] = None,
+    user_input_requirement: UserInputRequirement | None = None,
+    user_input: Optional[JsonValue] = None,
+    data: Optional[JsonValue] = None,
     breakpt: Optional[BreakpointDetail] = None,
     trace: Optional[dict] = None,
 ) -> None:
@@ -100,6 +105,8 @@ async def emit_status_update(
             update = AppRunUpdate(
                 run_id=ctx.run_id,
                 status=status,
+                _user_input_requirement=user_input_requirement,
+                user_input=user_input,
                 data=data,
                 breakpoint=breakpt,
                 trace=trace,
@@ -112,7 +119,9 @@ async def emit_status_update(
 
 def emit_status_update_sync(
     status: AppRunStatus | None,
-    data: Optional[str] = None,
+    user_input_requirement: UserInputRequirement | None = None,
+    user_input: Optional[JsonValue] = None,
+    data: Optional[JsonValue] = None,
     breakpt: Optional[BreakpointDetail] = None,
     trace: Optional[dict] = None,
 ) -> None:
@@ -124,6 +133,7 @@ def emit_status_update_sync(
 
     Args:
         status: The status to emit, or None to end the stream
+        user_input: Optional user input requirement
         data: Optional data string
         breakpt: Optional breakpoint details
         trace: Optional trace data dict
@@ -137,6 +147,8 @@ def emit_status_update_sync(
             update = AppRunUpdate(
                 run_id=ctx.run_id,
                 status=status,
+                _user_input_requirement=user_input_requirement,
+                user_input=user_input,
                 data=data,
                 breakpoint=breakpt,
                 trace=trace,

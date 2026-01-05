@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import queue
 import uuid
 from enum import Enum
 from typing import AsyncGenerator, Callable, Coroutine, Optional, cast
@@ -19,6 +20,7 @@ from pixie.types import (
     AppRunCancelled,
     BreakpointDetail as PydanticBreakpointDetail,
     AppRunUpdate as PydanticAppRunUpdate,
+    UserInputRequirement,
 )
 from pixie.otel_types import (
     OTLPKeyValue as PydanticOTLPKeyValue,
@@ -35,6 +37,24 @@ from pixie.otel_types import (
 )
 
 import pixie.execution_context as exec_ctx
+
+
+# Global registry for input queues per run
+_input_queues: dict[str, queue.Queue] = {}
+
+
+def _get_input_queue(run_id: str) -> queue.Queue:
+    """Get or create the input queue for a given run ID.
+
+    Args:
+        run_id: The unique identifier of the run
+    Returns:
+        The queue for this run
+    """
+    if run_id not in _input_queues:
+        _input_queues[run_id] = queue.Queue()
+    return _input_queues[run_id]
+
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +85,8 @@ class AppRunStatus(Enum):
     COMPLETED = "completed"
     ERROR = "error"
     PAUSED = "paused"
+    WAITING = "waiting"
+    CANCELLED = "cancelled"
 
 
 @strawberry.enum
@@ -195,17 +217,27 @@ class AppRunUpdate:
 
     run_id: strawberry.ID
     status: AppRunStatus
-    data: Optional[str]
-    breakpoint: Optional[BreakpointDetail]
-    trace: Optional[TraceDataUnion]
+    user_input_schema: Optional[JSON] = None
+    user_input: Optional[JSON] = None
+    data: Optional[JSON] = None
+    breakpoint: Optional[BreakpointDetail] = None
+    trace: Optional[TraceDataUnion] = None
 
     @classmethod
     def from_pydantic(cls, instance: PydanticAppRunUpdate):
         """Convert from Pydantic AppRunUpdate to Strawberry AppRunUpdate."""
+        if instance.user_input_requirement:
+            user_input_schema = JSON(
+                _get_json_schema_for_type(instance.user_input_requirement.expected_type)
+            )
+        else:
+            user_input_schema = None
         return cls(
             run_id=strawberry.ID(instance.run_id),
             status=AppRunStatus(instance.status),
-            data=instance.data,
+            user_input_schema=user_input_schema,
+            user_input=JSON(instance.user_input),
+            data=JSON(instance.data),
             breakpoint=BreakpointDetail.from_pydantic(instance.breakpoint)
             if instance.breakpoint
             else None,
@@ -227,6 +259,24 @@ class Query:
 @strawberry.type
 class Mutation:
     """GraphQL mutations."""
+
+    @strawberry.mutation
+    async def send_test(self, message: str) -> bool:
+        """Send a test message to the test queue.
+
+        Args:
+            message: The test message to send.
+
+        Returns:
+            A boolean indicating whether the message was successfully sent.
+        """
+        try:
+            q = _get_input_queue("test")
+            q.put(message)
+            logger.info("Test message sent: %s", message)
+            return True
+        except Exception as e:
+            raise GraphQLError(f"Failed to send test message: {str(e)}") from e
 
     @strawberry.mutation
     async def pause_run(
@@ -267,13 +317,25 @@ class Mutation:
         """
         return exec_ctx.resume_run(run_id)
 
+    @strawberry.mutation
+    async def send_input(self, run_id: str, input_data: JSON) -> bool:
+        """Send user input to a running application.
 
-def _serialize_data(value: JsonValue | str | None) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return value
-    return json.dumps(value)
+        Args:
+            run_id: The unique identifier of the run to send input to.
+            input_data: The input data to send to the application.
+
+        Returns:
+            A boolean indicating whether the input was successfully sent.
+        """
+
+        try:
+            q = _get_input_queue(run_id)
+            q.put(input_data)
+            logger.info("User input sent to run_id=%s", run_id)
+            return True
+        except Exception as e:
+            raise GraphQLError(f"Failed to send input: {str(e)}") from e
 
 
 def _convert_trace_to_union(trace_dict: dict | None) -> Optional[TraceDataUnion]:
@@ -312,9 +374,94 @@ def _create_app_run_in_thread(run: Coroutine) -> tuple[Coroutine, Callable[[], b
     return asyncio.to_thread(lambda: loop.run_until_complete(task)), task.cancel
 
 
+def _get_json_schema_for_type(expected_type) -> dict:
+    """Convert a Python type to JSON schema.
+
+    Args:
+        expected_type: The type to convert to JSON schema
+
+    Returns:
+        A JSON schema dict representing the type
+    """
+    # Check if it's a Pydantic model
+    try:
+        from pydantic import BaseModel
+
+        if isinstance(expected_type, type) and issubclass(expected_type, BaseModel):
+            return expected_type.model_json_schema()
+    except (TypeError, ImportError):
+        pass
+
+    # Handle simple types
+    simple_type_mapping = {
+        str: {"type": "string"},
+        int: {"type": "integer"},
+        float: {"type": "number"},
+        bool: {"type": "boolean"},
+        type(None): {"type": "null"},
+    }
+
+    if expected_type in simple_type_mapping:
+        return simple_type_mapping[expected_type]
+
+    # Handle dict
+    if expected_type is dict:
+        return {"type": "object"}
+
+    # Handle list
+    if expected_type is list:
+        return {"type": "array"}
+
+    # Try to handle typing generics (Optional, List, Dict, etc.)
+    import typing
+
+    origin = typing.get_origin(expected_type)
+
+    if origin is dict:
+        return {"type": "object"}
+    elif origin is list:
+        args = typing.get_args(expected_type)
+        if args:
+            # Recursively get schema for list item type
+            item_schema = _get_json_schema_for_type(args[0])
+            return {"type": "array", "items": item_schema}
+        return {"type": "array"}
+    elif origin is typing.Union:
+        # Handle Optional (Union[X, None])
+        args = typing.get_args(expected_type)
+        non_none_types = [arg for arg in args if arg is not type(None)]
+        if len(non_none_types) == 1:
+            # It's Optional[X]
+            return _get_json_schema_for_type(non_none_types[0])
+
+    # Catch-all: completely loose schema (no type requirement)
+    return {}
+
+
 @strawberry.type
 class Subscription:
     """GraphQL subscriptions."""
+
+    @strawberry.subscription
+    async def test(self) -> AsyncGenerator[str, None]:
+        q = asyncio.Queue()
+
+        async def run_app():
+            while True:
+                # Use asyncio to avoid blocking
+                message = _get_input_queue("test").get()
+                await q.put(message)
+
+        run, cancel = _create_app_run_in_thread(run_app())
+        task = asyncio.create_task(run)
+
+        try:
+            while True:
+                message = await q.get()
+                yield message
+        finally:
+            cancel()
+            task.cancel()
 
     @strawberry.subscription
     async def run(
@@ -375,13 +522,39 @@ class Subscription:
                     logger.info("Starting application execution for run_id=%s", run_id)
                     exec_ctx.reload_run_context(run_id)
 
-                    async for item in call_application(
+                    app_gen = call_application(
                         name,
                         cast(JsonValue, input_data),
-                    ):
-                        await exec_ctx.emit_status_update(
-                            status="running", data=_serialize_data(item)
-                        )
+                    )
+
+                    # Use asend pattern like in registry._wrap_generator_handler
+                    user_input: JsonValue | None = None
+
+                    try:
+                        input_q = _get_input_queue(run_id)
+                        while True:
+                            item = await app_gen.asend(user_input)
+                            # reset user input once it's sent to application
+                            user_input = None
+
+                            if isinstance(item, UserInputRequirement):
+                                await exec_ctx.emit_status_update(
+                                    status="waiting",
+                                    user_input_requirement=item,
+                                )
+                                # Wait for input from queue
+                                user_input = await asyncio.to_thread(input_q.get)
+                                await exec_ctx.emit_status_update(
+                                    status="running",
+                                    user_input=user_input,
+                                )
+                            else:
+                                await exec_ctx.emit_status_update(
+                                    status="running",
+                                    data=item,
+                                )
+                    except StopAsyncIteration:
+                        pass
 
                     await exec_ctx.emit_status_update(status="completed")
                     logger.info("Application execution completed for run_id=%s", run_id)
@@ -394,7 +567,7 @@ class Subscription:
                         "Application execution error for run_id=%s: %s", run_id, str(e)
                     )
                     await exec_ctx.emit_status_update(
-                        status="error", data=json.dumps({"error": str(e)})
+                        status="error", data={"error": str(e)}
                     )
                     raise
                 finally:
@@ -432,9 +605,13 @@ class Subscription:
 
                 # Cancel the asyncio task wrapper
                 task.cancel()
-            # Cleanup
 
             logger.debug("Unregistering run_id=%s", run_id)
+            exec_ctx.unregister_run(run_id)
+
+            # Clean up input queue
+            if run_id in _input_queues:
+                del _input_queues[run_id]
             exec_ctx.unregister_run(run_id)
 
 
