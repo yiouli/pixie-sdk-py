@@ -105,7 +105,7 @@ async def emit_status_update(
             update = AppRunUpdate(
                 run_id=ctx.run_id,
                 status=status,
-                _user_input_requirement=user_input_requirement,
+                user_input_requirement=user_input_requirement,
                 user_input=user_input,
                 data=data,
                 breakpoint=breakpt,
@@ -147,7 +147,7 @@ def emit_status_update_sync(
             update = AppRunUpdate(
                 run_id=ctx.run_id,
                 status=status,
-                _user_input_requirement=user_input_requirement,
+                user_input_requirement=user_input_requirement,
                 user_input=user_input,
                 data=data,
                 breakpoint=breakpt,

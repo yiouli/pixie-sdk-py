@@ -4,7 +4,7 @@ import asyncio
 import threading
 from dataclasses import dataclass
 from typing import AsyncGenerator, Generic, Literal, Optional, Any, TypeVar
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel, JsonValue, SkipValidation
 
 
 # Forward import to avoid circular dependency
@@ -95,16 +95,11 @@ class AppRunUpdate(BaseModel):
 
     run_id: str
     status: AppRunStatus
-    _user_input_requirement: UserInputRequirement | None = None
+    user_input_requirement: SkipValidation[UserInputRequirement | None] = None
     user_input: Optional[JsonValue] = None
     data: Optional[JsonValue] = None
     breakpoint: Optional[BreakpointDetail] = None
     trace: Optional[TraceDataType] = None
-
-    @property
-    def user_input_requirement(self) -> UserInputRequirement | None:
-        """Get the user input requirement, if any."""
-        return self._user_input_requirement
 
 
 @dataclass
