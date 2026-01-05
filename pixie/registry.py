@@ -1,7 +1,6 @@
 """Application registry for managing registered AI applications."""
 
 import logging
-from functools import partial
 from collections.abc import (
     AsyncGenerator as ABCAsyncGenerator,
     AsyncIterable,
@@ -263,28 +262,18 @@ def _register_generator(
 
 # Sync callable returning value
 @overload
-def pixie_app(
-    func: Callable[[P], R],
-    *,
-    name: str | None = None,
-) -> Callable[[P], R]: ...
+def pixie_app(func: Callable[[P], R]) -> Callable[[P], R]: ...
 
 
 # Async callable returning value
 @overload
-def pixie_app(
-    func: Callable[[P], Awaitable[R]],
-    *,
-    name: str | None = None,
-) -> Callable[[P], Awaitable[R]]: ...
+def pixie_app(func: Callable[[P], Awaitable[R]]) -> Callable[[P], Awaitable[R]]: ...
 
 
 # Async generator function
 @overload
 def pixie_app(
     func: Callable[[P], PixieGenerator[T, R]],
-    *,
-    name: str | None = None,
 ) -> Callable[[P], PixieGenerator[T, R]]: ...
 
 
@@ -292,61 +281,10 @@ def pixie_app(
 @overload
 def pixie_app(
     func: Callable[[P], Awaitable[PixieGenerator[T, R]]],
-    *,
-    name: str | None = None,
 ) -> Callable[[P], Awaitable[PixieGenerator[T, R]]]: ...
 
 
-# When called with only keyword arguments (parameterized decoration: @pixie_app(name="..."))
-# Returns a decorator function
-
-
-# Sync callable returning value
-@overload
-def pixie_app(
-    func: None = None,
-    *,
-    name: str,
-) -> Callable[[Callable[[P], R]], Callable[[P], R]]: ...
-
-
-# Async callable returning value
-@overload
-def pixie_app(
-    func: None = None,
-    *,
-    name: str,
-) -> Callable[[Callable[[P], Awaitable[R]]], Callable[[P], Awaitable[R]]]: ...
-
-
-# Async generator function
-@overload
-def pixie_app(
-    func: None = None,
-    *,
-    name: str,
-) -> Callable[
-    [Callable[[P], PixieGenerator[T, R]]], Callable[[P], PixieGenerator[T, R]]
-]: ...
-
-
-# Async function returning async generator
-@overload
-def pixie_app(
-    func: None = None,
-    *,
-    name: str,
-) -> Callable[
-    [Callable[[P], Awaitable[PixieGenerator[T, R]]]],
-    Callable[[P], Awaitable[PixieGenerator[T, R]]],
-]: ...
-
-
-def pixie_app(
-    func: Callable | None = None,
-    *,
-    name: str | None = None,
-) -> Callable:
+def pixie_app(func: Callable) -> Callable:
     """Register an application in the Pixie registry.
 
     This function can be used to register synchronous or asynchronous callables,
@@ -355,22 +293,16 @@ def pixie_app(
 
     Parameters
     ----------
-    func : Callable, optional
-        The function to be registered. If not provided, the decorator can be
-        used with additional arguments.
-    name : str, optional
-        The name to register the application under. If not provided, the
-        function's name will be used.
+    func : Callable
+        The function to be registered.
 
     Returns:
     -------
     Callable
         The original function, unmodified.
     """
-    if func is None:
-        return partial(pixie_app, name=name)
 
-    registry_key = name if name is not None else func.__name__
+    registry_key = func.__name__
 
     if registry_key in _registry:
         raise ValueError(f"Application '{registry_key}' is already registered")
