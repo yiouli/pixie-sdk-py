@@ -315,24 +315,6 @@ class Mutation:
     """GraphQL mutations."""
 
     @strawberry.mutation
-    async def send_test(self, message: str) -> bool:
-        """Send a test message to the test queue.
-
-        Args:
-            message: The test message to send.
-
-        Returns:
-            A boolean indicating whether the message was successfully sent.
-        """
-        try:
-            q = _get_input_queue("test")
-            q.put(message)
-            logger.info("Test message sent: %s", message)
-            return True
-        except Exception as e:
-            raise GraphQLError(f"Failed to send test message: {str(e)}") from e
-
-    @strawberry.mutation
     async def pause_run(
         self,
         run_id: str,
@@ -431,27 +413,6 @@ def _create_app_run_in_thread(run: Coroutine) -> tuple[Coroutine, Callable[[], b
 @strawberry.type
 class Subscription:
     """GraphQL subscriptions."""
-
-    @strawberry.subscription
-    async def test(self) -> AsyncGenerator[str, None]:
-        q = asyncio.Queue()
-
-        async def run_app():
-            while True:
-                # Use asyncio to avoid blocking
-                message = _get_input_queue("test").get()
-                await q.put(message)
-
-        run, cancel = _create_app_run_in_thread(run_app())
-        task = asyncio.create_task(run)
-
-        try:
-            while True:
-                message = await q.get()
-                yield message
-        finally:
-            cancel()
-            task.cancel()
 
     @strawberry.subscription
     async def run(
