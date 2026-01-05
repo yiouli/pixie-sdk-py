@@ -8,6 +8,7 @@ import importlib.util
 from pathlib import Path
 import uvicorn
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from strawberry.fastapi import GraphQLRouter
 import nest_asyncio
 
@@ -98,6 +99,15 @@ def create_app() -> FastAPI:
         title="Pixie SDK Server",
         description="Server for running AI applications and agents",
         version="0.1.0",
+    )
+
+    # Add CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Allows all origins
+        allow_credentials=True,
+        allow_methods=["*"],  # Allows all methods
+        allow_headers=["*"],  # Allows all headers
     )
 
     # Add GraphQL router with GraphiQL enabled
