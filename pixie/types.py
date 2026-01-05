@@ -1,10 +1,10 @@
 """Type definitions for SDK."""
 
-import asyncio
 import threading
 from dataclasses import dataclass
 from typing import AsyncGenerator, Generic, Literal, Optional, Any, TypeVar
-from pydantic import BaseModel, JsonValue, SkipValidation
+import janus
+from pydantic import BaseModel, JsonValue, PrivateAttr
 
 
 # Forward import to avoid circular dependency
@@ -95,11 +95,21 @@ class AppRunUpdate(BaseModel):
 
     run_id: str
     status: AppRunStatus
-    user_input_requirement: SkipValidation[UserInputRequirement | None] = None
     user_input: Optional[JsonValue] = None
     data: Optional[JsonValue] = None
     breakpoint: Optional[BreakpointDetail] = None
     trace: Optional[TraceDataType] = None
+    _user_input_requirement: UserInputRequirement | None = PrivateAttr(default=None)
+
+    def set_user_input_requirement(
+        self,
+        requirement: UserInputRequirement | None,
+    ) -> None:
+        self._user_input_requirement = requirement
+
+    @property
+    def user_input_requirement(self) -> UserInputRequirement | None:
+        return self._user_input_requirement
 
 
 @dataclass
@@ -108,7 +118,7 @@ class ExecutionContext:
 
     run_id: str
     # None is the sentinel to end the stream
-    status_queue: asyncio.Queue[AppRunUpdate | None]
+    status_queue: janus.Queue[AppRunUpdate | None]
     resume_event: threading.Event
     breakpoint_config: Optional[BreakpointConfig] = None
     cancelled: bool = False

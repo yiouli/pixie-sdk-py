@@ -1,12 +1,12 @@
 """Execution context management for pause/resume functionality."""
 
-import asyncio
 import logging
 from contextvars import ContextVar
 import threading
 from typing import Dict, Optional, Sequence
 from uuid import uuid4
 
+import janus
 from pydantic import JsonValue
 
 from pixie.types import (
@@ -39,7 +39,7 @@ def init_run(run_id: str) -> ExecutionContext:
         raise RuntimeError("Execution context is already set")
     ctx = ExecutionContext(
         run_id=run_id,
-        status_queue=asyncio.Queue(),
+        status_queue=janus.Queue(),
         resume_event=threading.Event(),
         breakpoint_config=None,
     )
@@ -87,7 +87,7 @@ def get_run_context(run_id: str) -> Optional[ExecutionContext]:
     return _active_runs.get(run_id)
 
 
-async def emit_status_update(
+def emit_status_update(
     status: AppRunStatus | None,
     user_input_requirement: UserInputRequirement | None = None,
     user_input: Optional[JsonValue] = None,
@@ -95,41 +95,11 @@ async def emit_status_update(
     breakpt: Optional[BreakpointDetail] = None,
     trace: Optional[dict] = None,
 ) -> None:
-    """Emit a status update to the status queue if available."""
-    ctx = _execution_context.get()
-    if ctx:
-        if status is None:
-            update = None
-            logger.debug("Emitted terminal status update for run %s", ctx.run_id)
-        else:
-            update = AppRunUpdate(
-                run_id=ctx.run_id,
-                status=status,
-                user_input_requirement=user_input_requirement,
-                user_input=user_input,
-                data=data,
-                breakpoint=breakpt,
-                trace=trace,
-            )
-            logger.debug(
-                "Emitted status update: %s for run %s", update.status, ctx.run_id
-            )
-        await ctx.status_queue.put(update)
+    """Emit a status update synchronously using sync queue interface.
 
-
-def emit_status_update_sync(
-    status: AppRunStatus | None,
-    user_input_requirement: UserInputRequirement | None = None,
-    user_input: Optional[JsonValue] = None,
-    data: Optional[JsonValue] = None,
-    breakpt: Optional[BreakpointDetail] = None,
-    trace: Optional[dict] = None,
-) -> None:
-    """Emit a status update synchronously using put_nowait.
-
-    This is a synchronous wrapper for emit_status_update that uses put_nowait
-    instead of async put. Use this when you need to emit updates from
-    synchronous code (e.g., span processors).
+    This is a synchronous wrapper for emit_status_update that uses the sync
+    interface of janus queue. Use this when you need to emit updates from
+    synchronous code or different threads (e.g., span processors).
 
     Args:
         status: The status to emit, or None to end the stream
@@ -147,16 +117,16 @@ def emit_status_update_sync(
             update = AppRunUpdate(
                 run_id=ctx.run_id,
                 status=status,
-                user_input_requirement=user_input_requirement,
                 user_input=user_input,
                 data=data,
                 breakpoint=breakpt,
                 trace=trace,
             )
+            update.set_user_input_requirement(user_input_requirement)
             logger.debug(
                 "Emitted status update: %s for run %s", update.status, ctx.run_id
             )
-        ctx.status_queue.put_nowait(update)
+        ctx.status_queue.sync_q.put(update)
 
 
 def set_breakpoint(

@@ -489,44 +489,42 @@ class Subscription:
                             user_input = None
 
                             if isinstance(item, UserInputRequirement):
-                                await exec_ctx.emit_status_update(
+                                exec_ctx.emit_status_update(
                                     status="waiting",
                                     user_input_requirement=item,
                                 )
                                 # Wait for input from queue
                                 user_input = await asyncio.to_thread(input_q.get)
-                                await exec_ctx.emit_status_update(
+                                exec_ctx.emit_status_update(
                                     status="running",
                                     user_input=user_input,
                                 )
                             else:
-                                await exec_ctx.emit_status_update(
+                                exec_ctx.emit_status_update(
                                     status="running",
                                     data=item,
                                 )
                     except StopAsyncIteration:
                         pass
 
-                    await exec_ctx.emit_status_update(status="completed")
+                    exec_ctx.emit_status_update(status="completed")
                     logger.info("Application execution completed for run_id=%s", run_id)
                 except (asyncio.CancelledError, AppRunCancelled):
                     logger.info("Application execution cancelled for run_id=%s", run_id)
-                    await exec_ctx.emit_status_update(status="cancelled")
+                    exec_ctx.emit_status_update(status="cancelled")
                     raise
                 except Exception as e:  # pylint: disable=broad-except
                     logger.error(
                         "Application execution error for run_id=%s: %s", run_id, str(e)
                     )
-                    await exec_ctx.emit_status_update(
-                        status="error", data={"error": str(e)}
-                    )
+                    exec_ctx.emit_status_update(status="error", data={"error": str(e)})
                     raise
                 finally:
                     logger.debug(
                         "Application execution task ending for run_id=%s", run_id
                     )
                     langfuse.flush()
-                    await exec_ctx.emit_status_update(status=None)
+                    exec_ctx.emit_status_update(status=None)
 
             run, cancel = _create_app_run_in_thread(run_application())
             task = asyncio.create_task(run)
@@ -534,7 +532,7 @@ class Subscription:
             # Stream status updates from queue
             while True:
                 # Wait for status update with timeout
-                pydantic_update = await status_queue.get()
+                pydantic_update = await status_queue.async_q.get()
                 if pydantic_update is None:
                     break
 
@@ -558,12 +556,17 @@ class Subscription:
                 task.cancel()
 
             logger.debug("Unregistering run_id=%s", run_id)
+
+            # Close the janus queue to release resources
+            if ctx and ctx.status_queue:
+                ctx.status_queue.close()
+                await ctx.status_queue.wait_closed()
+
             exec_ctx.unregister_run(run_id)
 
             # Clean up input queue
             if run_id in _input_queues:
                 del _input_queues[run_id]
-            exec_ctx.unregister_run(run_id)
 
 
 # Create the schema

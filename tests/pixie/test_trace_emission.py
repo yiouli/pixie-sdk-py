@@ -21,7 +21,7 @@ async def test_trace_emission_to_execution_context():
         "trace_id": "test-trace-id",
     }
 
-    exec_ctx.emit_status_update_sync(
+    exec_ctx.emit_status_update(
         status="running",
         trace=test_trace,
     )
@@ -30,7 +30,7 @@ async def test_trace_emission_to_execution_context():
     ctx = exec_ctx.get_current_context()
     assert ctx is not None
 
-    update = await asyncio.wait_for(ctx.status_queue.get(), timeout=1.0)
+    update = await asyncio.wait_for(ctx.status_queue.async_q.get(), timeout=1.0)
 
     # Verify the trace was received
     assert update is not None

@@ -281,7 +281,7 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
         self._emit_pause_event(span, "pause_start", pause_start_ns)
 
         # Put paused event in queue (using asyncio)
-        exec_ctx.emit_status_update_sync(status="paused", breakpt=breakpt)
+        exec_ctx.emit_status_update(status="paused", breakpt=breakpt)
 
         # Wait for resume (this blocks)
         exec_ctx.wait_for_resume()
@@ -328,7 +328,7 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
                 span.name,
             )
 
-        exec_ctx.emit_status_update_sync(status="running")
+        exec_ctx.emit_status_update(status="running")
 
     def _get_breakpoint_type(
         self,
@@ -404,7 +404,7 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
             )
 
             # Emit using sync helper
-            exec_ctx.emit_status_update_sync(
+            exec_ctx.emit_status_update(
                 status="running",
                 trace=trace_data,
             )
@@ -511,7 +511,7 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
             # 1. Emit to execution context queue for subscription updates
             ctx = exec_ctx.get_current_context()
             if ctx is not None:
-                exec_ctx.emit_status_update_sync(
+                exec_ctx.emit_status_update(
                     status="running",
                     trace=pause_event,
                 )

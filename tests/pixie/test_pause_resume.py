@@ -37,7 +37,6 @@ async def test_execution_context_management() -> None:
 
     ctx = exec_ctx.init_run(run_id)
     assert ctx.run_id == run_id
-    assert isinstance(ctx.status_queue, asyncio.Queue)
 
     retrieved_ctx = exec_ctx.get_run_context(run_id)
     assert retrieved_ctx is not None
@@ -89,8 +88,8 @@ async def test_pause_and_resume() -> None:
     assert not exec_ctx.resume_run(run_id)
 
     # Emit an explicit status update to the queue
-    await exec_ctx.emit_status_update(status="running")
-    update = await asyncio.wait_for(ctx.status_queue.get(), timeout=1.0)
+    exec_ctx.emit_status_update(status="running")
+    update = await asyncio.wait_for(ctx.status_queue.async_q.get(), timeout=1.0)
     assert update is not None
     assert update.status == "running"
 
@@ -103,12 +102,14 @@ async def test_status_update_emission() -> None:
     run_id = "test-run-abc"
     ctx = exec_ctx.init_run(run_id)
 
-    await exec_ctx.emit_status_update(
+    exec_ctx.emit_status_update(
         status="paused",
         data='{"span_type": "LLM", "span_name": "openai.chat.completions"}',
     )
 
-    received_update = await asyncio.wait_for(ctx.status_queue.get(), timeout=1.0)
+    received_update = await asyncio.wait_for(
+        ctx.status_queue.async_q.get(), timeout=1.0
+    )
     assert received_update is not None
     assert received_update.status == "paused"
 
@@ -171,14 +172,16 @@ async def test_status_update_with_breakpoint() -> None:
     )
 
     # Emit status update with breakpoint
-    await exec_ctx.emit_status_update(
+    exec_ctx.emit_status_update(
         status="paused",
         data='{"span_type": "TOOL", "span_name": "tool.search_knowledge_base"}',
         breakpt=bp,
     )
 
     # Verify update was queued
-    received_update = await asyncio.wait_for(ctx.status_queue.get(), timeout=1.0)
+    received_update = await asyncio.wait_for(
+        ctx.status_queue.async_q.get(), timeout=1.0
+    )
     assert received_update is not None
     assert received_update.status == "paused"
 
@@ -321,25 +324,25 @@ async def test_multiple_status_updates() -> None:
     ctx = exec_ctx.init_run(run_id)
 
     # Emit multiple updates
-    await exec_ctx.emit_status_update(status="running")
-    await exec_ctx.emit_status_update(status="paused", data='{"step": 1}')
-    await exec_ctx.emit_status_update(status="running")
-    await exec_ctx.emit_status_update(status="completed", data='{"result": "success"}')
+    exec_ctx.emit_status_update(status="running")
+    exec_ctx.emit_status_update(status="paused", data='{"step": 1}')
+    exec_ctx.emit_status_update(status="running")
+    exec_ctx.emit_status_update(status="completed", data='{"result": "success"}')
 
     # Verify all updates are in queue in order
-    update1 = await asyncio.wait_for(ctx.status_queue.get(), timeout=1.0)
+    update1 = await asyncio.wait_for(ctx.status_queue.async_q.get(), timeout=1.0)
     assert update1 is not None
     assert update1.status == "running"
 
-    update2 = await asyncio.wait_for(ctx.status_queue.get(), timeout=1.0)
+    update2 = await asyncio.wait_for(ctx.status_queue.async_q.get(), timeout=1.0)
     assert update2 is not None
     assert update2.status == "paused"
 
-    update3 = await asyncio.wait_for(ctx.status_queue.get(), timeout=1.0)
+    update3 = await asyncio.wait_for(ctx.status_queue.async_q.get(), timeout=1.0)
     assert update3 is not None
     assert update3.status == "running"
 
-    update4 = await asyncio.wait_for(ctx.status_queue.get(), timeout=1.0)
+    update4 = await asyncio.wait_for(ctx.status_queue.async_q.get(), timeout=1.0)
     assert update4 is not None
     assert update4.status == "completed"
 
@@ -353,17 +356,17 @@ async def test_terminal_status_update() -> None:
     ctx = exec_ctx.init_run(run_id)
 
     # Emit a normal update first
-    await exec_ctx.emit_status_update(status="running")
+    exec_ctx.emit_status_update(status="running")
 
     # Emit terminal update (None)
-    await exec_ctx.emit_status_update(status=None)
+    exec_ctx.emit_status_update(status=None)
 
     # Verify both are in queue
-    update1 = await asyncio.wait_for(ctx.status_queue.get(), timeout=1.0)
+    update1 = await asyncio.wait_for(ctx.status_queue.async_q.get(), timeout=1.0)
     assert update1 is not None
     assert update1.status == "running"
 
-    update2 = await asyncio.wait_for(ctx.status_queue.get(), timeout=1.0)
+    update2 = await asyncio.wait_for(ctx.status_queue.async_q.get(), timeout=1.0)
     assert update2 is None  # Terminal sentinel
 
     exec_ctx.unregister_run(run_id)
@@ -399,7 +402,7 @@ async def test_emit_status_update_no_context() -> None:
     exec_ctx._execution_context.set(None)
 
     # Should not raise an error, just do nothing
-    await exec_ctx.emit_status_update(status="running")
+    exec_ctx.emit_status_update(status="running")
 
 
 @pytest.mark.asyncio
@@ -422,7 +425,7 @@ async def test_pause_resume_full_cycle() -> None:
     )
 
     # Emit paused status
-    await exec_ctx.emit_status_update(status="paused", breakpt=bp)
+    exec_ctx.emit_status_update(status="paused", breakpt=bp)
 
     # Resume in background thread
     import concurrent.futures
@@ -455,7 +458,7 @@ async def test_pause_resume_full_cycle() -> None:
     assert not fresh_ctx.resume_event.is_set()
 
     # Verify status update was queued
-    update = await asyncio.wait_for(fresh_ctx.status_queue.get(), timeout=1.0)
+    update = await asyncio.wait_for(fresh_ctx.status_queue.async_q.get(), timeout=1.0)
     assert update is not None
     assert update.status == "paused"
     assert update.breakpoint is not None
