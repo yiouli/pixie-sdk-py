@@ -51,27 +51,28 @@ class TestBasicRegistration:
         assert app.input_type is None
         assert app.output_type is None
 
-    def test_register_with_custom_name(self):
-        """Test registering with a custom name."""
+    def test_function_name_used_as_registry_key(self):
+        """Test that function name is used as registry key."""
 
-        @pixie_app(name="custom_name")
+        @pixie_app
         def my_app(_input_data: JsonValue) -> JsonValue:
             return {"result": "ok"}
 
-        assert "custom_name" in list_applications()
-        assert "my_app" not in list_applications()
+        assert "my_app" in list_applications()
+        app = get_application("my_app")
+        assert app is not None
 
-    def test_register_duplicate_name_raises_error(self):
-        """Test that registering duplicate names raises an error."""
+    def test_register_duplicate_function_name_raises_error(self):
+        """Test that registering duplicate function names raises an error."""
 
-        @pixie_app(name="duplicate")
-        def app1(_input_data: JsonValue) -> JsonValue:
+        @pixie_app
+        def duplicate_app(_input_data: JsonValue) -> JsonValue:
             return {"app": "1"}
 
         with pytest.raises(ValueError, match="already registered"):
 
-            @pixie_app(name="duplicate")
-            def app2(_input_data: JsonValue) -> JsonValue:
+            @pixie_app
+            def duplicate_app(_input_data: JsonValue) -> JsonValue:  # noqa # pylint: disable=E0102
                 return {"app": "2"}
 
     def test_decorator_with_parentheses(self):
@@ -120,6 +121,32 @@ class TestTypeExtraction:
         assert app is not None
         assert app.input_type == InputModel
         assert app.output_type == OutputModel
+
+    def test_register_with_simple_types(self):
+        """Test registering with simple types like str, int."""
+
+        @pixie_app
+        def string_app(text: str) -> str:
+            return text.upper()
+
+        app = get_application("string_app")
+        assert app is not None
+        assert isinstance(app.input_type, dict)
+        assert app.input_type["type"] == "string"
+        assert isinstance(app.output_type, dict)
+        assert app.output_type["type"] == "string"
+
+    def test_register_with_jsonvalue_returns_none_schema(self):
+        """Test that JsonValue types result in None schema."""
+
+        @pixie_app
+        def json_app(data: JsonValue) -> JsonValue:
+            return data
+
+        app = get_application("json_app")
+        assert app is not None
+        assert app.input_type is None
+        assert app.output_type is None
 
 
 class TestCallableApplications:
@@ -287,6 +314,140 @@ class TestGeneratorApplications:
         assert app is not None
         # Generator should be registered successfully
         assert app.stream_handler is not None
+
+
+class TestGeneratorRegistration:
+    """Test generator registration and schema extraction."""
+
+    def test_generator_with_pydantic_yield_type_schema(self):
+        """Test that generator yield type schema is extracted correctly."""
+
+        @pixie_app
+        async def pydantic_yield_gen(
+            _data: JsonValue,  # noqa: ARG001
+        ) -> AsyncGenerator[OutputModel, None]:
+            yield OutputModel(result="test")
+
+        app = get_application("pydantic_yield_gen")
+        assert app is not None
+        assert app.output_type == OutputModel
+        assert app.user_input_type is None  # No send type
+
+    def test_generator_with_pydantic_send_type_schema(self):
+        """Test that generator send type schema is extracted correctly."""
+
+        @pixie_app
+        async def interactive_gen(
+            _data: JsonValue,  # noqa: ARG001
+        ) -> AsyncGenerator[OutputModel, InputModel]:
+            user_input: InputModel = yield OutputModel(result="first")  # type: ignore
+            yield OutputModel(result=f"got: {user_input.message}")
+
+        app = get_application("interactive_gen")
+        assert app is not None
+        assert app.output_type == OutputModel
+        assert app.user_input_type == InputModel
+
+    def test_generator_with_jsonvalue_yield_no_schema(self):
+        """Test that JsonValue yield type results in None schema."""
+
+        @pixie_app
+        async def json_gen(
+            _data: JsonValue,  # noqa: ARG001
+        ) -> AsyncGenerator[JsonValue, None]:
+            yield {"test": "data"}
+
+        app = get_application("json_gen")
+        assert app is not None
+        assert app.output_type is None  # JsonValue -> None
+        assert app.user_input_type is None
+
+    def test_generator_with_both_pydantic_types(self):
+        """Test generator with both Pydantic input and output schemas."""
+
+        @pixie_app
+        async def full_typed_gen(
+            data: InputModel,
+        ) -> AsyncGenerator[OutputModel, InputModel]:
+            yield OutputModel(result=f"Processing: {data.message}")
+            feedback: InputModel = yield  # type: ignore
+            yield OutputModel(result=f"Feedback: {feedback.message}")
+
+        app = get_application("full_typed_gen")
+        assert app is not None
+        assert app.input_type == InputModel
+        assert app.output_type == OutputModel
+        assert app.user_input_type == InputModel
+
+    def test_generator_with_simple_type_input(self):
+        """Test generator with simple type input has schema."""
+
+        @pixie_app
+        async def str_input_gen(text: str) -> AsyncGenerator[JsonValue, None]:
+            yield {"processed": text.upper()}
+
+        app = get_application("str_input_gen")
+        assert app is not None
+        assert isinstance(app.input_type, dict)
+        assert app.input_type["type"] == "string"
+
+    def test_generator_factory_pattern_schema(self):
+        """Test that async function returning generator extracts schema."""
+
+        @pixie_app
+        async def factory_with_types(
+            data: InputModel,
+        ) -> AsyncGenerator[OutputModel, None]:
+            async def _gen() -> AsyncGenerator[OutputModel, None]:
+                for i in range(data.count):
+                    yield OutputModel(result=f"item_{i}")
+
+            return _gen()
+
+        app = get_application("factory_with_types")
+        assert app is not None
+        assert app.input_type == InputModel
+        assert app.output_type == OutputModel
+        assert app.user_input_type is None
+
+    @pytest.mark.asyncio
+    async def test_interactive_generator_with_send(self):
+        """Test interactive generator that receives user input."""
+
+        @pixie_app
+        async def interactive(
+            data: InputModel,
+        ) -> AsyncGenerator[OutputModel, InputModel]:
+            # First yield - output to user
+            yield OutputModel(result=f"Starting: {data.message}")
+
+            # Second yield - waiting for user input (yields None)
+            user_input: InputModel = yield  # type: ignore
+
+            # Third yield - output based on user input
+            yield OutputModel(result=f"User said: {user_input.message}")
+
+        # Call and interact with the generator
+        gen = call_application("interactive", {"message": "hello", "count": 1})
+
+        # Get first output
+        first = await gen.asend(None)
+        assert first == {"result": "Starting: hello"}
+
+        # Generator is now at the "waiting for input" yield, which returns None
+        waiting = await gen.asend(None)
+        assert waiting is None
+
+        # Send user input and get final output
+        final = await gen.asend({"message": "feedback", "count": 2})
+        assert final == {"result": "User said: feedback"}
+
+        # Generator should complete
+        try:
+            await gen.asend(None)
+            assert False, "Expected StopAsyncIteration"
+        except StopAsyncIteration:
+            pass
 
 
 class TestEdgeCases:

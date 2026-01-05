@@ -25,6 +25,7 @@ import inspect
 from pydantic import BaseModel, JsonValue
 
 from pixie.types import PixieGenerator, UserInputRequirement
+from pixie.utils import extract_schema_from_type
 
 
 logger = logging.getLogger(__name__)
@@ -40,17 +41,17 @@ class RegistryItem:
         stream_handler: Callable[
             [JsonValue], AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]
         ],
-        input_type: Optional[type[BaseModel]],
-        user_input_type: Optional[type[BaseModel]],
-        output_type: Optional[type[BaseModel]],
+        input_type: Optional[type[BaseModel]] | dict,
+        user_input_type: Optional[type[BaseModel]] | dict | None,
+        output_type: Optional[type[BaseModel]] | dict,
     ):
         """Initialize a RegistryItem.
 
         Args:
             stream_handler: The handler function for streaming.
-            input_type (Optional[type[BaseModel]]): The expected input Pydantic model type.
-            user_input_type (Optional[type[BaseModel]]): The expected user input Pydantic model type.
-            output_type (Optional[type[BaseModel]]): The expected output Pydantic model type.
+            input_type: The expected input schema - either a Pydantic model type or JSON schema dict.
+            user_input_type: The expected user input schema - Pydantic model type, JSON schema dict, or None.
+            output_type: The expected output schema - either a Pydantic model type or JSON schema dict.
         """
         self.stream_handler = stream_handler
         self.input_type = input_type
@@ -117,7 +118,11 @@ def _is_async_generator_hint(type_hint: Any) -> bool:
 
 
 def _extract_input_type(func: Application) -> Optional[type[BaseModel]]:
-    """Extract input Pydantic model type from function signature."""
+    """Extract input Pydantic model type from function signature.
+
+    Returns only BaseModel types, used for automatic conversion.
+    For schema extraction, use _extract_input_hint instead.
+    """
     try:
         hints = get_type_hints(func)
         sig = inspect.signature(func)
@@ -131,6 +136,26 @@ def _extract_input_type(func: Application) -> Optional[type[BaseModel]]:
         if inspect.isclass(param_type) and issubclass(param_type, BaseModel):
             return param_type
         return None
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _extract_input_hint(func: Application) -> Optional[Any]:
+    """Extract input type hint from function signature.
+
+    Returns any type hint, not just BaseModel types.
+    Used for schema extraction.
+    """
+    try:
+        hints = get_type_hints(func)
+        sig = inspect.signature(func)
+        params = list(sig.parameters.values())
+
+        if not params:
+            return None
+
+        param_name = params[0].name
+        return hints.get(param_name)
     except (TypeError, ValueError, AttributeError):
         return None
 
@@ -208,25 +233,25 @@ def _register_callable(
     registry_key: str,
 ) -> None:
     """Register a callable application that returns a single result."""
-    input_type = _extract_input_type(func)
+    input_model_type = _extract_input_type(func)
+    input_hint = _extract_input_hint(func)
+    input_schema = extract_schema_from_type(input_hint)
 
-    output_type: Optional[type[BaseModel]] = None
+    output_schema = None
     try:
         hints = get_type_hints(func)
         output_hint = hints.get("return")
-        if inspect.isclass(output_hint) and issubclass(output_hint, BaseModel):
-            output_type = output_hint
-
+        output_schema = extract_schema_from_type(output_hint)
     except (TypeError, ValueError, AttributeError):
-        output_type = None
+        pass
 
-    stream_handler = _wrap_callable_handler(func, input_type)
+    stream_handler = _wrap_callable_handler(func, input_model_type)
 
     _registry[registry_key] = RegistryItem(
         stream_handler=stream_handler,
-        input_type=input_type,
+        input_type=input_schema,
         user_input_type=None,
-        output_type=output_type,
+        output_type=output_schema,
     )
 
 
@@ -235,23 +260,32 @@ def _register_generator(
     registry_key: str,
 ) -> None:
     """Register a generator application that yields multiple results."""
-    input_type = _extract_input_type(func)
+    input_model_type = _extract_input_type(func)
+    input_hint = _extract_input_hint(func)
+    input_schema = extract_schema_from_type(input_hint)
 
-    output_type: Optional[type[BaseModel]] = None
-    user_input_type: Optional[type[BaseModel]] = None
+    output_model_type: Optional[type[BaseModel]] = None
+    user_input_model_type: Optional[type[BaseModel]] = None
     try:
         hints = get_type_hints(func)
         return_hint = hints.get("return")
-        output_type, user_input_type = _get_async_generator_model_types(return_hint)
+        output_model_type, user_input_model_type = _get_async_generator_model_types(
+            return_hint
+        )
     except (TypeError, ValueError, AttributeError):
         pass
 
-    stream_handler = _wrap_generator_handler(func, input_type, user_input_type)
+    output_schema = extract_schema_from_type(output_model_type)
+    user_input_schema = extract_schema_from_type(user_input_model_type)
+
+    stream_handler = _wrap_generator_handler(
+        func, input_model_type, user_input_model_type
+    )
     _registry[registry_key] = RegistryItem(
         stream_handler=stream_handler,
-        input_type=input_type,
-        user_input_type=user_input_type,
-        output_type=output_type,
+        input_type=input_schema,
+        user_input_type=user_input_schema,
+        output_type=output_schema,
     )
 
 

@@ -9,13 +9,14 @@ from enum import Enum
 from typing import AsyncGenerator, Callable, Coroutine, Optional, cast
 
 from graphql import GraphQLError
-from pydantic import JsonValue
+from pydantic import BaseModel, JsonValue
 import strawberry
 import strawberry.experimental.pydantic
 from strawberry.scalars import JSON
 
 from langfuse import get_client
-from pixie.registry import call_application, get_application
+from pixie.registry import call_application, get_application, list_applications
+from pixie.utils import get_json_schema_for_type
 from pixie.types import (
     AppRunCancelled,
     BreakpointDetail as PydanticBreakpointDetail,
@@ -228,7 +229,7 @@ class AppRunUpdate:
         """Convert from Pydantic AppRunUpdate to Strawberry AppRunUpdate."""
         if instance.user_input_requirement:
             user_input_schema = JSON(
-                _get_json_schema_for_type(instance.user_input_requirement.expected_type)
+                get_json_schema_for_type(instance.user_input_requirement.expected_type)
             )
         else:
             user_input_schema = None
@@ -246,6 +247,23 @@ class AppRunUpdate:
 
 
 @strawberry.type
+class AppInfo:
+    """Schema information for a registered agent.
+
+    Attributes:
+        name: The unique name identifier for the agent.
+        input_schema: JSON schema for the agent's input (either from Pydantic model or JsonValue type).
+        user_input_schema: JSON schema for user input during execution (None for non-generator agents).
+        output_schema: JSON schema for the agent's output (either from Pydantic model or JsonValue type).
+    """
+
+    name: str
+    input_schema: Optional[JSON] = None
+    user_input_schema: Optional[JSON] = None
+    output_schema: Optional[JSON] = None
+
+
+@strawberry.type
 class Query:
     """GraphQL queries."""
 
@@ -254,6 +272,42 @@ class Query:
         """Health check endpoint."""
         logger.debug("Health check endpoint called")
         return "OK"
+
+    @strawberry.field
+    def list_apps(self) -> list[AppInfo]:
+        """List all registered agents with their JSON schemas.
+
+        Returns:
+            A list of agent schemas containing name and input/output/user_input schemas.
+        """
+        agent_names = list_applications()
+        agent_schemas = []
+
+        for name in agent_names:
+            app_info = get_application(name)
+            if app_info is None:
+                continue
+
+            # Convert schema to JSON if it's a Pydantic model class
+            def convert_to_json(schema_obj):
+                if schema_obj is None:
+                    return None
+                if isinstance(schema_obj, type) and issubclass(schema_obj, BaseModel):
+                    return JSON(schema_obj.model_json_schema())
+                if isinstance(schema_obj, dict):
+                    return JSON(schema_obj)
+                return None
+
+            agent_schemas.append(
+                AppInfo(
+                    name=name,
+                    input_schema=convert_to_json(app_info.input_type),
+                    user_input_schema=convert_to_json(app_info.user_input_type),
+                    output_schema=convert_to_json(app_info.output_type),
+                )
+            )
+
+        return agent_schemas
 
 
 @strawberry.type
@@ -372,70 +426,6 @@ def _create_app_run_in_thread(run: Coroutine) -> tuple[Coroutine, Callable[[], b
     task = loop.create_task(run)
 
     return asyncio.to_thread(lambda: loop.run_until_complete(task)), task.cancel
-
-
-def _get_json_schema_for_type(expected_type) -> dict:
-    """Convert a Python type to JSON schema.
-
-    Args:
-        expected_type: The type to convert to JSON schema
-
-    Returns:
-        A JSON schema dict representing the type
-    """
-    # Check if it's a Pydantic model
-    try:
-        from pydantic import BaseModel
-
-        if isinstance(expected_type, type) and issubclass(expected_type, BaseModel):
-            return expected_type.model_json_schema()
-    except (TypeError, ImportError):
-        pass
-
-    # Handle simple types
-    simple_type_mapping = {
-        str: {"type": "string"},
-        int: {"type": "integer"},
-        float: {"type": "number"},
-        bool: {"type": "boolean"},
-        type(None): {"type": "null"},
-    }
-
-    if expected_type in simple_type_mapping:
-        return simple_type_mapping[expected_type]
-
-    # Handle dict
-    if expected_type is dict:
-        return {"type": "object"}
-
-    # Handle list
-    if expected_type is list:
-        return {"type": "array"}
-
-    # Try to handle typing generics (Optional, List, Dict, etc.)
-    import typing
-
-    origin = typing.get_origin(expected_type)
-
-    if origin is dict:
-        return {"type": "object"}
-    elif origin is list:
-        args = typing.get_args(expected_type)
-        if args:
-            # Recursively get schema for list item type
-            item_schema = _get_json_schema_for_type(args[0])
-            return {"type": "array", "items": item_schema}
-        return {"type": "array"}
-    elif origin is typing.Union:
-        # Handle Optional (Union[X, None])
-        args = typing.get_args(expected_type)
-        non_none_types = [arg for arg in args if arg is not type(None)]
-        if len(non_none_types) == 1:
-            # It's Optional[X]
-            return _get_json_schema_for_type(non_none_types[0])
-
-    # Catch-all: completely loose schema (no type requirement)
-    return {}
 
 
 @strawberry.type

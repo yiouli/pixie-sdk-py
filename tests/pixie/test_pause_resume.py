@@ -1,6 +1,7 @@
 """Test pause/resume functionality."""
 
 import asyncio
+import json
 from typing import Generator, cast
 import pytest
 from pixie.types import (
@@ -112,7 +113,7 @@ async def test_status_update_emission() -> None:
     assert received_update.status == "paused"
 
     assert received_update.data is not None
-    data = cast(dict, received_update.data)
+    data = json.loads(cast(str, received_update.data))
     assert data["span_type"] == "LLM"
 
     exec_ctx.unregister_run(run_id)
@@ -182,7 +183,7 @@ async def test_status_update_with_breakpoint() -> None:
     assert received_update.status == "paused"
 
     assert received_update.data is not None
-    data = cast(dict, received_update.data)
+    data = json.loads(cast(str, received_update.data))
     assert data["span_type"] == "TOOL"
     assert received_update.breakpoint is not None
     assert received_update.breakpoint.breakpoint_timing == "AFTER"
