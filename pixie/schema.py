@@ -461,7 +461,6 @@ class Subscription:
             pydantic_update = PydanticAppRunUpdate(
                 run_id=run_id,
                 status="running",
-                data=json.dumps({"run_id": run_id}),
             )
             yield AppRunUpdate.from_pydantic(pydantic_update)
             # set the context again after yield -- the fastapi/strawberry framework resets execution context
