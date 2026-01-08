@@ -1,3 +1,4 @@
+# flake8: noqa: E501
 """Langfuse OpenTelemetry integration module.
 
 This module implements Langfuse's core observability functionality on top of the OpenTelemetry (OTel) standard.
@@ -39,6 +40,7 @@ from packaging.version import Version
 from langfuse._client.attributes import LangfuseOtelSpanAttributes, _serialize
 from langfuse._client.constants import (
     LANGFUSE_SDK_EXPERIMENT_ENVIRONMENT,
+    PIXIE_ONLY_MODE_PLACEHOLDER,
     ObservationTypeGenerationLike,
     ObservationTypeLiteral,
     ObservationTypeLiteralNoEvent,
@@ -263,22 +265,23 @@ class Langfuse:
             langfuse_logger.setLevel(logging.DEBUG)
 
         public_key = public_key or os.environ.get(LANGFUSE_PUBLIC_KEY)
-        if public_key is None:
-            langfuse_logger.warning(
-                "Authentication error: Langfuse client initialized without public_key. Client will be disabled. "
-                "Provide a public_key parameter or set LANGFUSE_PUBLIC_KEY environment variable. "
-            )
-            self._otel_tracer = otel_trace_api.NoOpTracer()
-            return
-
         secret_key = secret_key or os.environ.get(LANGFUSE_SECRET_KEY)
-        if secret_key is None:
-            langfuse_logger.warning(
-                "Authentication error: Langfuse client initialized without secret_key. Client will be disabled. "
-                "Provide a secret_key parameter or set LANGFUSE_SECRET_KEY environment variable. "
+
+        # Check if we have credentials for Langfuse server export
+        has_credentials = public_key is not None and secret_key is not None
+
+        if not has_credentials:
+            langfuse_logger.info(
+                "Langfuse client initialized without credentials. "
+                "Server export to Langfuse API is disabled, but Pixie features "
+                "(pause/resume, trace emission to client) will remain active. "
+                "To enable Langfuse server export, provide public_key and secret_key parameters "
+                "or set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY environment variables."
             )
-            self._otel_tracer = otel_trace_api.NoOpTracer()
-            return
+            # Use placeholder keys for internal bookkeeping
+            # These won't be used for actual API calls since server export is disabled
+            public_key = public_key or PIXIE_ONLY_MODE_PLACEHOLDER
+            secret_key = secret_key or PIXIE_ONLY_MODE_PLACEHOLDER
 
         if os.environ.get("OTEL_SDK_DISABLED", "false").lower() == "true":
             langfuse_logger.warning(
@@ -286,6 +289,10 @@ class Langfuse:
             )
 
         # Initialize api and tracer if requirements are met
+        # At this point, public_key and secret_key are guaranteed to be non-None
+        # (either from parameters/env vars or set to placeholder values for Pixie-only mode)
+        assert public_key is not None and secret_key is not None
+
         self._resources = LangfuseResourceManager(
             public_key=public_key,
             secret_key=secret_key,
@@ -3228,6 +3235,15 @@ class Langfuse:
         Note:
             This method is blocking. It is discouraged to use it in production code.
         """
+        # Skip API auth check in Pixie-only mode (when using placeholder credentials)
+        if hasattr(self, "_resources") and self._resources:
+            public_key = self._resources.public_key
+            if public_key == PIXIE_ONLY_MODE_PLACEHOLDER:
+                langfuse_logger.debug(
+                    "Auth check skipped: Running in Pixie-only mode without Langfuse credentials."
+                )
+                return True
+
         try:
             projects = self.api.projects.get()
             langfuse_logger.debug(

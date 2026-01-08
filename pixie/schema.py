@@ -447,7 +447,9 @@ class Subscription:
         if langfuse.auth_check():
             logger.info("Langfuse client initialized successfully.")
         else:
-            logger.warning("Langfuse client authentication failed.")
+            logger.warning(
+                "Langfuse client authentication failed. Continuing in Pixie-only mode."
+            )
 
         # Check if application exists
         if not get_application(id):

@@ -49,14 +49,21 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
     1. Project-scoped span filtering to prevent cross-project data leakage
     2. Instrumentation scope filtering to block spans from specific libraries/frameworks
     3. Configurable batch processing parameters for optimal performance
-    4. HTTP-based span export to the Langfuse OTLP endpoint
+    4. HTTP-based span export to the Langfuse OTLP endpoint (optional, can be disabled)
     5. Debug logging for span processing operations
-    6. Authentication with Langfuse API using Basic Auth
+    6. Authentication with Langfuse API using Basic Auth (when server export enabled)
+    7. Pixie integration for pause/resume and trace emission to GraphQL subscriptions
 
     The processor is designed to efficiently handle large volumes of spans with
     minimal overhead, while ensuring spans are only sent to the correct project.
     It integrates with OpenTelemetry's standard span lifecycle, adding Langfuse-specific
     filtering and export capabilities.
+
+    **Pixie-only Mode**: When initialized without credentials (server_export_enabled=False),
+    the processor operates in Pixie-only mode where:
+    - Spans are NOT exported to the Langfuse server
+    - All Pixie features remain active: pause/resume, trace emission to GraphQL subscriptions
+    - This enables using Pixie for observability without requiring a Langfuse account
     """
 
     def __init__(
@@ -70,8 +77,10 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
         flush_interval: Optional[float] = None,
         blocked_instrumentation_scopes: Optional[List[str]] = None,
         additional_headers: Optional[Dict[str, str]] = None,
+        server_export_enabled: bool = True,
     ):
         self.public_key = public_key
+        self.server_export_enabled = server_export_enabled
         self.blocked_instrumentation_scopes = (
             blocked_instrumentation_scopes
             if blocked_instrumentation_scopes is not None
@@ -88,34 +97,62 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
             else None
         )
 
-        basic_auth_header = "Basic " + base64.b64encode(
-            f"{public_key}:{secret_key}".encode("utf-8")
-        ).decode("ascii")
+        # Only create real exporter if server export is enabled
+        if server_export_enabled:
+            basic_auth_header = "Basic " + base64.b64encode(
+                f"{public_key}:{secret_key}".encode("utf-8")
+            ).decode("ascii")
 
-        # Prepare default headers
-        default_headers = {
-            "Authorization": basic_auth_header,
-            "x-langfuse-sdk-name": "python",
-            "x-langfuse-sdk-version": langfuse_version,
-            "x-langfuse-public-key": public_key,
-        }
+            # Prepare default headers
+            default_headers = {
+                "Authorization": basic_auth_header,
+                "x-langfuse-sdk-name": "python",
+                "x-langfuse-sdk-version": langfuse_version,
+                "x-langfuse-public-key": public_key,
+            }
 
-        # Merge additional headers if provided
-        headers = {**default_headers, **(additional_headers or {})}
+            # Merge additional headers if provided
+            headers = {**default_headers, **(additional_headers or {})}
 
-        traces_export_path = os.environ.get(LANGFUSE_OTEL_TRACES_EXPORT_PATH, None)
+            traces_export_path = os.environ.get(LANGFUSE_OTEL_TRACES_EXPORT_PATH, None)
 
-        endpoint = (
-            f"{base_url}/{traces_export_path}"
-            if traces_export_path
-            else f"{base_url}/api/public/otel/v1/traces"
-        )
+            endpoint = (
+                f"{base_url}/{traces_export_path}"
+                if traces_export_path
+                else f"{base_url}/api/public/otel/v1/traces"
+            )
 
-        langfuse_span_exporter = OTLPSpanExporter(
-            endpoint=endpoint,
-            headers=headers,
-            timeout=timeout,
-        )
+            langfuse_span_exporter = OTLPSpanExporter(
+                endpoint=endpoint,
+                headers=headers,
+                timeout=timeout,
+            )
+
+            langfuse_logger.info(
+                "Langfuse span processor initialized with server export enabled to %s",
+                endpoint,
+            )
+        else:
+            # Use NoOp exporter that doesn't send data anywhere
+            from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
+
+            class NoOpSpanExporter(SpanExporter):
+                """No-op span exporter that doesn't export spans to any backend."""
+
+                def export(self, spans):
+                    # Don't export spans
+                    return SpanExportResult.SUCCESS
+
+                def shutdown(self):
+                    pass
+
+            langfuse_span_exporter = NoOpSpanExporter()
+
+            langfuse_logger.info(
+                "Langfuse span processor initialized in Pixie-only mode. "
+                "Server export to Langfuse API is disabled. "
+                "Pixie features (pause/resume, trace emission) remain active."
+            )
 
         super().__init__(
             span_exporter=langfuse_span_exporter,

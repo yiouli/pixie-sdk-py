@@ -28,7 +28,7 @@ from opentelemetry.sdk.trace.sampling import Decision, TraceIdRatioBased
 from opentelemetry.trace import Tracer
 
 from langfuse._client.attributes import LangfuseOtelSpanAttributes
-from langfuse._client.constants import LANGFUSE_TRACER_NAME
+from langfuse._client.constants import LANGFUSE_TRACER_NAME, PIXIE_ONLY_MODE_PLACEHOLDER
 from langfuse._client.environment_variables import (
     LANGFUSE_MEDIA_UPLOAD_ENABLED,
     LANGFUSE_MEDIA_UPLOAD_THREAD_COUNT,
@@ -182,6 +182,12 @@ class LangfuseResourceManager:
             )
             self.tracer_provider = tracer_provider
 
+            # Determine if we have real credentials (not placeholder keys)
+            server_export_enabled = self.public_key not in [
+                PIXIE_ONLY_MODE_PLACEHOLDER,
+                None,
+            ] and secret_key not in [PIXIE_ONLY_MODE_PLACEHOLDER, None]
+
             langfuse_processor = LangfuseSpanProcessor(
                 public_key=self.public_key,
                 secret_key=secret_key,
@@ -191,6 +197,7 @@ class LangfuseResourceManager:
                 flush_interval=flush_interval,
                 blocked_instrumentation_scopes=blocked_instrumentation_scopes,
                 additional_headers=additional_headers,
+                server_export_enabled=server_export_enabled,
             )
             tracer_provider.add_span_processor(langfuse_processor)
 
@@ -202,10 +209,10 @@ class LangfuseResourceManager:
 
         # API Clients
 
-        ## API clients must be singletons because the underlying HTTPX clients
-        ## use connection pools with limited capacity. Creating multiple instances
-        ## could exhaust the OS's maximum number of available TCP sockets (file descriptors),
-        ## leading to connection errors.
+        # API clients must be singletons because the underlying HTTPX clients
+        # use connection pools with limited capacity. Creating multiple instances
+        # could exhaust the OS's maximum number of available TCP sockets (file descriptors),
+        # leading to connection errors.
         if httpx_client is not None:
             self.httpx_client = httpx_client
         else:
@@ -334,13 +341,17 @@ class LangfuseResourceManager:
 
             if should_sample:
                 langfuse_logger.debug(
-                    f"Score: Enqueuing event type={event['type']} for trace_id={event['body'].trace_id} name={event['body'].name} value={event['body'].value}"
+                    f"Score: Enqueuing event type={event['type']} for trace_id={event['body'].trace_id} "
+                    f"name={event['body'].name} value={event['body'].value}"
                 )
                 self._score_ingestion_queue.put(event, block=False)
 
         except Full:
             langfuse_logger.warning(
-                "System overload: Score ingestion queue has reached capacity (100,000 items). Score will be dropped. Consider increasing flush frequency or decreasing event volume."
+                (
+                    "System overload: Score ingestion queue has reached capacity (100,000 items). "
+                    "Score will be dropped. Consider increasing flush frequency or decreasing event volume."
+                )
             )
 
             return
