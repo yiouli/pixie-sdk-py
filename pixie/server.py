@@ -159,6 +159,7 @@ def start_server(
         "pixie.server:create_app",
         host=host,
         port=port,
+        loop="asyncio",
         reload=reload,
         factory=True,
         log_config=None,
