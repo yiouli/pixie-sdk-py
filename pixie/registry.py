@@ -1,6 +1,7 @@
 """Application registry for managing registered AI applications."""
 
 import logging
+import uuid
 from collections.abc import (
     AsyncGenerator as ABCAsyncGenerator,
     AsyncIterable,
@@ -41,6 +42,9 @@ class RegistryItem:
         stream_handler: Callable[
             [JsonValue], AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]
         ],
+        name: str,
+        module: str,
+        qualname: str,
         input_type: Optional[type[BaseModel]] | dict,
         user_input_type: Optional[type[BaseModel]] | dict | None,
         output_type: Optional[type[BaseModel]] | dict,
@@ -49,11 +53,17 @@ class RegistryItem:
 
         Args:
             stream_handler: The handler function for streaming.
+            name: The function name.
+            module: The module where the function is defined.
+            qualname: The qualified name of the function.
             input_type: The expected input schema - either a Pydantic model type or JSON schema dict.
             user_input_type: The expected user input schema - Pydantic model type, JSON schema dict, or None.
             output_type: The expected output schema - either a Pydantic model type or JSON schema dict.
         """
         self.stream_handler = stream_handler
+        self.name = name
+        self.module = module
+        self.qualname = qualname
         self.input_type = input_type
         self.user_input_type = user_input_type
         self.output_type = output_type
@@ -231,6 +241,9 @@ def _wrap_generator_handler(
 def _register_callable(
     func: ApplicationCallable,
     registry_key: str,
+    name: str,
+    module: str,
+    qualname: str,
 ) -> None:
     """Register a callable application that returns a single result."""
     input_model_type = _extract_input_type(func)
@@ -249,6 +262,9 @@ def _register_callable(
 
     _registry[registry_key] = RegistryItem(
         stream_handler=stream_handler,
+        name=name,
+        module=module,
+        qualname=qualname,
         input_type=input_schema,
         user_input_type=None,
         output_type=output_schema,
@@ -258,6 +274,9 @@ def _register_callable(
 def _register_generator(
     func: ApplicationGenerator,
     registry_key: str,
+    name: str,
+    module: str,
+    qualname: str,
 ) -> None:
     """Register a generator application that yields multiple results."""
     input_model_type = _extract_input_type(func)
@@ -283,6 +302,9 @@ def _register_generator(
     )
     _registry[registry_key] = RegistryItem(
         stream_handler=stream_handler,
+        name=name,
+        module=module,
+        qualname=qualname,
         input_type=input_schema,
         user_input_type=user_input_schema,
         output_type=output_schema,
@@ -336,10 +358,13 @@ def pixie_app(func: Callable) -> Callable:
         The original function, unmodified.
     """
 
-    registry_key = func.__name__
+    # Generate unique UUID key
+    registry_key = str(uuid.uuid4())
 
-    if registry_key in _registry:
-        raise ValueError(f"Application '{registry_key}' is already registered")
+    # Extract metadata
+    name = func.__name__
+    module = func.__module__
+    qualname = func.__qualname__
 
     # Branch early based on function type
     is_generator = inspect.isasyncgenfunction(func)
@@ -351,32 +376,41 @@ def pixie_app(func: Callable) -> Callable:
             pass
 
     if is_generator:
-        _register_generator(cast(ApplicationGenerator, func), registry_key)
+        _register_generator(
+            cast(ApplicationGenerator, func), registry_key, name, module, qualname
+        )
     else:
-        _register_callable(cast(ApplicationCallable, func), registry_key)
+        _register_callable(
+            cast(ApplicationCallable, func), registry_key, name, module, qualname
+        )
 
-    logger.info("✅ Registered application: %s", registry_key)
+    logger.info(
+        "✅ Registered app: %s (%s.%s)",
+        name,
+        module,
+        qualname,
+    )
 
     return func
 
 
 async def call_application(
-    name: str,
+    id: str,
     input_data: JsonValue,
 ) -> AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]:
     """Call a registered application with automatic type conversion.
 
     Args:
-        name: The application name
+        id: The application UUID identifier
         input_data: JSON-compatible input data
 
     Returns:
         Async generator streaming JSON-compatible output data
     """
-    if name not in _registry:
-        raise ValueError(f"Application '{name}' not found")
+    if id not in _registry:
+        raise ValueError(f"Application '{id}' not found")
 
-    app_info = _registry[name]
+    app_info = _registry[id]
     generator = app_info.stream_handler(input_data)
 
     user_input: JsonValue | None = None
@@ -388,23 +422,23 @@ async def call_application(
         return
 
 
-def get_application(name: str) -> Optional[RegistryItem]:
-    """Get a registered application info by name.
+def get_application(id: str) -> Optional[RegistryItem]:
+    """Get a registered application info by id.
 
     Args:
-        name: The application name
+        id: The application UUID identifier
 
     Returns:
         Registry entry or None if not found
     """
-    return _registry.get(name)
+    return _registry.get(id)
 
 
 def list_applications() -> list[str]:
-    """List all registered application names.
+    """List all registered application UUID identifiers.
 
     Returns:
-        List of application names
+        List of application UUID identifiers
     """
     return list(_registry.keys())
 

@@ -251,13 +251,19 @@ class AppInfo:
     """Schema information for a registered agent.
 
     Attributes:
-        name: The unique name identifier for the agent.
+        id: The unique UUID identifier for the agent.
+        name: The function name of the agent.
+        qualified_name: The qualified name of the agent function.
+        module: The module where the agent is defined.
         input_schema: JSON schema for the agent's input (either from Pydantic model or JsonValue type).
         user_input_schema: JSON schema for user input during execution (None for non-generator agents).
         output_schema: JSON schema for the agent's output (either from Pydantic model or JsonValue type).
     """
 
+    id: str
     name: str
+    qualified_name: str
+    module: str
     input_schema: Optional[JSON] = None
     user_input_schema: Optional[JSON] = None
     output_schema: Optional[JSON] = None
@@ -278,16 +284,12 @@ class Query:
         """List all registered agents with their JSON schemas.
 
         Returns:
-            A list of agent schemas containing name and input/output/user_input schemas.
+            A list of agent schemas containing id, name, qualified_name, module and input/output/user_input schemas.
         """
-        agent_names = list_applications()
+
         agent_schemas = []
 
-        for name in agent_names:
-            app_info = get_application(name)
-            if app_info is None:
-                continue
-
+        for app_id in list_applications():
             # Convert schema to JSON if it's a Pydantic model class
             def convert_to_json(schema_obj):
                 if schema_obj is None:
@@ -298,9 +300,16 @@ class Query:
                     return JSON(schema_obj)
                 return None
 
+            app_info = get_application(app_id)
+            if app_info is None:
+                continue
+
             agent_schemas.append(
                 AppInfo(
-                    name=name,
+                    id=app_id,
+                    name=app_info.name,
+                    qualified_name=app_info.qualname,
+                    module=app_info.module,
                     input_schema=convert_to_json(app_info.input_type),
                     user_input_schema=convert_to_json(app_info.user_input_type),
                     output_schema=convert_to_json(app_info.output_type),
@@ -417,13 +426,13 @@ class Subscription:
     @strawberry.subscription
     async def run(
         self,
-        name: str,
+        id: str,
         input_data: JSON | None,
     ) -> AsyncGenerator[AppRunUpdate, None]:
         """Run an application and stream results.
 
         Args:
-            name: The name of the registered application
+            id: The UUID identifier of the registered application
             input_data: JSON string input data (or None)
 
         Yields:
@@ -431,7 +440,7 @@ class Subscription:
         """
         # Generate unique run ID
         run_id = str(uuid.uuid4())
-        logger.info("Starting subscription for app=%s, run_id=%s", name, run_id)
+        logger.info("Starting subscription for app_id=%s, run_id=%s", id, run_id)
 
         langfuse = get_client()
 
@@ -441,12 +450,12 @@ class Subscription:
             logger.warning("Langfuse client authentication failed.")
 
         # Check if application exists
-        if not get_application(name):
-            logger.error("Application '%s' not found for run_id=%s", name, run_id)
+        if not get_application(id):
+            logger.error("Application '%s' not found for run_id=%s", id, run_id)
             pydantic_update = PydanticAppRunUpdate(
                 run_id=run_id,
                 status="error",
-                data=json.dumps({"error": f"Application '{name}' not found"}),
+                data=json.dumps({"error": f"Application '{id}' not found"}),
             )
             yield AppRunUpdate.from_pydantic(pydantic_update)
             return
@@ -473,7 +482,7 @@ class Subscription:
                     exec_ctx.reload_run_context(run_id)
 
                     app_gen = call_application(
-                        name,
+                        id,
                         cast(JsonValue, input_data),
                     )
 
