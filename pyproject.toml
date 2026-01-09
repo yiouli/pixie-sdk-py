@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "pixie-sdk"
+name = "pixie-ai-sdk"
 packages = [
     { include = "pixie" },
     { include = "langfuse" },
