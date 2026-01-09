@@ -5,7 +5,7 @@ packages = [
     { include = "langfuse" },
 ]
 
-version = "0.1.2"
+version = "0.1.4"
 description = "SDK for iterating on AI applications"
 authors = ["Yiou Li <yol@gopixie.ai>"]
 license = "MIT"
@@ -30,6 +30,7 @@ colorlog = "^6.10.1"
 dotenv = "^0.9.9"
 nest-asyncio = "^1.6.0"
 janus = "^2.0.0"
+websockets = "^15.0.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=7.4,<9.0"

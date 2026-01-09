@@ -87,6 +87,67 @@ def setup_logging():
         uvicorn_logger.propagate = True
 
 
+def enable_instrumentations():
+    try:
+        from pydantic_ai import Agent  # type: ignore
+
+        Agent.instrument_all()
+        logger.info("Enabled pydantic-ai Agent instrumentation.")
+    except ImportError:
+        logger.warning(
+            "pydantic-ai is not installed; instrumentation is disabled. "
+            "Install pydantic-ai to enable agent instrumentation."
+        )
+
+    try:
+        from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor  # type: ignore
+
+        OpenAIAgentsInstrumentor().instrument()
+        logger.info("Enabled OpenAI Agents instrumentation.")
+    except ImportError:
+        logger.warning(
+            "openinference-instrumentation-openai-agents is not installed; "
+            "OpenAI Agents instrumentation is disabled. "
+            "Install openinference-instrumentation-openai-agents to enable it."
+        )
+
+    try:
+        from openinference.instrumentation.google_adk import GoogleADKInstrumentor  # type: ignore
+
+        GoogleADKInstrumentor().instrument()
+        logger.info("Enabled Google ADK instrumentation.")
+    except ImportError:
+        logger.warning(
+            "openinference-instrumentation-google-adk is not installed; "
+            "Google ADK instrumentation is disabled. "
+            "Install openinference-instrumentation-google-adk to enable it."
+        )
+
+    try:
+        from openinference.instrumentation.crewai import CrewaiInstrumentor  # type: ignore
+
+        CrewaiInstrumentor().instrument()
+        logger.info("Enabled CrewAI instrumentation.")
+    except ImportError:
+        logger.warning(
+            "openinference-instrumentation-crewai is not installed; "
+            "CrewAI instrumentation is disabled. "
+            "Install openinference-instrumentation-crewai to enable it."
+        )
+
+    try:
+        from openinference.instrumentation.dspy import DSpyInstrumentor  # type: ignore
+
+        DSpyInstrumentor().instrument()
+        logger.info("Enabled DSpy instrumentation.")
+    except ImportError:
+        logger.warning(
+            "openinference-instrumentation-dspy is not installed; "
+            "DSpy instrumentation is disabled. "
+            "Install openinference-instrumentation-dspy to enable it."
+        )
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     # Setup logging first
@@ -94,6 +155,8 @@ def create_app() -> FastAPI:
 
     # Discover and load applications on every app creation (including reloads)
     discover_and_load_applications()
+
+    enable_instrumentations()
 
     app = FastAPI(
         title="Pixie SDK Server",
