@@ -8,7 +8,6 @@ This test verifies that:
 4. Pause/resume functionality is available (not tested here, but code paths verified)
 """
 
-import os
 import pytest
 from langfuse import Langfuse
 from langfuse._client.span_processor import LangfuseSpanProcessor
@@ -103,7 +102,6 @@ def test_placeholder_key_used(clean_env):
         assert client._resources.public_key == PIXIE_ONLY_MODE_PLACEHOLDER, (
             "Should use PIXIE_ONLY_MODE_PLACEHOLDER constant"
         )
-    os.environ["OPENAI_API_KEY"] = openai_key
 
 
 print("\n" + "=" * 80)

@@ -1,7 +1,6 @@
 """Application registry for managing registered AI applications."""
 
 import logging
-import uuid
 from collections.abc import (
     AsyncGenerator as ABCAsyncGenerator,
     AsyncIterable,
@@ -358,13 +357,12 @@ def pixie_app(func: Callable) -> Callable:
         The original function, unmodified.
     """
 
-    # Generate unique UUID key
-    registry_key = str(uuid.uuid4())
-
     # Extract metadata
     name = func.__name__
     module = func.__module__
     qualname = func.__qualname__
+
+    registry_key = f"{module}.{qualname}"
 
     # Branch early based on function type
     is_generator = inspect.isasyncgenfunction(func)
@@ -401,7 +399,7 @@ async def call_application(
     """Call a registered application with automatic type conversion.
 
     Args:
-        id: The application UUID identifier
+        id: The application ID
         input_data: JSON-compatible input data
 
     Returns:
@@ -426,7 +424,7 @@ def get_application(id: str) -> Optional[RegistryItem]:
     """Get a registered application info by id.
 
     Args:
-        id: The application UUID identifier
+        id: The application ID
 
     Returns:
         Registry entry or None if not found
@@ -435,10 +433,10 @@ def get_application(id: str) -> Optional[RegistryItem]:
 
 
 def list_applications() -> list[str]:
-    """List all registered application UUID identifiers.
+    """List all registered application IDs.
 
     Returns:
-        List of application UUID identifiers
+        List of application IDs
     """
     return list(_registry.keys())
 
