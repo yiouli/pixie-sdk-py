@@ -5,8 +5,8 @@ packages = [
     { include = "langfuse" },
 ]
 
-version = "0.1.0"
-description = "Pixie SDK for running AI applications and agents"
+version = "0.1.2"
+description = "SDK for iterating on AI applications"
 authors = ["Yiou Li <yol@gopixie.ai>"]
 license = "MIT"
 readme = "README.md"
@@ -28,7 +28,6 @@ strawberry-graphql = "^0.288.1"
 uvicorn = "^0.40.0"
 colorlog = "^6.10.1"
 dotenv = "^0.9.9"
-pydantic-ai = "^1.39.0"
 nest-asyncio = "^1.6.0"
 janus = "^2.0.0"
 
