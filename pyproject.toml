@@ -1,11 +1,11 @@
 [tool.poetry]
-name = "pixie-ai-sdk"
+name = "pixie-sdk"
 packages = [
     { include = "pixie" },
     { include = "langfuse" },
 ]
 
-version = "0.1.5"
+version = "0.0.1"
 description = "SDK for iterating on AI applications"
 authors = ["Yiou Li <yol@gopixie.ai>"]
 license = "MIT"
@@ -23,14 +23,14 @@ requests = "^2"
 opentelemetry-api = "^1.33.1"
 opentelemetry-sdk = "^1.33.1"
 opentelemetry-exporter-otlp-proto-http = "^1.33.1"
-fastapi = "^0.128.0"
-strawberry-graphql = "^0.288.1"
-uvicorn = "^0.40.0"
-colorlog = "^6.10.1"
-dotenv = "^0.9.9"
-nest-asyncio = "^1.6.0"
-janus = "^2.0.0"
-websockets = "^15.0.1"
+fastapi = ">=0.128.0"
+strawberry-graphql = ">=0.288.1"
+uvicorn = ">=0.40.0"
+colorlog = ">=6.10.1"
+dotenv = ">=0.9.9"
+nest-asyncio = ">=1.6.0"
+janus = ">=2.0.0"
+websockets = ">=15.0.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=7.4,<9.0"
@@ -44,6 +44,8 @@ langchain-openai = ">=0.0.5,<0.4"
 langchain = ">=1"
 langgraph = ">=1"
 autoevals = "^0.0.130"
+pydantic-ai = ">=1.11.0"
+opentelemetry-instrumentation-threading = "^0.60b1"
 
 [tool.poetry.group.docs.dependencies]
 pdoc = "^15.0.4"
@@ -112,4 +114,4 @@ module = [
 ignore_errors = true
 
 [tool.poetry.scripts]
-pixie = "pixie.cli:main"
+pixie = "pixie.server:main"

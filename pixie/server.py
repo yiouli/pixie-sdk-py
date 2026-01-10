@@ -1,11 +1,13 @@
 """FastAPI server for SDK."""
 
+import os
 import colorlog
 import logging
 import re
 import sys
 import importlib.util
 from pathlib import Path
+import dotenv
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -225,3 +227,15 @@ def start_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = False) 
         factory=True,
         log_config=None,
     )
+
+
+def main():
+    """Start the Pixie server."""
+    dotenv.load_dotenv(os.getcwd() + "/.env")
+    port = int(os.getenv("PIXIE_SDK_PORT", "8000"))
+
+    start_server(port=port, reload=True)
+
+
+if __name__ == "__main__":
+    main()

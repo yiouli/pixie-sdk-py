@@ -9,6 +9,7 @@ This test verifies that:
 """
 
 import pytest
+import sys
 from langfuse import Langfuse
 from langfuse._client.span_processor import LangfuseSpanProcessor
 from langfuse._client.constants import PIXIE_ONLY_MODE_PLACEHOLDER
