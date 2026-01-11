@@ -23,6 +23,7 @@ from typing import (
 )
 import inspect
 from pydantic import BaseModel, JsonValue
+import docstring_parser
 
 from pixie.types import PixieGenerator, UserInputRequirement
 from pixie.utils import extract_schema_from_type
@@ -47,6 +48,8 @@ class RegistryItem:
         input_type: Optional[type[BaseModel]] | dict,
         user_input_type: Optional[type[BaseModel]] | dict | None,
         output_type: Optional[type[BaseModel]] | dict,
+        short_description: Optional[str] = None,
+        full_description: Optional[str] = None,
     ):
         """Initialize a RegistryItem.
 
@@ -58,6 +61,8 @@ class RegistryItem:
             input_type: The expected input schema - either a Pydantic model type or JSON schema dict.
             user_input_type: The expected user input schema - Pydantic model type, JSON schema dict, or None.
             output_type: The expected output schema - either a Pydantic model type or JSON schema dict.
+            short_description: A brief description of the application.
+            full_description: A detailed description of the application.
         """
         self.stream_handler = stream_handler
         self.name = name
@@ -66,6 +71,8 @@ class RegistryItem:
         self.input_type = input_type
         self.user_input_type = user_input_type
         self.output_type = output_type
+        self.short_description = short_description
+        self.full_description = full_description
 
 
 # Registry stores both the handler and its type information
@@ -237,6 +244,40 @@ def _wrap_generator_handler(
     return stream_handler
 
 
+def _get_description_from_docstring(
+    func: Callable,
+) -> Tuple[str | None, str | None, docstring_parser.DocstringParam | None]:
+    """Extract short, full description and input param from function docstring."""
+    doc = inspect.getdoc(func)
+    if not doc:
+        return None, None, None
+
+    docstring = docstring_parser.parse(doc)
+    if docstring.params:
+        input_param = docstring.params[0]
+    else:
+        input_param = None
+
+    return docstring.short_description, docstring.long_description, input_param
+
+
+def _update_input_schema(
+    input_schema: type | dict | None,
+    input_param: docstring_parser.DocstringParam | None,
+) -> type | dict | None:
+    if not input_schema and input_param:
+        return {
+            "title": input_param.arg_name,
+            "description": input_param.description,
+        }
+
+    if isinstance(input_schema, dict) and input_param:
+        input_schema["description"] = input_param.description
+        input_schema["title"] = input_param.arg_name
+
+    return input_schema
+
+
 def _register_callable(
     func: ApplicationCallable,
     registry_key: str,
@@ -258,6 +299,10 @@ def _register_callable(
         pass
 
     stream_handler = _wrap_callable_handler(func, input_model_type)
+    short_description, full_description, input_param = _get_description_from_docstring(
+        func
+    )
+    input_schema = _update_input_schema(input_schema, input_param)
 
     _registry[registry_key] = RegistryItem(
         stream_handler=stream_handler,
@@ -267,6 +312,8 @@ def _register_callable(
         input_type=input_schema,
         user_input_type=None,
         output_type=output_schema,
+        short_description=short_description,
+        full_description=full_description,
     )
 
 
@@ -299,6 +346,12 @@ def _register_generator(
     stream_handler = _wrap_generator_handler(
         func, input_model_type, user_input_model_type
     )
+
+    short_description, full_description, input_param = _get_description_from_docstring(
+        func
+    )
+    input_schema = _update_input_schema(input_schema, input_param)
+
     _registry[registry_key] = RegistryItem(
         stream_handler=stream_handler,
         name=name,
@@ -307,6 +360,8 @@ def _register_generator(
         input_type=input_schema,
         user_input_type=user_input_schema,
         output_type=output_schema,
+        short_description=short_description,
+        full_description=full_description,
     )
 
 

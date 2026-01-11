@@ -264,6 +264,8 @@ class AppInfo:
     name: str
     qualified_name: str
     module: str
+    short_description: Optional[str] = None
+    full_description: Optional[str] = None
     input_schema: Optional[JSON] = None
     user_input_schema: Optional[JSON] = None
     output_schema: Optional[JSON] = None
@@ -310,6 +312,8 @@ class Query:
                     name=app_info.name,
                     qualified_name=app_info.qualname,
                     module=app_info.module,
+                    short_description=app_info.short_description,
+                    full_description=app_info.full_description,
                     input_schema=convert_to_json(app_info.input_type),
                     user_input_schema=convert_to_json(app_info.user_input_type),
                     output_schema=convert_to_json(app_info.output_type),
