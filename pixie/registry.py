@@ -33,7 +33,10 @@ logger = logging.getLogger(__name__)
 
 
 class RegistryItem:
-    """Internal class to store registry item information."""
+    """Internal class to store registry item information.
+
+    This class encapsulates all metadata and handlers for a registered application.
+    """
 
     T = TypeVar("T", bound=BaseModel | JsonValue)
 
@@ -102,8 +105,14 @@ def _get_async_generator_model_types(
 ) -> Tuple[Optional[type[BaseModel]], Optional[type[BaseModel]]]:
     """Extract both the yield and send types from an AsyncGenerator type hint.
 
-    Returns a tuple of (yield_type, send_type) if both are Pydantic models or None.
-    Raises a TypeError if the provided type_hint is not an AsyncGenerator.
+    Args:
+        type_hint: The type hint to analyze.
+
+    Returns:
+        A tuple of (yield_type, send_type) if both are Pydantic models or None.
+
+    Raises:
+        TypeError: If the provided type_hint is not an AsyncGenerator.
     """
     origin = get_origin(type_hint)
     if origin not in {AsyncGenerator, ABCAsyncGenerator}:
@@ -133,8 +142,14 @@ def _get_async_generator_hints(
 ) -> Tuple[Optional[Any], Optional[Any]]:
     """Extract both the yield and send type hints from an AsyncGenerator type hint.
 
-    Returns a tuple of (yield_hint, send_hint) for any type hints.
-    Raises a TypeError if the provided type_hint is not an AsyncGenerator.
+    Args:
+        type_hint: The type hint to analyze.
+
+    Returns:
+        A tuple of (yield_hint, send_hint) for any type hints.
+
+    Raises:
+        TypeError: If the provided type_hint is not an AsyncGenerator.
     """
     origin = get_origin(type_hint)
     if origin not in {AsyncGenerator, ABCAsyncGenerator}:
@@ -148,6 +163,14 @@ def _get_async_generator_hints(
 
 
 def _is_async_generator_hint(type_hint: Any) -> bool:
+    """Check if a type hint is an async generator.
+
+    Args:
+        type_hint: The type hint to check.
+
+    Returns:
+        True if the type hint is an async generator, False otherwise.
+    """
     origin = get_origin(type_hint)
     return origin in {AsyncGenerator, ABCAsyncGenerator, AsyncIterable, AsyncIterator}
 
@@ -198,6 +221,14 @@ def _extract_input_hint(func: Callable) -> Optional[Any]:
 def _value_to_json(
     value: JsonValue | BaseModel | UserInputRequirement,
 ) -> JsonValue | UserInputRequirement:
+    """Convert a value to JSON-compatible format.
+
+    Args:
+        value: The value to convert.
+
+    Returns:
+        JSON-compatible value or UserInputRequirement.
+    """
     if isinstance(value, UserInputRequirement):
         return value
     if isinstance(value, BaseModel):
@@ -209,6 +240,15 @@ def _json_to_value(
     json_data: JsonValue,
     model_type: Optional[type[BaseModel]],
 ) -> JsonValue | BaseModel:
+    """Convert JSON data to a typed value.
+
+    Args:
+        json_data: The JSON data to convert.
+        model_type: Optional Pydantic model type to convert to.
+
+    Returns:
+        The converted value, either as a BaseModel instance or raw JSON.
+    """
     if model_type and isinstance(json_data, dict):
         return model_type(**json_data)
     return json_data
@@ -218,6 +258,16 @@ def _wrap_callable_handler(
     func: ApplicationCallable,
     input_type: Optional[type[BaseModel]],
 ) -> Callable[[JsonValue], AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]]:
+    """Wrap a callable application handler to work with the streaming interface.
+
+    Args:
+        func: The application function to wrap.
+        input_type: Optional Pydantic model type for input conversion.
+
+    Returns:
+        An async generator function that wraps the callable.
+    """
+
     async def stream_handler(
         input_data: JsonValue,
     ) -> AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]:
@@ -238,6 +288,17 @@ def _wrap_generator_handler(
     input_type: Optional[type[BaseModel]],
     user_input_type: Optional[type[BaseModel]],
 ) -> Callable[[JsonValue], AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]]:
+    """Wrap a generator application handler to work with the streaming interface.
+
+    Args:
+        func: The generator application function to wrap.
+        input_type: Optional Pydantic model type for input conversion.
+        user_input_type: Optional Pydantic model type for user input conversion.
+
+    Returns:
+        An async generator function that wraps the generator.
+    """
+
     async def stream_handler(
         input_data: JsonValue,
     ) -> AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]:
@@ -266,7 +327,14 @@ def _wrap_generator_handler(
 def _get_description_from_docstring(
     func: Callable,
 ) -> Tuple[str | None, str | None, docstring_parser.DocstringParam | None]:
-    """Extract short, full description and input param from function docstring."""
+    """Extract short, full description and input param from function docstring.
+
+    Args:
+        func: The function to extract docstring from.
+
+    Returns:
+        A tuple of (short_description, long_description, input_param).
+    """
     doc = inspect.getdoc(func)
     if not doc:
         return None, None, None
@@ -284,6 +352,15 @@ def _update_input_schema(
     input_schema: type | dict | None,
     input_param: docstring_parser.DocstringParam | None,
 ) -> type | dict | None:
+    """Update input schema with information from docstring parameter.
+
+    Args:
+        input_schema: The schema to update.
+        input_param: The docstring parameter containing description.
+
+    Returns:
+        The updated schema.
+    """
     if isinstance(input_schema, dict) and input_param:
         input_schema["description"] = input_param.description
         input_schema["title"] = input_param.arg_name
@@ -298,7 +375,15 @@ def _register_callable(
     module: str,
     qualname: str,
 ) -> None:
-    """Register a callable application that returns a single result."""
+    """Register a callable application that returns a single result.
+
+    Args:
+        func: The application function to register.
+        registry_key: Unique key for the registry.
+        name: Function name.
+        module: Module where the function is defined.
+        qualname: Qualified name of the function.
+    """
     input_model_type = _extract_input_type(func)
     input_hint = _extract_input_hint(func)
     # Only extract schema if there's an actual type hint
@@ -343,7 +428,15 @@ def _register_generator(
     module: str,
     qualname: str,
 ) -> None:
-    """Register a generator application that yields multiple results."""
+    """Register a generator application that yields multiple results.
+
+    Args:
+        func: The generator application function to register.
+        registry_key: Unique key for the registry.
+        name: Function name.
+        module: Module where the function is defined.
+        qualname: Qualified name of the function.
+    """
     input_model_type = _extract_input_type(func)
     input_hint = _extract_input_hint(func)
     # Only extract schema if there's an actual type hint
@@ -542,5 +635,8 @@ def list_applications() -> list[str]:
 
 
 def clear_registry() -> None:
-    """Clear all registered applications (useful for testing)."""
+    """Clear all registered applications.
+
+    This is primarily useful for testing to ensure a clean state.
+    """
     _registry.clear()

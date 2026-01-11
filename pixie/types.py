@@ -13,14 +13,26 @@ TraceDataType = dict[str, Any]  # Will be OTLPTraceData | PartialTraceData
 
 
 class ExecutionInput(BaseModel):
-    """Input for agent execution."""
+    """Input for agent execution.
+
+    Attributes:
+        input_data: JSON string containing the input data for the agent.
+        context: Optional JSON string containing additional context.
+    """
 
     input_data: str  # JSON string
     context: Optional[str] = None  # JSON string
 
 
 class ExecutionStatus(BaseModel):
-    """Status update for agent execution."""
+    """Status update for agent execution.
+
+    Attributes:
+        status: Current status of the execution (running, completed, or error).
+        message: Human-readable message describing the status.
+        data: Optional JSON string containing execution data.
+        error: Optional error message if status is error.
+    """
 
     status: Literal["running", "completed", "error"]
     message: str
@@ -34,7 +46,13 @@ BreakpointType = Literal["LLM", "TOOL", "CUSTOM"]
 
 
 class BreakpointConfig(BaseModel):
-    """Configuration for pause behavior."""
+    """Configuration for pause behavior.
+
+    Attributes:
+        id: Unique identifier for this breakpoint configuration.
+        timing: When to pause (BEFORE or AFTER the breakpoint).
+        breakpoint_types: List of breakpoint types to pause on (LLM, TOOL, CUSTOM).
+    """
 
     id: str
     timing: BreakpointTiming
@@ -42,7 +60,14 @@ class BreakpointConfig(BaseModel):
 
 
 class PauseResult(BaseModel):
-    """Result of a pause operation."""
+    """Result of a pause operation.
+
+    Attributes:
+        success: Whether the pause operation was successful.
+        message: Human-readable message about the pause operation.
+        run_id: Optional identifier of the paused run.
+        paused_state: Optional dictionary containing the paused execution state.
+    """
 
     success: bool
     message: str
@@ -51,7 +76,13 @@ class PauseResult(BaseModel):
 
 
 class ResumeResult(BaseModel):
-    """Result of a resume operation."""
+    """Result of a resume operation.
+
+    Attributes:
+        success: Whether the resume operation was successful.
+        message: Human-readable message about the resume operation.
+        run_id: Optional identifier of the resumed run.
+    """
 
     success: bool
     message: str
@@ -59,7 +90,14 @@ class ResumeResult(BaseModel):
 
 
 class BreakpointDetail(BaseModel):
-    """Information about a breakpoint where execution paused."""
+    """Information about a breakpoint where execution paused.
+
+    Attributes:
+        span_name: Name of the span where execution paused.
+        breakpoint_type: Type of breakpoint (LLM, TOOL, or CUSTOM).
+        breakpoint_timing: When the pause occurred (BEFORE or AFTER).
+        span_attributes: Optional dictionary of attributes from the span.
+    """
 
     span_name: str
     breakpoint_type: BreakpointType
@@ -86,12 +124,34 @@ _OutputType = TypeVar(
 
 
 class UserInputRequirement(Generic[_UserInputType]):
+    """Represents a requirement for user input during application execution.
+
+    This is yielded by a generator application to request input from the user.
+
+    Attributes:
+        expected_type: The type of input expected from the user.
+    """
+
     def __init__(self, expected_type: type[_UserInputType]) -> None:
+        """Initialize a user input requirement.
+
+        Args:
+            expected_type: The type of input expected from the user.
+        """
         self.expected_type = expected_type
 
 
 class AppRunUpdate(BaseModel):
-    """Status update from running an application."""
+    """Status update from running an application.
+
+    Attributes:
+        run_id: Unique identifier of the application run.
+        status: Current status of the run.
+        user_input: Optional user input that was received.
+        data: Optional output data from the application.
+        breakpoint: Optional details about a breakpoint if execution paused.
+        trace: Optional trace data for observability.
+    """
 
     run_id: str
     status: AppRunStatus
@@ -105,16 +165,34 @@ class AppRunUpdate(BaseModel):
         self,
         requirement: UserInputRequirement | None,
     ) -> None:
+        """Set the user input requirement for this update.
+
+        Args:
+            requirement: The user input requirement or None.
+        """
         self._user_input_requirement = requirement
 
     @property
     def user_input_requirement(self) -> UserInputRequirement | None:
+        """Get the user input requirement for this update.
+
+        Returns:
+            The user input requirement or None.
+        """
         return self._user_input_requirement
 
 
 @dataclass
 class ExecutionContext:
-    """Context for a running execution."""
+    """Context for a running execution.
+
+    Attributes:
+        run_id: Unique identifier of the execution run.
+        status_queue: Queue for passing status updates (None signals end of stream).
+        resume_event: Threading event for pause/resume functionality.
+        breakpoint_config: Optional configuration for execution breakpoints.
+        cancelled: Flag indicating if the execution has been cancelled.
+    """
 
     run_id: str
     # None is the sentinel to end the stream
@@ -125,7 +203,11 @@ class ExecutionContext:
 
 
 class AppRunCancelled(Exception):
-    """Exception raised when an application run is cancelled."""
+    """Exception raised when an application run is cancelled.
+
+    This exception is thrown when an application execution is cancelled
+    either explicitly by the user or due to a cancellation request.
+    """
 
 
 PixieGenerator = AsyncGenerator[

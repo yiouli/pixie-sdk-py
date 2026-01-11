@@ -34,7 +34,17 @@ logger = logging.getLogger(__name__)
 
 
 def init_run(run_id: str) -> ExecutionContext:
-    """Initialize a new execution context for a run in the current context."""
+    """Initialize a new execution context for a run in the current context.
+
+    Args:
+        run_id: Unique identifier for the run.
+
+    Returns:
+        The newly created ExecutionContext.
+
+    Raises:
+        RuntimeError: If an execution context is already set for the current context.
+    """
     if _execution_context.get() is not None:
         raise RuntimeError("Execution context is already set")
     ctx = ExecutionContext(
@@ -50,7 +60,17 @@ def init_run(run_id: str) -> ExecutionContext:
 
 
 def reload_run_context(run_id: str) -> None:
-    """Reload the contextVar value from the global registry. this should be called whenever exec context changes."""
+    """Reload the contextVar value from the global registry.
+
+    This should be called whenever exec context changes to ensure the current
+    context variable reflects the latest state.
+
+    Args:
+        run_id: Unique identifier for the run to reload.
+
+    Raises:
+        ValueError: If the run ID is not found in the registry.
+    """
     ctx = get_run_context(run_id)
     if not ctx:
         raise ValueError(f"Run ID '{run_id}' not found")
@@ -59,7 +79,11 @@ def reload_run_context(run_id: str) -> None:
 
 
 def get_current_breakpoint_config() -> Optional[BreakpointConfig]:
-    """Get the current breakpoint configuration from execution context."""
+    """Get the current breakpoint configuration from execution context.
+
+    Returns:
+        The current BreakpointConfig if available, None otherwise.
+    """
     ctx = _execution_context.get()
     if ctx:
         return ctx.breakpoint_config
@@ -76,14 +100,25 @@ def get_current_context() -> Optional[ExecutionContext]:
 
 
 def unregister_run(run_id: str) -> None:
-    """Unregister a run from the global active runs registry."""
+    """Unregister a run from the global active runs registry.
+
+    Args:
+        run_id: Unique identifier for the run to unregister.
+    """
     if run_id in _active_runs:
         del _active_runs[run_id]
         logger.info("Unregistered run: %s", run_id)
 
 
 def get_run_context(run_id: str) -> Optional[ExecutionContext]:
-    """Get execution context for a specific run ID."""
+    """Get execution context for a specific run ID.
+
+    Args:
+        run_id: Unique identifier for the run.
+
+    Returns:
+        The ExecutionContext for the run, or None if not found.
+    """
     return _active_runs.get(run_id)
 
 
@@ -134,7 +169,19 @@ def set_breakpoint(
     timing: BreakpointTiming,
     types: Sequence[BreakpointType],
 ) -> BreakpointConfig:
-    """Set pause configuration for a run."""
+    """Set pause configuration for a run.
+
+    Args:
+        run_id: Unique identifier for the run.
+        timing: When to pause (BEFORE or AFTER).
+        types: List of breakpoint types to pause on.
+
+    Returns:
+        The created BreakpointConfig.
+
+    Raises:
+        ValueError: If the run ID is not found.
+    """
     ctx = get_run_context(run_id)
     if not ctx:
         raise ValueError(f"Run ID '{run_id}' not found")
@@ -155,7 +202,14 @@ def set_breakpoint(
 
 
 def wait_for_resume() -> None:
-    """Block the current thread until the run is resumed."""
+    """Block the current thread until the run is resumed.
+
+    This function will block until resume_run is called for the current execution context.
+    If the run is cancelled while waiting, it will raise AppRunCancelled.
+
+    Raises:
+        AppRunCancelled: If the run was cancelled during the pause.
+    """
     ctx = _execution_context.get()
     if ctx is None:
         logger.warning(
@@ -177,7 +231,17 @@ def wait_for_resume() -> None:
 
 
 def resume_run(run_id: str) -> bool:
-    """Trigger resume for a paused run."""
+    """Trigger resume for a paused run.
+
+    Args:
+        run_id: Unique identifier for the run to resume.
+
+    Returns:
+        True if the run was successfully resumed, False if already running.
+
+    Raises:
+        ValueError: If the run ID is not found.
+    """
     ctx = get_run_context(run_id)
     if not ctx:
         raise ValueError(f"Run ID '{run_id}' not found")

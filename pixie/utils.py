@@ -14,6 +14,12 @@ def is_allowed_type(type_hint: Any) -> bool:
     3. Pydantic BaseModel types
 
     Also handles Optional[T] (Union[T, None]) where T is allowed.
+
+    Args:
+        type_hint: The type hint to check.
+
+    Returns:
+        True if the type is allowed, False otherwise.
     """
     if type_hint is None or type_hint is type(None):
         return True

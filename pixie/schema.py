@@ -226,6 +226,14 @@ class AppRunUpdate:
 
     @classmethod
     def from_pydantic(cls, instance: PydanticAppRunUpdate):
+        """Convert from Pydantic AppRunUpdate to Strawberry AppRunUpdate.
+
+        Args:
+            instance: The Pydantic AppRunUpdate instance to convert.
+
+        Returns:
+            A Strawberry AppRunUpdate instance.
+        """
         """Convert from Pydantic AppRunUpdate to Strawberry AppRunUpdate."""
         if instance.user_input_requirement:
             user_input_schema = JSON(
@@ -286,7 +294,8 @@ class Query:
         """List all registered agents with their JSON schemas.
 
         Returns:
-            A list of agent schemas containing id, name, qualified_name, module and input/output/user_input schemas.
+            A list of AppInfo objects containing id, name, qualified_name, module,
+            and input/output/user_input schemas for each registered application.
         """
 
         agent_schemas = []
@@ -375,7 +384,10 @@ class Mutation:
             input_data: The input data to send to the application.
 
         Returns:
-            A boolean indicating whether the input was successfully sent.
+            True if the input was successfully sent.
+
+        Raises:
+            GraphQLError: If sending input fails.
         """
 
         try:
@@ -391,10 +403,10 @@ def _convert_trace_to_union(trace_dict: dict | None) -> Optional[TraceDataUnion]
     """Convert trace data dict to TraceDataUnion.
 
     Args:
-        trace_dict: Dict containing either OTLP trace data or partial trace data
+        trace_dict: Dict containing either OTLP trace data or partial trace data.
 
     Returns:
-        TraceDataUnion with the appropriate field set, or None
+        TraceDataUnion with the appropriate field set, or None if trace_dict is None.
     """
     if trace_dict is None:
         return None
@@ -416,6 +428,15 @@ def _convert_trace_to_union(trace_dict: dict | None) -> Optional[TraceDataUnion]
 
 
 def _create_app_run_in_thread(run: Coroutine) -> tuple[Coroutine, Callable[[], bool]]:
+    """Create a new event loop in a thread to run the application.
+
+    Args:
+        run: The coroutine to execute in the new event loop.
+
+    Returns:
+        A tuple of (thread_coroutine, cancel_function) where thread_coroutine
+        is a coroutine that runs the loop and cancel_function can cancel the task.
+    """
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     task = loop.create_task(run)
@@ -436,11 +457,11 @@ class Subscription:
         """Run an application and stream results.
 
         Args:
-            id: The UUID identifier of the registered application
-            input_data: JSON string input data (or None)
+            id: The UUID identifier of the registered application.
+            input_data: JSON input data (or None if the application takes no input).
 
         Yields:
-            StatusUpdate: Status updates with results
+            AppRunUpdate: Status updates including run status, data, breakpoints, and traces.
         """
         # Generate unique run ID
         run_id = str(uuid.uuid4())

@@ -24,7 +24,11 @@ logger = logging.getLogger(__name__)
 
 
 def discover_and_load_applications():
-    """Discover and load all Python files that use register_application."""
+    """Discover and load all Python files that use register_application.
+
+    This function recursively searches the current working directory for Python files
+    that import pixie_app and loads them to register applications.
+    """
     from pixie.registry import clear_registry
 
     # Clear registry before reloading to avoid duplicate registration errors
@@ -67,7 +71,10 @@ def discover_and_load_applications():
 
 
 def setup_logging():
-    """Configure logging for the entire application."""
+    """Configure logging for the entire application.
+
+    Sets up colored logging with consistent formatting for all loggers.
+    """
     colorlog.basicConfig(
         level=logging.INFO,
         format="[%(log_color)s%(levelname)-8s%(reset)s][%(asctime)s]\t%(message)s",
@@ -90,6 +97,11 @@ def setup_logging():
 
 
 def enable_instrumentations():
+    """Enable all available instrumentations for AI frameworks.
+
+    Attempts to enable instrumentation for pydantic-ai, OpenAI Agents, Google ADK,
+    CrewAI, and DSpy. Logs warnings for any frameworks that are not installed.
+    """
     try:
         from pydantic_ai import Agent  # type: ignore
 
@@ -151,7 +163,11 @@ def enable_instrumentations():
 
 
 def create_app() -> FastAPI:
-    """Create and configure the FastAPI application."""
+    """Create and configure the FastAPI application.
+
+    Returns:
+        Configured FastAPI application instance with GraphQL router.
+    """
     # Setup logging first
     setup_logging()
 
@@ -230,7 +246,10 @@ def start_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = False) 
 
 
 def main():
-    """Start the Pixie server."""
+    """Start the Pixie server.
+
+    Loads environment variables and starts the server with auto-reload enabled.
+    """
     dotenv.load_dotenv(os.getcwd() + "/.env")
     port = int(os.getenv("PIXIE_SDK_PORT", "8000"))
 
