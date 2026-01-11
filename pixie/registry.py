@@ -128,12 +128,31 @@ def _get_async_generator_model_types(
     return yield_model, send_model
 
 
+def _get_async_generator_hints(
+    type_hint: Any,
+) -> Tuple[Optional[Any], Optional[Any]]:
+    """Extract both the yield and send type hints from an AsyncGenerator type hint.
+
+    Returns a tuple of (yield_hint, send_hint) for any type hints.
+    Raises a TypeError if the provided type_hint is not an AsyncGenerator.
+    """
+    origin = get_origin(type_hint)
+    if origin not in {AsyncGenerator, ABCAsyncGenerator}:
+        raise TypeError("Provided type_hint is not an AsyncGenerator")
+
+    args = get_args(type_hint)
+    if len(args) != 2:
+        return None, None
+
+    return args[0], args[1]
+
+
 def _is_async_generator_hint(type_hint: Any) -> bool:
     origin = get_origin(type_hint)
     return origin in {AsyncGenerator, ABCAsyncGenerator, AsyncIterable, AsyncIterator}
 
 
-def _extract_input_type(func: Application) -> Optional[type[BaseModel]]:
+def _extract_input_type(func: Callable) -> Optional[type[BaseModel]]:
     """Extract input Pydantic model type from function signature.
 
     Returns only BaseModel types, used for automatic conversion.
@@ -156,7 +175,7 @@ def _extract_input_type(func: Application) -> Optional[type[BaseModel]]:
         return None
 
 
-def _extract_input_hint(func: Application) -> Optional[Any]:
+def _extract_input_hint(func: Callable) -> Optional[Any]:
     """Extract input type hint from function signature.
 
     Returns any type hint, not just BaseModel types.
@@ -265,12 +284,6 @@ def _update_input_schema(
     input_schema: type | dict | None,
     input_param: docstring_parser.DocstringParam | None,
 ) -> type | dict | None:
-    if not input_schema and input_param:
-        return {
-            "title": input_param.arg_name,
-            "description": input_param.description,
-        }
-
     if isinstance(input_schema, dict) and input_param:
         input_schema["description"] = input_param.description
         input_schema["title"] = input_param.arg_name
@@ -288,13 +301,19 @@ def _register_callable(
     """Register a callable application that returns a single result."""
     input_model_type = _extract_input_type(func)
     input_hint = _extract_input_hint(func)
-    input_schema = extract_schema_from_type(input_hint)
+    # Only extract schema if there's an actual type hint
+    input_schema = (
+        extract_schema_from_type(input_hint) if input_hint is not None else None
+    )
 
     output_schema = None
     try:
         hints = get_type_hints(func)
         output_hint = hints.get("return")
-        output_schema = extract_schema_from_type(output_hint)
+        # Only extract schema if there's an actual type hint
+        output_schema = (
+            extract_schema_from_type(output_hint) if output_hint is not None else None
+        )
     except (TypeError, ValueError, AttributeError):
         pass
 
@@ -327,21 +346,47 @@ def _register_generator(
     """Register a generator application that yields multiple results."""
     input_model_type = _extract_input_type(func)
     input_hint = _extract_input_hint(func)
-    input_schema = extract_schema_from_type(input_hint)
+    # Only extract schema if there's an actual type hint
+    input_schema = (
+        extract_schema_from_type(input_hint) if input_hint is not None else None
+    )
 
     output_model_type: Optional[type[BaseModel]] = None
     user_input_model_type: Optional[type[BaseModel]] = None
+    output_hint: Optional[Any] = None
+    user_input_hint: Optional[Any] = None
+
     try:
         hints = get_type_hints(func)
         return_hint = hints.get("return")
+        # Extract Pydantic model types (for conversion)
         output_model_type, user_input_model_type = _get_async_generator_model_types(
             return_hint
         )
+        # Extract any type hints (for schema generation)
+        output_hint, user_input_hint = _get_async_generator_hints(return_hint)
     except (TypeError, ValueError, AttributeError):
         pass
 
-    output_schema = extract_schema_from_type(output_model_type)
-    user_input_schema = extract_schema_from_type(user_input_model_type)
+    # For schema: prefer type hints, fall back to model types
+    # Only extract schema if there's an actual type (not None from "no hint")
+    if output_model_type is not None:
+        # Pydantic model - extract_schema_from_type will return the class
+        output_schema = extract_schema_from_type(output_model_type)
+    elif output_hint is not None:
+        # Other type hint
+        output_schema = extract_schema_from_type(output_hint)
+    else:
+        output_schema = None
+
+    if user_input_model_type is not None:
+        # Pydantic model
+        user_input_schema = extract_schema_from_type(user_input_model_type)
+    elif user_input_hint is not None:
+        # Other type hint
+        user_input_schema = extract_schema_from_type(user_input_hint)
+    else:
+        user_input_schema = None
 
     stream_handler = _wrap_generator_handler(
         func, input_model_type, user_input_model_type
