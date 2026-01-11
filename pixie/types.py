@@ -211,5 +211,5 @@ class AppRunCancelled(Exception):
 
 
 PixieGenerator = AsyncGenerator[
-    UserInputRequirement[_UserInputType] | str | _OutputType, _UserInputType
+    str | _OutputType | UserInputRequirement[_UserInputType], _UserInputType
 ]

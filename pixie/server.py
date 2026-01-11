@@ -56,11 +56,12 @@ def discover_and_load_applications():
 
         # Quick check if file imports register_application
         content = py_file.read_text()
-        if not re.search(r"\bfrom\s+pixie(?:\.[\w]+)*\s+import\s+pixie_app\b", content):
+        if not re.search(r"\b(?:@|)\bpixie_app\b", content):
             continue
 
         # Load the module with a unique name based on path
         relative_path = py_file.relative_to(cwd)
+        logger.debug("Loading application module: %s", relative_path)
         module_name = str(relative_path.with_suffix("")).replace("/", ".")
         spec = importlib.util.spec_from_file_location(module_name, py_file)
         if spec and spec.loader:

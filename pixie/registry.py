@@ -203,6 +203,7 @@ def _extract_input_hint(func: Callable) -> Optional[Any]:
 
     Returns any type hint, not just BaseModel types.
     Used for schema extraction.
+    If function has no parameters, returns type(None) to indicate no input required.
     """
     try:
         hints = get_type_hints(func)
@@ -210,7 +211,8 @@ def _extract_input_hint(func: Callable) -> Optional[Any]:
         params = list(sig.parameters.values())
 
         if not params:
-            return None
+            # No parameters: treat as None type (no input required)
+            return type(None)
 
         param_name = params[0].name
         return hints.get(param_name)
@@ -271,7 +273,14 @@ def _wrap_callable_handler(
     async def stream_handler(
         input_data: JsonValue,
     ) -> AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]:
-        result_or_awaitable = func(_json_to_value(input_data, input_type))
+        # Check if function accepts no parameters
+        sig = inspect.signature(func)
+        if not sig.parameters:
+            # No-arg function: call without input
+            result_or_awaitable = func()
+        else:
+            # Standard path: convert and pass input
+            result_or_awaitable = func(_json_to_value(input_data, input_type))
 
         if inspect.isawaitable(result_or_awaitable):
             result = await result_or_awaitable
@@ -302,9 +311,17 @@ def _wrap_generator_handler(
     async def stream_handler(
         input_data: JsonValue,
     ) -> AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]:
-        processed_input: JsonValue | BaseModel = _json_to_value(input_data, input_type)
-
-        generator_or_awaitable = func(processed_input)
+        # Check if function accepts no parameters
+        sig = inspect.signature(func)
+        if not sig.parameters:
+            # No-arg generator: call without input
+            generator_or_awaitable = func()
+        else:
+            # Standard path: convert and pass input
+            processed_input: JsonValue | BaseModel = _json_to_value(
+                input_data, input_type
+            )
+            generator_or_awaitable = func(processed_input)
 
         # Handle both async generator functions and async functions returning generators
         if inspect.isawaitable(generator_or_awaitable):
@@ -472,11 +489,13 @@ def _register_generator(
     else:
         output_schema = None
 
+    # For user_input (send type), None means "no user input", not "null input"
+    # So we keep it as None instead of converting to {"type": "null"}
     if user_input_model_type is not None:
         # Pydantic model
         user_input_schema = extract_schema_from_type(user_input_model_type)
-    elif user_input_hint is not None:
-        # Other type hint
+    elif user_input_hint is not None and user_input_hint is not type(None):
+        # Other type hint (but not None, which means no user input)
         user_input_schema = extract_schema_from_type(user_input_hint)
     else:
         user_input_schema = None
@@ -508,28 +527,52 @@ def _register_generator(
 # When called with just func parameter (direct decoration: @pixie_app)
 
 
-# Sync callable returning value
+# Sync callable returning value (with parameter)
 @overload
 def pixie_app(func: Callable[[P], R]) -> Callable[[P], R]: ...
 
 
-# Async callable returning value
+# Async callable returning value (with parameter)
 @overload
 def pixie_app(func: Callable[[P], Awaitable[R]]) -> Callable[[P], Awaitable[R]]: ...
 
 
-# Async generator function
+# Async generator function (with parameter)
 @overload
 def pixie_app(
     func: Callable[[P], PixieGenerator[T, R]],
 ) -> Callable[[P], PixieGenerator[T, R]]: ...
 
 
-# Async function returning async generator
+# Async function returning async generator (with parameter)
 @overload
 def pixie_app(
     func: Callable[[P], Awaitable[PixieGenerator[T, R]]],
 ) -> Callable[[P], Awaitable[PixieGenerator[T, R]]]: ...
+
+
+# Sync callable returning value (no parameters)
+@overload
+def pixie_app(func: Callable[[], R]) -> Callable[[], R]: ...
+
+
+# Async callable returning value (no parameters)
+@overload
+def pixie_app(func: Callable[[], Awaitable[R]]) -> Callable[[], Awaitable[R]]: ...
+
+
+# Async generator function (no parameters)
+@overload
+def pixie_app(
+    func: Callable[[], PixieGenerator[T, R]],
+) -> Callable[[], PixieGenerator[T, R]]: ...
+
+
+# Async function returning async generator (no parameters)
+@overload
+def pixie_app(
+    func: Callable[[], Awaitable[PixieGenerator[T, R]]],
+) -> Callable[[], Awaitable[PixieGenerator[T, R]]]: ...
 
 
 def pixie_app(func: Callable) -> Callable:

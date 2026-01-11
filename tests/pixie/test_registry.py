@@ -624,3 +624,167 @@ class TestComplexScenarios:
         last_result = results[49]
         assert isinstance(first_result, dict) and first_result["number"] == 0
         assert isinstance(last_result, dict) and last_result["number"] == 49
+
+
+class TestNoArgHandlers:
+    """Test handlers with no arguments."""
+
+    def test_register_sync_no_arg_callable(self):
+        """Test registering a sync function with no arguments."""
+
+        @pixie_app
+        def no_arg_sync() -> JsonValue:
+            return {"result": "no args needed"}
+
+        app_id = "tests.pixie.test_registry.TestNoArgHandlers.test_register_sync_no_arg_callable.<locals>.no_arg_sync"
+        assert app_id in list_applications()
+        app = get_application(app_id)
+        assert app is not None
+        # Should have null schema since no args means None type
+        assert app.input_type == {"type": "null"}
+        # Output type may be None for JsonValue return type (no specific schema)
+
+    def test_register_async_no_arg_callable(self):
+        """Test registering an async function with no arguments."""
+
+        @pixie_app
+        async def no_arg_async() -> JsonValue:
+            return {"result": "async no args"}
+
+        app_id = "tests.pixie.test_registry.TestNoArgHandlers.test_register_async_no_arg_callable.<locals>.no_arg_async"
+        assert app_id in list_applications()
+        app = get_application(app_id)
+        assert app is not None
+        assert app.input_type == {"type": "null"}
+
+    def test_register_no_arg_with_pydantic_output(self):
+        """Test registering no-arg function with Pydantic output."""
+
+        @pixie_app
+        async def no_arg_pydantic() -> OutputModel:
+            return OutputModel(result="success", processed=True)
+
+        app_id = "tests.pixie.test_registry.TestNoArgHandlers.test_register_no_arg_with_pydantic_output.<locals>.no_arg_pydantic"
+        app = get_application(app_id)
+        assert app is not None
+        assert app.input_type == {"type": "null"}
+        assert app.output_type == OutputModel
+
+    @pytest.mark.asyncio
+    async def test_call_sync_no_arg_callable(self):
+        """Test calling a sync function with no arguments."""
+
+        @pixie_app
+        def no_arg_func() -> JsonValue:
+            return {"message": "Hello, World!"}
+
+        app_id = "tests.pixie.test_registry.TestNoArgHandlers.test_call_sync_no_arg_callable.<locals>.no_arg_func"
+        # Input data is ignored for no-arg functions
+        result_stream = call_application(app_id, None)
+        results = [item async for item in result_stream]
+
+        assert len(results) == 1
+        assert results[0] == {"message": "Hello, World!"}
+
+    @pytest.mark.asyncio
+    async def test_call_async_no_arg_callable(self):
+        """Test calling an async function with no arguments."""
+
+        @pixie_app
+        async def no_arg_async() -> JsonValue:
+            await asyncio.sleep(0.01)  # Simulate async work
+            return {"status": "done"}
+
+        app_id = "tests.pixie.test_registry.TestNoArgHandlers.test_call_async_no_arg_callable.<locals>.no_arg_async"
+        result_stream = call_application(app_id, None)
+        results = [item async for item in result_stream]
+
+        assert len(results) == 1
+        assert results[0] == {"status": "done"}
+
+    @pytest.mark.asyncio
+    async def test_call_no_arg_with_pydantic_output(self):
+        """Test calling no-arg function that returns Pydantic model."""
+
+        @pixie_app
+        async def no_arg_model() -> OutputModel:
+            return OutputModel(result="generated", processed=True)
+
+        app_id = "tests.pixie.test_registry.TestNoArgHandlers.test_call_no_arg_with_pydantic_output.<locals>.no_arg_model"
+        result_stream = call_application(app_id, None)
+        results = [item async for item in result_stream]
+
+        assert len(results) == 1
+        # Pydantic model should be serialized
+        assert results[0] == {"result": "generated", "processed": True}
+
+    @pytest.mark.asyncio
+    async def test_no_arg_generator(self):
+        """Test no-arg async generator function."""
+
+        @pixie_app
+        async def no_arg_gen() -> AsyncGenerator[JsonValue, None]:
+            for i in range(3):
+                yield {"count": i}
+
+        app_id = "tests.pixie.test_registry.TestNoArgHandlers.test_no_arg_generator.<locals>.no_arg_gen"
+        result_stream = call_application(app_id, None)
+        results = [item async for item in result_stream]
+
+        assert len(results) == 3
+        assert results[0] == {"count": 0}
+        assert results[1] == {"count": 1}
+        assert results[2] == {"count": 2}
+
+    @pytest.mark.asyncio
+    async def test_no_arg_generator_with_pydantic_yield(self):
+        """Test no-arg generator yielding Pydantic models."""
+
+        @pixie_app
+        async def no_arg_pydantic_gen() -> AsyncGenerator[OutputModel, None]:
+            for i in range(2):
+                yield OutputModel(result=f"item_{i}", processed=True)
+
+        app_id = "tests.pixie.test_registry.TestNoArgHandlers.test_no_arg_generator_with_pydantic_yield.<locals>.no_arg_pydantic_gen"
+        result_stream = call_application(app_id, None)
+        results = [item async for item in result_stream]
+
+        assert len(results) == 2
+        assert results[0] == {"result": "item_0", "processed": True}
+        assert results[1] == {"result": "item_1", "processed": True}
+
+    @pytest.mark.asyncio
+    async def test_no_arg_callable_input_ignored(self):
+        """Test that input data is ignored for no-arg functions."""
+
+        @pixie_app
+        def no_arg_ignores_input() -> JsonValue:
+            return {"constant": "value"}
+
+        app_id = "tests.pixie.test_registry.TestNoArgHandlers.test_no_arg_callable_input_ignored.<locals>.no_arg_ignores_input"
+
+        # Try with different input values - all should work and return same result
+        for test_input in [None, {}, {"ignored": "data"}, "string", 123]:
+            result_stream = call_application(app_id, test_input)
+            results = [item async for item in result_stream]
+            assert results[0] == {"constant": "value"}
+
+    @pytest.mark.asyncio
+    async def test_no_arg_generator_factory(self):
+        """Test no-arg async function returning generator."""
+
+        @pixie_app
+        async def no_arg_factory() -> AsyncGenerator[JsonValue, None]:
+            async def _generator() -> AsyncGenerator[JsonValue, None]:
+                yield {"step": 1}
+                yield {"step": 2}
+
+            return _generator()
+
+        app_id = "tests.pixie.test_registry.TestNoArgHandlers.test_no_arg_generator_factory.<locals>.no_arg_factory"
+        result_stream = call_application(app_id, None)
+        results = [item async for item in result_stream]
+
+        assert len(results) == 2
+        assert results[0] == {"step": 1}
+        assert results[1] == {"step": 2}

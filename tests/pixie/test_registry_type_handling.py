@@ -4,7 +4,7 @@ from typing import Any, Optional, cast
 from pydantic import BaseModel
 
 from pixie.registry import _extract_input_hint, _registry
-from pixie.types import PixieGenerator
+from pixie.types import PixieGenerator, UserInputRequirement
 
 
 class TestModel(BaseModel):
@@ -160,7 +160,7 @@ def test_register_generator_output_types():
     @pixie_app
     async def test_gen_typed(query: str) -> PixieGenerator[str, int]:
         yield "Starting"
-        count = yield 1
+        count = yield UserInputRequirement(int)
         yield f"Count: {count}"
 
     # Check registry
@@ -175,8 +175,8 @@ def test_register_generator_output_types():
     # Output (yield type) is a complex Union and not extracted
     assert item.output_type is None, f"Expected None output, got {item.output_type}"
     # User input (send type) is extracted from the AsyncGenerator send type
-    assert item.user_input_type == {"type": "string"}, (
-        f"Expected string user_input, got {item.user_input_type}"
+    assert item.user_input_type == {"type": "integer"}, (
+        f"Expected integer user_input (send type), got {item.user_input_type}"
     )
 
 
@@ -213,8 +213,56 @@ def test_optional_input_type():
 
     item = _registry[registry_key]
     # Input schema should be anyOf with string and null
-    assert type(item.input_type) is dict[str, Any]
+    assert isinstance(item.input_type, dict)
     schema = cast(dict[str, Any], item.input_type)
     assert "anyOf" in schema, f"Expected anyOf schema, got {item.input_type}"
     assert {"type": "string"} in schema["anyOf"]
     assert {"type": "null"} in schema["anyOf"]
+
+
+def test_extract_input_hint_no_params():
+    """Test that _extract_input_hint treats no-param functions as None type."""
+
+    async def func_no_params() -> str:
+        return "test"
+
+    hint = _extract_input_hint(func_no_params)
+    assert hint is type(None), f"Expected type(None) for no params, got {hint}"
+
+
+def test_register_no_arg_callable():
+    """Test that no-arg callable gets correct null schema."""
+    from pixie import pixie_app
+
+    @pixie_app
+    async def test_no_args() -> str:
+        return "no args needed"
+
+    # Check registry
+    registry_key = f"{test_no_args.__module__}.{test_no_args.__qualname__}"
+    assert registry_key in _registry
+
+    item = _registry[registry_key]
+    # Input schema should be {"type": "null"} for no-arg functions
+    assert item.input_type == {"type": "null"}, (
+        f"Expected null schema for no-arg function, got {item.input_type}"
+    )
+
+
+def test_register_no_arg_generator():
+    """Test that no-arg generator gets correct null schema."""
+    from pixie import pixie_app
+
+    @pixie_app
+    async def test_no_args_gen() -> PixieGenerator[str, None]:
+        yield "output"
+
+    # Check registry
+    registry_key = f"{test_no_args_gen.__module__}.{test_no_args_gen.__qualname__}"
+    assert registry_key in _registry
+
+    item = _registry[registry_key]
+    # Input schema should be {"type": "null"} for no-arg generators
+    assert item.input_type == {"type": "null"}, (
+        f"Expected null schema for no-arg generator, got {item.input_type}"
+    )
