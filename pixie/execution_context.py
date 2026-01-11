@@ -18,7 +18,7 @@ from pixie.types import (
     ExecutionContext,
     BreakpointConfig,
     AppRunUpdate,
-    UserInputRequirement,
+    InputRequired,
 )
 
 # ContextVar for storing execution context per async task
@@ -124,7 +124,7 @@ def get_run_context(run_id: str) -> Optional[ExecutionContext]:
 
 def emit_status_update(
     status: AppRunStatus | None,
-    user_input_requirement: UserInputRequirement | None = None,
+    user_input_requirement: InputRequired | None = None,
     user_input: Optional[JsonValue] = None,
     data: Optional[JsonValue] = None,
     breakpt: Optional[BreakpointDetail] = None,

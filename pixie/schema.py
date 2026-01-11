@@ -21,7 +21,7 @@ from pixie.types import (
     AppRunCancelled,
     BreakpointDetail as PydanticBreakpointDetail,
     AppRunUpdate as PydanticAppRunUpdate,
-    UserInputRequirement,
+    InputRequired,
 )
 from pixie.otel_types import (
     OTLPKeyValue as PydanticOTLPKeyValue,
@@ -523,7 +523,7 @@ class Subscription:
                             # reset user input once it's sent to application
                             user_input = None
 
-                            if isinstance(item, UserInputRequirement):
+                            if isinstance(item, InputRequired):
                                 exec_ctx.emit_status_update(
                                     status="waiting",
                                     user_input_requirement=item,

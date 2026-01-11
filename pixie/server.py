@@ -27,7 +27,7 @@ def discover_and_load_applications():
     """Discover and load all Python files that use register_application.
 
     This function recursively searches the current working directory for Python files
-    that import pixie_app and loads them to register applications.
+    that import app and loads them to register applications.
     """
     from pixie.registry import clear_registry
 
@@ -56,7 +56,7 @@ def discover_and_load_applications():
 
         # Quick check if file imports register_application
         content = py_file.read_text()
-        if not re.search(r"\b(?:@|)\bpixie_app\b", content):
+        if not re.search(r"\b(?:@|)\bapp\b", content):
             continue
 
         # Load the module with a unique name based on path

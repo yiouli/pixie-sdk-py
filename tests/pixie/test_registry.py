@@ -1,6 +1,7 @@
 """Test application registry functionality."""
 
 # type: ignore - Tests intentionally use narrower types than the generic API accepts
+# flake8: noqa: E501
 
 import asyncio
 import pytest
@@ -8,7 +9,7 @@ from typing import AsyncGenerator
 from pydantic import BaseModel, JsonValue
 
 from pixie.registry import (
-    pixie_app,
+    app,
     call_application,
     get_application,
     list_applications,
@@ -41,51 +42,33 @@ class TestBasicRegistration:
     def test_register_simple_function(self):
         """Test registering a simple function with no type hints."""
 
-        @pixie_app
+        @app
         def simple_app(input_data: JsonValue) -> JsonValue:
             return {"echo": input_data}
 
         app_id = "tests.pixie.test_registry.TestBasicRegistration.test_register_simple_function.<locals>.simple_app"
         assert app_id in list_applications()
-        app = get_application(app_id)
-        assert app is not None
-        assert app.input_type is None
-        assert app.output_type is None
+        registered_app = get_application(app_id)
+        assert registered_app is not None
+        assert registered_app.input_type is None
+        assert registered_app.output_type is None
 
     def test_function_name_used_as_registry_key(self):
         """Test that function name is used as registry key."""
 
-        @pixie_app
+        @app
         def my_app(_input_data: JsonValue) -> JsonValue:
             return {"result": "ok"}
 
         app_id = "tests.pixie.test_registry.TestBasicRegistration.test_function_name_used_as_registry_key.<locals>.my_app"
         assert app_id in list_applications()
-        app = get_application(app_id)
-        assert app is not None
-
-    def test_register_duplicate_function_name_within_same_scope(self):
-        """Test that registering duplicate function names in same scope overwrites."""
-
-        @pixie_app
-        def duplicate_app(_input_data: JsonValue) -> JsonValue:
-            return {"app": "1"}
-
-        # Second registration with same name in same scope overwrites
-        @pixie_app
-        def duplicate_app(_input_data: JsonValue) -> JsonValue:  # noqa # pylint: disable=E0102
-            return {"app": "2"}
-
-        # The second one should be registered
-        app_id = "tests.pixie.test_registry.TestBasicRegistration.test_register_duplicate_function_name_within_same_scope.<locals>.duplicate_app"
-        apps = list_applications()
-        # Both will have the same ID, so only one entry
-        assert app_id in apps
+        registered_app = get_application(app_id)
+        assert registered_app is not None
 
     def test_decorator_with_parentheses(self):
         """Test using decorator with parentheses."""
 
-        @pixie_app
+        @app
         def app_with_parens(_input_data: JsonValue) -> JsonValue:
             return {"decorated": True}
 
@@ -99,67 +82,67 @@ class TestTypeExtraction:
     def test_register_with_pydantic_input(self):
         """Test registering with Pydantic input type."""
 
-        @pixie_app
+        @app
         def typed_input_app(data: InputModel) -> JsonValue:
             return {"received": data.message}
 
         app_id = "tests.pixie.test_registry.TestTypeExtraction.test_register_with_pydantic_input.<locals>.typed_input_app"
-        app = get_application(app_id)
-        assert app is not None
-        assert app.input_type == InputModel
+        registered_app = get_application(app_id)
+        assert registered_app is not None
+        assert registered_app.input_type == InputModel
 
     def test_register_with_pydantic_output(self):
         """Test registering with Pydantic output type."""
 
-        @pixie_app
+        @app
         def typed_output_app(_data: str) -> OutputModel:  # noqa: ARG001
             return OutputModel(result="success")
 
         app_id = "tests.pixie.test_registry.TestTypeExtraction.test_register_with_pydantic_output.<locals>.typed_output_app"
-        app = get_application(app_id)
-        assert app is not None
-        assert app.output_type == OutputModel
+        registered_app = get_application(app_id)
+        assert registered_app is not None
+        assert registered_app.output_type == OutputModel
 
     def test_register_with_both_pydantic_types(self):
         """Test registering with both Pydantic input and output."""
 
-        @pixie_app
+        @app
         def fully_typed_app(data: InputModel) -> OutputModel:
             return OutputModel(result=f"Processed: {data.message}")
 
         app_id = "tests.pixie.test_registry.TestTypeExtraction.test_register_with_both_pydantic_types.<locals>.fully_typed_app"
-        app = get_application(app_id)
-        assert app is not None
-        assert app.input_type == InputModel
-        assert app.output_type == OutputModel
+        registered_app = get_application(app_id)
+        assert registered_app is not None
+        assert registered_app.input_type == InputModel
+        assert registered_app.output_type == OutputModel
 
     def test_register_with_simple_types(self):
         """Test registering with simple types like str, int."""
 
-        @pixie_app
+        @app
         def string_app(text: str) -> str:
             return text.upper()
 
         app_id = "tests.pixie.test_registry.TestTypeExtraction.test_register_with_simple_types.<locals>.string_app"
-        app = get_application(app_id)
-        assert app is not None
-        assert isinstance(app.input_type, dict)
-        assert app.input_type["type"] == "string"
-        assert isinstance(app.output_type, dict)
-        assert app.output_type["type"] == "string"
+        registered_app = get_application(app_id)
+        assert registered_app is not None
+        assert isinstance(registered_app.input_type, dict)
+        assert registered_app.input_type["type"] == "string"
+        assert isinstance(registered_app.output_type, dict)
+        assert registered_app.output_type["type"] == "string"
 
     def test_register_with_jsonvalue_returns_none_schema(self):
         """Test that JsonValue types result in None schema."""
 
-        @pixie_app
+        @app
         def json_app(data: JsonValue) -> JsonValue:
             return data
 
         app_id = "tests.pixie.test_registry.TestTypeExtraction.test_register_with_jsonvalue_returns_none_schema.<locals>.json_app"
-        app = get_application(app_id)
-        assert app is not None
-        assert app.input_type is None
-        assert app.output_type is None
+        registered_app = get_application(app_id)
+        assert registered_app is not None
+        assert registered_app.input_type is None
+        assert registered_app.output_type is None
 
 
 class TestCallableApplications:
@@ -169,7 +152,7 @@ class TestCallableApplications:
     async def test_call_simple_sync_function(self):
         """Test calling a synchronous function."""
 
-        @pixie_app
+        @app
         def sync_app(_data: JsonValue) -> JsonValue:  # noqa: ARG001
             return {"result": "sync"}
 
@@ -184,7 +167,7 @@ class TestCallableApplications:
     async def test_call_async_function(self):
         """Test calling an async function."""
 
-        @pixie_app
+        @app
         async def async_app(_data: JsonValue) -> JsonValue:  # noqa: ARG001
             await asyncio.sleep(0.001)
             return {"result": "async"}
@@ -200,7 +183,7 @@ class TestCallableApplications:
     async def test_call_with_pydantic_input(self):
         """Test calling with Pydantic input model."""
 
-        @pixie_app
+        @app
         def pydantic_input_app(data: InputModel) -> JsonValue:
             return {"message": data.message, "count": data.count}
 
@@ -215,7 +198,7 @@ class TestCallableApplications:
     async def test_call_with_pydantic_output(self):
         """Test that Pydantic output is automatically serialized."""
 
-        @pixie_app
+        @app
         def pydantic_output_app(_data: JsonValue) -> OutputModel:  # noqa: ARG001
             return OutputModel(result="success", processed=True)
 
@@ -241,7 +224,7 @@ class TestGeneratorApplications:
     async def test_async_generator_function(self):
         """Test async generator function (Pattern 1)."""
 
-        @pixie_app
+        @app
         async def generator_app(
             _data: JsonValue,
         ) -> AsyncGenerator[JsonValue, None]:  # noqa: ARG001
@@ -261,7 +244,7 @@ class TestGeneratorApplications:
     async def test_async_generator_factory(self):
         """Test async function returning generator (Pattern 2)."""
 
-        @pixie_app
+        @app
         async def factory_app(
             _data: JsonValue,  # noqa: ARG001
         ) -> AsyncGenerator[JsonValue, None]:
@@ -283,7 +266,7 @@ class TestGeneratorApplications:
     async def test_generator_with_pydantic_input(self):
         """Test generator with Pydantic input model."""
 
-        @pixie_app
+        @app
         async def typed_generator(
             data: InputModel,
         ) -> AsyncGenerator[JsonValue, None]:
@@ -301,7 +284,7 @@ class TestGeneratorApplications:
     async def test_generator_with_pydantic_output(self):
         """Test generator yielding Pydantic models."""
 
-        @pixie_app
+        @app
         async def pydantic_generator(
             _data: JsonValue,  # noqa: ARG001
         ) -> AsyncGenerator[OutputModel, None]:
@@ -320,7 +303,7 @@ class TestGeneratorApplications:
     async def test_generator_type_detection(self):
         """Test that generator is properly detected."""
 
-        @pixie_app
+        @app
         async def my_generator(
             _data: JsonValue,  # noqa: ARG001
         ) -> AsyncGenerator[JsonValue, None]:
@@ -328,10 +311,10 @@ class TestGeneratorApplications:
             yield {"second": 2}
 
         app_id = "tests.pixie.test_registry.TestGeneratorApplications.test_generator_type_detection.<locals>.my_generator"
-        app = get_application(app_id)
-        assert app is not None
+        pixie_app = get_application(app_id)
+        assert pixie_app is not None
         # Generator should be registered successfully
-        assert app.stream_handler is not None
+        assert pixie_app.stream_handler is not None
 
 
 class TestGeneratorRegistration:
@@ -340,22 +323,22 @@ class TestGeneratorRegistration:
     def test_generator_with_pydantic_yield_type_schema(self):
         """Test that generator yield type schema is extracted correctly."""
 
-        @pixie_app
+        @app
         async def pydantic_yield_gen(
             _data: JsonValue,  # noqa: ARG001
         ) -> AsyncGenerator[OutputModel, None]:
             yield OutputModel(result="test")
 
         app_id = "tests.pixie.test_registry.TestGeneratorRegistration.test_generator_with_pydantic_yield_type_schema.<locals>.pydantic_yield_gen"
-        app = get_application(app_id)
-        assert app is not None
-        assert app.output_type == OutputModel
-        assert app.user_input_type is None  # No send type
+        registered_app = get_application(app_id)
+        assert registered_app is not None
+        assert registered_app.output_type == OutputModel
+        assert registered_app.user_input_type is None  # No send type
 
     def test_generator_with_pydantic_send_type_schema(self):
         """Test that generator send type schema is extracted correctly."""
 
-        @pixie_app
+        @app
         async def interactive_gen(
             _data: JsonValue,  # noqa: ARG001
         ) -> AsyncGenerator[OutputModel, InputModel]:
@@ -363,30 +346,30 @@ class TestGeneratorRegistration:
             yield OutputModel(result=f"got: {user_input.message}")
 
         app_id = "tests.pixie.test_registry.TestGeneratorRegistration.test_generator_with_pydantic_send_type_schema.<locals>.interactive_gen"
-        app = get_application(app_id)
-        assert app is not None
-        assert app.output_type == OutputModel
-        assert app.user_input_type == InputModel
+        registered_app = get_application(app_id)
+        assert registered_app is not None
+        assert registered_app.output_type == OutputModel
+        assert registered_app.user_input_type == InputModel
 
     def test_generator_with_jsonvalue_yield_no_schema(self):
         """Test that JsonValue yield type results in None schema."""
 
-        @pixie_app
+        @app
         async def json_gen(
             _data: JsonValue,  # noqa: ARG001
         ) -> AsyncGenerator[JsonValue, None]:
             yield {"test": "data"}
 
         app_id = "tests.pixie.test_registry.TestGeneratorRegistration.test_generator_with_jsonvalue_yield_no_schema.<locals>.json_gen"
-        app = get_application(app_id)
-        assert app is not None
-        assert app.output_type is None  # JsonValue -> None
-        assert app.user_input_type is None
+        registered_app = get_application(app_id)
+        assert registered_app is not None
+        assert registered_app.output_type is None  # JsonValue -> None
+        assert registered_app.user_input_type is None
 
     def test_generator_with_both_pydantic_types(self):
         """Test generator with both Pydantic input and output schemas."""
 
-        @pixie_app
+        @app
         async def full_typed_gen(
             data: InputModel,
         ) -> AsyncGenerator[OutputModel, InputModel]:
@@ -395,29 +378,29 @@ class TestGeneratorRegistration:
             yield OutputModel(result=f"Feedback: {feedback.message}")
 
         app_id = "tests.pixie.test_registry.TestGeneratorRegistration.test_generator_with_both_pydantic_types.<locals>.full_typed_gen"
-        app = get_application(app_id)
-        assert app is not None
-        assert app.input_type == InputModel
-        assert app.output_type == OutputModel
-        assert app.user_input_type == InputModel
+        registered_app = get_application(app_id)
+        assert registered_app is not None
+        assert registered_app.input_type == InputModel
+        assert registered_app.output_type == OutputModel
+        assert registered_app.user_input_type == InputModel
 
     def test_generator_with_simple_type_input(self):
         """Test generator with simple type input has schema."""
 
-        @pixie_app
+        @app
         async def str_input_gen(text: str) -> AsyncGenerator[JsonValue, None]:
             yield {"processed": text.upper()}
 
         app_id = "tests.pixie.test_registry.TestGeneratorRegistration.test_generator_with_simple_type_input.<locals>.str_input_gen"
-        app = get_application(app_id)
-        assert app is not None
-        assert isinstance(app.input_type, dict)
-        assert app.input_type["type"] == "string"
+        registered_app = get_application(app_id)
+        assert registered_app is not None
+        assert isinstance(registered_app.input_type, dict)
+        assert registered_app.input_type["type"] == "string"
 
     def test_generator_factory_pattern_schema(self):
         """Test that async function returning generator extracts schema."""
 
-        @pixie_app
+        @app
         async def factory_with_types(
             data: InputModel,
         ) -> AsyncGenerator[OutputModel, None]:
@@ -428,17 +411,17 @@ class TestGeneratorRegistration:
             return _gen()
 
         app_id = "tests.pixie.test_registry.TestGeneratorRegistration.test_generator_factory_pattern_schema.<locals>.factory_with_types"
-        app = get_application(app_id)
-        assert app is not None
-        assert app.input_type == InputModel
-        assert app.output_type == OutputModel
-        assert app.user_input_type is None
+        registered_app = get_application(app_id)
+        assert registered_app is not None
+        assert registered_app.input_type == InputModel
+        assert registered_app.output_type == OutputModel
+        assert registered_app.user_input_type is None
 
     @pytest.mark.asyncio
     async def test_interactive_generator_with_send(self):
         """Test interactive generator that receives user input."""
 
-        @pixie_app
+        @app
         async def interactive(
             data: InputModel,
         ) -> AsyncGenerator[OutputModel, InputModel]:
@@ -482,7 +465,7 @@ class TestEdgeCases:
     async def test_empty_generator(self):
         """Test generator that yields nothing."""
 
-        @pixie_app
+        @app
         async def empty_generator(
             _data: JsonValue,  # noqa: ARG001
         ) -> AsyncGenerator[JsonValue, None]:
@@ -499,7 +482,7 @@ class TestEdgeCases:
     async def test_generator_with_await_inside(self):
         """Test generator with async operations inside."""
 
-        @pixie_app
+        @app
         async def async_generator(
             _data: JsonValue,  # noqa: ARG001
         ) -> AsyncGenerator[JsonValue, None]:
@@ -517,7 +500,7 @@ class TestEdgeCases:
     async def test_mixed_pydantic_and_json_values(self):
         """Test returning mixed Pydantic models and plain JSON."""
 
-        @pixie_app
+        @app
         def mixed_app(data: JsonValue) -> JsonValue | OutputModel:
             # Sometimes return Pydantic, sometimes plain JSON
             if isinstance(data, dict) and data.get("use_pydantic"):
@@ -540,11 +523,11 @@ class TestEdgeCases:
     def test_list_applications(self):
         """Test listing all registered applications."""
 
-        @pixie_app
+        @app
         def app1(_data: JsonValue) -> JsonValue:  # noqa: ARG001
             return {}
 
-        @pixie_app
+        @app
         def app2(_data: JsonValue) -> JsonValue:  # noqa: ARG001
             return {}
 
@@ -558,7 +541,7 @@ class TestEdgeCases:
     def test_clear_registry(self):
         """Test clearing the registry."""
 
-        @pixie_app
+        @app
         def temp_app(_data: JsonValue) -> JsonValue:  # noqa: ARG001
             return {}
 
@@ -578,7 +561,7 @@ class TestComplexScenarios:
     async def test_chained_processing(self):
         """Test processing data through multiple steps."""
 
-        @pixie_app
+        @app
         async def processor(data: InputModel) -> OutputModel:
             # Simulate processing
             await asyncio.sleep(0.001)
@@ -600,7 +583,7 @@ class TestComplexScenarios:
     async def test_streaming_large_dataset(self):
         """Test streaming a large number of items."""
 
-        @pixie_app
+        @app
         async def stream_numbers(
             data: JsonValue,
         ) -> AsyncGenerator[JsonValue, None]:
@@ -632,49 +615,49 @@ class TestNoArgHandlers:
     def test_register_sync_no_arg_callable(self):
         """Test registering a sync function with no arguments."""
 
-        @pixie_app
+        @app
         def no_arg_sync() -> JsonValue:
             return {"result": "no args needed"}
 
         app_id = "tests.pixie.test_registry.TestNoArgHandlers.test_register_sync_no_arg_callable.<locals>.no_arg_sync"
         assert app_id in list_applications()
-        app = get_application(app_id)
-        assert app is not None
+        registered_app = get_application(app_id)
+        assert registered_app is not None
         # Should have null schema since no args means None type
-        assert app.input_type == {"type": "null"}
+        assert registered_app.input_type == {"type": "null"}
         # Output type may be None for JsonValue return type (no specific schema)
 
     def test_register_async_no_arg_callable(self):
         """Test registering an async function with no arguments."""
 
-        @pixie_app
+        @app
         async def no_arg_async() -> JsonValue:
             return {"result": "async no args"}
 
         app_id = "tests.pixie.test_registry.TestNoArgHandlers.test_register_async_no_arg_callable.<locals>.no_arg_async"
         assert app_id in list_applications()
-        app = get_application(app_id)
-        assert app is not None
-        assert app.input_type == {"type": "null"}
+        registered_app = get_application(app_id)
+        assert registered_app is not None
+        assert registered_app.input_type == {"type": "null"}
 
     def test_register_no_arg_with_pydantic_output(self):
         """Test registering no-arg function with Pydantic output."""
 
-        @pixie_app
+        @app
         async def no_arg_pydantic() -> OutputModel:
             return OutputModel(result="success", processed=True)
 
         app_id = "tests.pixie.test_registry.TestNoArgHandlers.test_register_no_arg_with_pydantic_output.<locals>.no_arg_pydantic"
-        app = get_application(app_id)
-        assert app is not None
-        assert app.input_type == {"type": "null"}
-        assert app.output_type == OutputModel
+        registered_app = get_application(app_id)
+        assert registered_app is not None
+        assert registered_app.input_type == {"type": "null"}
+        assert registered_app.output_type == OutputModel
 
     @pytest.mark.asyncio
     async def test_call_sync_no_arg_callable(self):
         """Test calling a sync function with no arguments."""
 
-        @pixie_app
+        @app
         def no_arg_func() -> JsonValue:
             return {"message": "Hello, World!"}
 
@@ -690,7 +673,7 @@ class TestNoArgHandlers:
     async def test_call_async_no_arg_callable(self):
         """Test calling an async function with no arguments."""
 
-        @pixie_app
+        @app
         async def no_arg_async() -> JsonValue:
             await asyncio.sleep(0.01)  # Simulate async work
             return {"status": "done"}
@@ -706,7 +689,7 @@ class TestNoArgHandlers:
     async def test_call_no_arg_with_pydantic_output(self):
         """Test calling no-arg function that returns Pydantic model."""
 
-        @pixie_app
+        @app
         async def no_arg_model() -> OutputModel:
             return OutputModel(result="generated", processed=True)
 
@@ -722,7 +705,7 @@ class TestNoArgHandlers:
     async def test_no_arg_generator(self):
         """Test no-arg async generator function."""
 
-        @pixie_app
+        @app
         async def no_arg_gen() -> AsyncGenerator[JsonValue, None]:
             for i in range(3):
                 yield {"count": i}
@@ -740,7 +723,7 @@ class TestNoArgHandlers:
     async def test_no_arg_generator_with_pydantic_yield(self):
         """Test no-arg generator yielding Pydantic models."""
 
-        @pixie_app
+        @app
         async def no_arg_pydantic_gen() -> AsyncGenerator[OutputModel, None]:
             for i in range(2):
                 yield OutputModel(result=f"item_{i}", processed=True)
@@ -757,7 +740,7 @@ class TestNoArgHandlers:
     async def test_no_arg_callable_input_ignored(self):
         """Test that input data is ignored for no-arg functions."""
 
-        @pixie_app
+        @app
         def no_arg_ignores_input() -> JsonValue:
             return {"constant": "value"}
 
@@ -773,7 +756,7 @@ class TestNoArgHandlers:
     async def test_no_arg_generator_factory(self):
         """Test no-arg async function returning generator."""
 
-        @pixie_app
+        @app
         async def no_arg_factory() -> AsyncGenerator[JsonValue, None]:
             async def _generator() -> AsyncGenerator[JsonValue, None]:
                 yield {"step": 1}

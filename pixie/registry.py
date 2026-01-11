@@ -25,7 +25,7 @@ import inspect
 from pydantic import BaseModel, JsonValue
 import docstring_parser
 
-from pixie.types import PixieGenerator, UserInputRequirement
+from pixie.types import PixieGenerator, InputRequired
 from pixie.utils import extract_schema_from_type
 
 
@@ -43,7 +43,7 @@ class RegistryItem:
     def __init__(
         self,
         stream_handler: Callable[
-            [JsonValue], AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]
+            [JsonValue], AsyncGenerator[InputRequired | JsonValue, JsonValue]
         ],
         name: str,
         module: str,
@@ -221,17 +221,17 @@ def _extract_input_hint(func: Callable) -> Optional[Any]:
 
 
 def _value_to_json(
-    value: JsonValue | BaseModel | UserInputRequirement,
-) -> JsonValue | UserInputRequirement:
+    value: JsonValue | BaseModel | InputRequired,
+) -> JsonValue | InputRequired:
     """Convert a value to JSON-compatible format.
 
     Args:
         value: The value to convert.
 
     Returns:
-        JSON-compatible value or UserInputRequirement.
+        JSON-compatible value or InputRequired.
     """
-    if isinstance(value, UserInputRequirement):
+    if isinstance(value, InputRequired):
         return value
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json", exclude_unset=True)
@@ -259,7 +259,7 @@ def _json_to_value(
 def _wrap_callable_handler(
     func: ApplicationCallable,
     input_type: Optional[type[BaseModel]],
-) -> Callable[[JsonValue], AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]]:
+) -> Callable[[JsonValue], AsyncGenerator[InputRequired | JsonValue, JsonValue]]:
     """Wrap a callable application handler to work with the streaming interface.
 
     Args:
@@ -272,7 +272,7 @@ def _wrap_callable_handler(
 
     async def stream_handler(
         input_data: JsonValue,
-    ) -> AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]:
+    ) -> AsyncGenerator[InputRequired | JsonValue, JsonValue]:
         # Check if function accepts no parameters
         sig = inspect.signature(func)
         if not sig.parameters:
@@ -296,7 +296,7 @@ def _wrap_generator_handler(
     func: ApplicationGenerator,
     input_type: Optional[type[BaseModel]],
     user_input_type: Optional[type[BaseModel]],
-) -> Callable[[JsonValue], AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]]:
+) -> Callable[[JsonValue], AsyncGenerator[InputRequired | JsonValue, JsonValue]]:
     """Wrap a generator application handler to work with the streaming interface.
 
     Args:
@@ -310,7 +310,7 @@ def _wrap_generator_handler(
 
     async def stream_handler(
         input_data: JsonValue,
-    ) -> AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]:
+    ) -> AsyncGenerator[InputRequired | JsonValue, JsonValue]:
         # Check if function accepts no parameters
         sig = inspect.signature(func)
         if not sig.parameters:
@@ -524,58 +524,58 @@ def _register_generator(
 
 # Overloads for common application patterns with specific type preservation
 
-# When called with just func parameter (direct decoration: @pixie_app)
+# When called with just func parameter (direct decoration: @app)
 
 
 # Sync callable returning value (with parameter)
 @overload
-def pixie_app(func: Callable[[P], R]) -> Callable[[P], R]: ...
+def app(func: Callable[[P], R]) -> Callable[[P], R]: ...
 
 
 # Async callable returning value (with parameter)
 @overload
-def pixie_app(func: Callable[[P], Awaitable[R]]) -> Callable[[P], Awaitable[R]]: ...
+def app(func: Callable[[P], Awaitable[R]]) -> Callable[[P], Awaitable[R]]: ...
 
 
 # Async generator function (with parameter)
 @overload
-def pixie_app(
+def app(
     func: Callable[[P], PixieGenerator[T, R]],
 ) -> Callable[[P], PixieGenerator[T, R]]: ...
 
 
 # Async function returning async generator (with parameter)
 @overload
-def pixie_app(
+def app(
     func: Callable[[P], Awaitable[PixieGenerator[T, R]]],
 ) -> Callable[[P], Awaitable[PixieGenerator[T, R]]]: ...
 
 
 # Sync callable returning value (no parameters)
 @overload
-def pixie_app(func: Callable[[], R]) -> Callable[[], R]: ...
+def app(func: Callable[[], R]) -> Callable[[], R]: ...
 
 
 # Async callable returning value (no parameters)
 @overload
-def pixie_app(func: Callable[[], Awaitable[R]]) -> Callable[[], Awaitable[R]]: ...
+def app(func: Callable[[], Awaitable[R]]) -> Callable[[], Awaitable[R]]: ...
 
 
 # Async generator function (no parameters)
 @overload
-def pixie_app(
+def app(
     func: Callable[[], PixieGenerator[T, R]],
 ) -> Callable[[], PixieGenerator[T, R]]: ...
 
 
 # Async function returning async generator (no parameters)
 @overload
-def pixie_app(
+def app(
     func: Callable[[], Awaitable[PixieGenerator[T, R]]],
 ) -> Callable[[], Awaitable[PixieGenerator[T, R]]]: ...
 
 
-def pixie_app(func: Callable) -> Callable:
+def app(func: Callable) -> Callable:
     """Register an application in the Pixie registry.
 
     This function can be used to register synchronous or asynchronous callables,
@@ -631,7 +631,7 @@ def pixie_app(func: Callable) -> Callable:
 async def call_application(
     id: str,
     input_data: JsonValue,
-) -> AsyncGenerator[UserInputRequirement | JsonValue, JsonValue]:
+) -> AsyncGenerator[InputRequired | JsonValue, JsonValue]:
     """Call a registered application with automatic type conversion.
 
     Args:

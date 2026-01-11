@@ -4,7 +4,7 @@ from typing import Any, Optional, cast
 from pydantic import BaseModel
 
 from pixie.registry import _extract_input_hint, _registry
-from pixie.types import PixieGenerator, UserInputRequirement
+from pixie.types import PixieGenerator, InputRequired
 
 
 class TestModel(BaseModel):
@@ -55,9 +55,9 @@ def test_extract_input_hint_with_pydantic_model():
 
 def test_register_callable_with_none_type():
     """Test that callable with None type gets correct schema."""
-    from pixie import pixie_app
+    from pixie import app
 
-    @pixie_app
+    @app
     async def test_app(_: None) -> str:
         return "test"
 
@@ -74,9 +74,9 @@ def test_register_callable_with_none_type():
 
 def test_register_callable_with_no_type():
     """Test that callable with no type hint gets None schema."""
-    from pixie import pixie_app
+    from pixie import app
 
-    @pixie_app
+    @app
     async def test_app_no_hint(x):
         return "test"
 
@@ -91,9 +91,9 @@ def test_register_callable_with_no_type():
 
 def test_register_callable_with_string():
     """Test that callable with str type gets correct schema."""
-    from pixie import pixie_app
+    from pixie import app
 
-    @pixie_app
+    @app
     async def test_app_str(query: str) -> str:
         return query
 
@@ -110,9 +110,9 @@ def test_register_callable_with_string():
 
 def test_register_callable_with_pydantic_model():
     """Test that callable with Pydantic model returns model class."""
-    from pixie import pixie_app
+    from pixie import app
 
-    @pixie_app
+    @app
     async def test_app_model(data: TestModel) -> str:
         return data.value
 
@@ -129,9 +129,9 @@ def test_register_callable_with_pydantic_model():
 
 def test_register_generator_with_none_type():
     """Test that generator with None type gets correct schema."""
-    from pixie import pixie_app
+    from pixie import app
 
-    @pixie_app
+    @app
     async def test_gen(_: None) -> PixieGenerator[str, str]:
         yield "test"
         user_input = yield ""  # Request user input
@@ -155,12 +155,12 @@ def test_register_generator_output_types():
     don't map 1:1 to what gets extracted from AsyncGenerator.
     We're testing the actual behavior here.
     """
-    from pixie import pixie_app
+    from pixie import app
 
-    @pixie_app
+    @app
     async def test_gen_typed(query: str) -> PixieGenerator[str, int]:
         yield "Starting"
-        count = yield UserInputRequirement(int)
+        count = yield InputRequired(int)
         yield f"Count: {count}"
 
     # Check registry
@@ -182,9 +182,9 @@ def test_register_generator_output_types():
 
 def test_return_type_none():
     """Test that return type of None is handled correctly."""
-    from pixie import pixie_app
+    from pixie import app
 
-    @pixie_app
+    @app
     async def test_returns_none(x: str) -> None:
         print(x)
 
@@ -201,9 +201,9 @@ def test_return_type_none():
 
 def test_optional_input_type():
     """Test that Optional[str] is handled correctly."""
-    from pixie import pixie_app
+    from pixie import app
 
-    @pixie_app
+    @app
     async def test_optional(query: Optional[str]) -> str:
         return query or "default"
 
@@ -232,9 +232,9 @@ def test_extract_input_hint_no_params():
 
 def test_register_no_arg_callable():
     """Test that no-arg callable gets correct null schema."""
-    from pixie import pixie_app
+    from pixie import app
 
-    @pixie_app
+    @app
     async def test_no_args() -> str:
         return "no args needed"
 
@@ -251,9 +251,9 @@ def test_register_no_arg_callable():
 
 def test_register_no_arg_generator():
     """Test that no-arg generator gets correct null schema."""
-    from pixie import pixie_app
+    from pixie import app
 
-    @pixie_app
+    @app
     async def test_no_args_gen() -> PixieGenerator[str, None]:
         yield "output"
 

@@ -123,7 +123,7 @@ _OutputType = TypeVar(
 )  # Return type (covariant)
 
 
-class UserInputRequirement(Generic[_UserInputType]):
+class InputRequired(Generic[_UserInputType]):
     """Represents a requirement for user input during application execution.
 
     This is yielded by a generator application to request input from the user.
@@ -159,11 +159,11 @@ class AppRunUpdate(BaseModel):
     data: Optional[JsonValue] = None
     breakpoint: Optional[BreakpointDetail] = None
     trace: Optional[TraceDataType] = None
-    _user_input_requirement: UserInputRequirement | None = PrivateAttr(default=None)
+    _user_input_requirement: InputRequired | None = PrivateAttr(default=None)
 
     def set_user_input_requirement(
         self,
-        requirement: UserInputRequirement | None,
+        requirement: InputRequired | None,
     ) -> None:
         """Set the user input requirement for this update.
 
@@ -173,7 +173,7 @@ class AppRunUpdate(BaseModel):
         self._user_input_requirement = requirement
 
     @property
-    def user_input_requirement(self) -> UserInputRequirement | None:
+    def user_input_requirement(self) -> InputRequired | None:
         """Get the user input requirement for this update.
 
         Returns:
@@ -211,5 +211,6 @@ class AppRunCancelled(Exception):
 
 
 PixieGenerator = AsyncGenerator[
-    str | _OutputType | UserInputRequirement[_UserInputType], _UserInputType
+    str | _OutputType | InputRequired[_UserInputType], _UserInputType
 ]
+"""Async generator that yields streaming token, output or input requirements and receives user input."""
