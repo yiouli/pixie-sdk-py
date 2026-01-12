@@ -33,4 +33,13 @@ tests/mocks/llama-index-storage
 poetry.lock
 
 .vscode/
-docs/
+
+.ruff_cache/
+
+# Docusaurus
+docs/node_modules/
+docs/build/
+docs/.docusaurus/
+docs/.cache-loader/
+docs/package-lock.json
+docs/yarn.lock

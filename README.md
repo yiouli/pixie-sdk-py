@@ -86,9 +86,21 @@ Visit the web UI [gopixie.ai](https://gopixie.ai) to start debugging.
 
 ## Important Links
 
-- [**Documentation**](https://yiouli.github.io/pixie-sdk-py/)
-- [**Examples**](https://github.com/yiouli/pixie-examples)
-- [**Discord**](https://discord.gg/YMNYu6Z3)
+- [**Documentation**](https://yiouli.github.io/pixie-sdk-py/) - Complete documentation with tutorials and API reference
+- [**Examples**](https://github.com/yiouli/pixie-examples) - Real-world examples and sample applications
+- [**Discord**](https://discord.gg/YMNYu6Z3) - Join our community for support and discussions
+
+## Documentation
+
+Complete documentation is available at **https://yiouli.github.io/pixie-sdk-py/**
+
+### Quick Links
+
+- [Introduction](https://yiouli.github.io/pixie-sdk-py/docs/introduction)
+- [Quickstart Guide](https://yiouli.github.io/pixie-sdk-py/docs/quickstart)
+- [Tutorial: Setup](https://yiouli.github.io/pixie-sdk-py/docs/tutorial/setup)
+- [Concepts: Architecture](https://yiouli.github.io/pixie-sdk-py/docs/concepts/architecture)
+- [API Reference](https://yiouli.github.io/pixie-sdk-py/docs/api/overview)
 
 ## Acknowledgments
 
