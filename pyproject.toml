@@ -5,7 +5,7 @@ packages = [
     { include = "langfuse" },
 ]
 
-version = "0.3.0"
+version = "0.0.1b0"
 description = "Interactive debugging tool for AI applications"
 authors = ["Yiou Li <yol@gopixie.ai>"]
 license = "MIT"
