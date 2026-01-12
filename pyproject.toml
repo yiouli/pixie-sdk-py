@@ -5,7 +5,7 @@ packages = [
     { include = "langfuse" },
 ]
 
-version = "0.0.1b0"
+version = "0.0.0"  # Managed by setuptools-scm
 description = "Interactive debugging tool for AI applications"
 authors = ["Yiou Li <yol@gopixie.ai>"]
 license = "MIT"
@@ -52,8 +52,11 @@ opentelemetry-instrumentation-threading = "^0.60b1"
 pdoc = "^15.0.4"
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core>=1.0.0", "setuptools-scm>=8.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.setuptools_scm]
+write_to = "pixie/_version.py"
 
 [tool.pytest.ini_options]
 log_cli = true

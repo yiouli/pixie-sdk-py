@@ -1,0 +1,88 @@
+name: Daily Release and Publish
+
+on:
+  schedule:
+    # Run at 2:00 AM UTC every day
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  release-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required for creating tags
+      id-token: write  # Required for trusted publishing
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for setuptools-scm to work properly
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install dependencies
+        run: |
+          poetry install --no-interaction
+          pip install setuptools-scm build twine
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Generate version with setuptools-scm
+        id: version
+        run: |
+          # Install setuptools-scm in the current environment
+          pip install setuptools-scm
+          VERSION=$(python -m setuptools_scm)
+          echo "Generated version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create and push tag
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          echo "Creating tag: $TAG"
+          git tag -a "$TAG" -m "Daily release $TAG"
+          git push origin "$TAG"
+
+      - name: Build package
+        run: |
+          poetry build
+
+      - name: Publish to TestPyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        run: |
+          twine upload --repository testpypi dist/* --verbose
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          release_name: Release v${{ steps.version.outputs.version }}
+          body: |
+            Daily automated release v${{ steps.version.outputs.version }}
+
+            Published to TestPyPI: https://test.pypi.org/project/pixie-sdk/
+
+            Install with:
+            ```bash
+            pip install -i https://test.pypi.org/simple/ pixie-sdk==${{ steps.version.outputs.version }}
+            ```
+          draft: false
+          prerelease: true
