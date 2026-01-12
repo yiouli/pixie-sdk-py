@@ -465,20 +465,20 @@ class Subscription:
         """
         # Generate unique run ID
         run_id = str(uuid.uuid4())
-        logger.info("Starting subscription for app_id=%s, run_id=%s", id, run_id)
+        logger.info("Starting run: app=%s, run_id=%s", id, run_id)
 
         langfuse = get_client()
 
         if langfuse.auth_check():
-            logger.info("Langfuse client initialized successfully.")
+            logger.debug("Langfuse client authenticated")
         else:
-            logger.warning(
-                "Langfuse client authentication failed. Continuing in Pixie-only mode."
+            logger.debug(
+                "Langfuse authentication failed, continuing in Pixie-only mode"
             )
 
         # Check if application exists
         if not get_application(id):
-            logger.error("Application '%s' not found for run_id=%s", id, run_id)
+            logger.error("Application not found: %s", id)
             pydantic_update = PydanticAppRunUpdate(
                 run_id=run_id,
                 status="error",
@@ -505,7 +505,7 @@ class Subscription:
             # Create task for application execution
             async def run_application():
                 try:
-                    logger.info("Starting application execution for run_id=%s", run_id)
+                    logger.debug("Executing app run_id=%s", run_id)
                     exec_ctx.reload_run_context(run_id)
 
                     app_gen = call_application(
@@ -543,21 +543,17 @@ class Subscription:
                         pass
 
                     exec_ctx.emit_status_update(status="completed")
-                    logger.info("Application execution completed for run_id=%s", run_id)
+                    logger.info("Completed run_id=%s", run_id)
                 except (asyncio.CancelledError, AppRunCancelled):
-                    logger.info("Application execution cancelled for run_id=%s", run_id)
+                    logger.info("Cancelled run_id=%s", run_id)
                     exec_ctx.emit_status_update(status="cancelled")
                     raise
                 except Exception as e:  # pylint: disable=broad-except
-                    logger.error(
-                        "Application execution error for run_id=%s: %s", run_id, str(e)
-                    )
+                    logger.error("Run error run_id=%s: %s", run_id, str(e))
                     exec_ctx.emit_status_update(status="error", data={"error": str(e)})
                     raise
                 finally:
-                    logger.debug(
-                        "Application execution task ending for run_id=%s", run_id
-                    )
+                    logger.debug("Ending task run_id=%s", run_id)
                     langfuse.flush()
                     exec_ctx.emit_status_update(status=None)
 
@@ -578,7 +574,7 @@ class Subscription:
         finally:
             # Cancel the background task if it's still running
             if task is not None and not task.done():
-                logger.info("Cancelling application task for run_id=%s", run_id)
+                logger.debug("Cancelling task run_id=%s", run_id)
 
                 # Set cancellation flag to stop the child thread
                 exec_ctx.cancel_run()
@@ -590,7 +586,7 @@ class Subscription:
                 # Cancel the asyncio task wrapper
                 task.cancel()
 
-            logger.debug("Unregistering run_id=%s", run_id)
+            logger.debug("Cleanup run_id=%s", run_id)
 
             # Close the janus queue to release resources
             if ctx and ctx.status_queue:
