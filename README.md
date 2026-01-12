@@ -8,9 +8,7 @@
 
 Debug your AI application interactively, and inspect traces in real-time, all in one single web UI.
 
-<a href="https://youtu.be/FEIvuiPDr9I" target="_blank" rel="noopener">
-  <img src="https://github.com/user-attachments/assets/ac2ec55f-b487-4b3f-ae6f-b8743ad296e4" alt="Demo video" width="800" target="_blank" />
-</a>
+<video src="https://github.com/user-attachments/assets/8c164f1f-9f0f-4a4e-a1f2-ba0c3ca6f58c" controls></video>
 
 ## Features
 
