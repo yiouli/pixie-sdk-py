@@ -257,7 +257,7 @@ def _json_to_value(
 
 
 def _wrap_callable_handler(
-    func: ApplicationCallable,
+    func: Callable,
     input_type: Optional[type[BaseModel]],
 ) -> Callable[[JsonValue], AsyncGenerator[InputRequired | JsonValue, JsonValue]]:
     """Wrap a callable application handler to work with the streaming interface.
@@ -293,7 +293,7 @@ def _wrap_callable_handler(
 
 
 def _wrap_generator_handler(
-    func: ApplicationGenerator,
+    func: Callable,
     input_type: Optional[type[BaseModel]],
     user_input_type: Optional[type[BaseModel]],
 ) -> Callable[[JsonValue], AsyncGenerator[InputRequired | JsonValue, JsonValue]]:
