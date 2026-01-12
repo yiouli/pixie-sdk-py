@@ -1,322 +1,105 @@
 # Pixie SDK
 
-[![MIT License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![MIT License](https://img.shields.io/badge/License-MIT-red.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square)](https://www.python.org/downloads/)
+[![Discord](https://img.shields.io/discord/1459772566528069715?style=flat-square&logo=Discord&logoColor=white&label=Discord&color=%23434EE4)](https://discord.gg/YMNYu6Z3)
 
-**Observability and Interactive Debugging for AI Agents**
+**Interactive debugging tool for AI applications.**
 
-Pixie SDK enables you to build AI applications with built-in observability, pause/resume capabilities, and interactive debugging. Wrap your AI agent functions with the `@app` decorator to automatically expose them through a GraphQL API and gain full visibility into their execution.
+Debug your AI application interactively, and inspect traces in real-time, all in one single web UI.
+
+<a href="https://youtu.be/FEIvuiPDr9I" target="_blank" rel="noopener">
+  <img src="https://github.com/user-attachments/assets/ac2ec55f-b487-4b3f-ae6f-b8743ad296e4" alt="Demo video" width="800" target="_blank" />
+</a>
 
 ## Features
 
-- 🔍 **Automatic Observability**: Full tracing and monitoring of AI agent execution
-- ⏸️ **Pause & Resume**: Interactive debugging with breakpoints at LLM calls, tool usage, or custom points
-- 🎯 **GraphQL API**: Auto-generated API for all registered applications
-- 🔄 **Multi-Turn Interactions**: Support for stateful, conversational applications
-- 📊 **OpenTelemetry Integration**: Native support for OTLP traces
-- 🛠️ **Framework Support**: Works with Pydantic AI, OpenAI Agents SDK, LangChain, LangGraph, and more
+- **Interactive Debugging**: Support for two way interaction with your application, plus the ability to pause/resume/stop.
+- **Real-time Observability**: Application traces are streamed in real-time while you debug.
+- **Structured Input/Output**: Native support for structured input/output using Pydantic models.
+- **Data Privacy**: Communications are only between your browser and your server, your data stays private.
+- **Framework Support**: Out-of-the-box support for popular AI development frameworks like Pydantic AI, OpenAI Agents SDK, LangChain, LangGraph, and more.
 
-## Installation
+## Get Started
+
+### 1. Setup
+
+In your project folder, install `pixie-sdk` package:
 
 ```bash
 pip install pixie-sdk
 ```
 
-## Quick Start
+Create _.env_ file in your project folder and add LLM API key(s):
 
-### 1. Create a Pixie Application
-
-```python
-from pixie import app
-from pydantic_ai import Agent
-
-# Create your AI agent
-weather_agent = Agent(
-    "openai:gpt-4o-mini",
-    system_prompt="You are a helpful weather assistant."
-)
-
-@app
-async def weather(query: str) -> str:
-    """Get weather information."""
-    # Enable instrumentation for observability
-    Agent.instrument_all()
-
-    # Run the agent
-    result = await weather_agent.run(query)
-    return result.output
+```ini
+# .env
+OPENAI_API_KEY=...
 ```
 
-### 2. Start the Pixie Server
+Add AI Development framework depdendencies as needed:
+
+```bash
+pip install pydantic-ai-slim
+```
+
+Start the local server for debugging by running:
 
 ```bash
 pixie
 ```
 
-The server will:
+### 2. Connect Your Application
 
-- Discover and register all `@app` decorated functions
-- Start a GraphQL API at `http://127.0.0.1:8000/graphql`
-- Enable the GraphiQL interface for interactive exploration
-
-### 3. Run Your Application
-
-Use the GraphiQL interface or make a GraphQL subscription:
-
-```graphql
-subscription {
-  run(id: "your.module.weather", inputData: "What's the weather in Tokyo?") {
-    runId
-    status
-    data
-    trace {
-      otlpTrace {
-        resourceSpans {
-          scopeSpans {
-            spans {
-              name
-              startTimeUnixNano
-            }
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-## Application Types
-
-### Single-Turn Application
-
-For applications that execute once and return a result:
+Add `@pixie.app` decorator to your main application function:
 
 ```python
-from pydantic import BaseModel
-from pixie import app
+# my_chatbot.py
+from pydantic_ai import Agent
 
-class WeatherQuery(BaseModel):
-    location: str
-    units: str = "celsius"
+import pixie
 
-@app
-async def weather(query: WeatherQuery) -> str:
-    """Simple weather query."""
-    # Your implementation
-    return f"Weather in {query.location}: Sunny"
-```
-
-### Multi-Turn Interactive Application
-
-For conversational or stateful applications that need user input:
-
-```python
-from pixie import app, PixieGenerator, UserInputRequirement
-
-@app
-async def chatbot(_: None) -> PixieGenerator[str, str]:
-    """Interactive chatbot with conversation history."""
-    yield "Hello! How can I help you?"
-
-    while True:
-        # Request user input
-        user_msg = yield UserInputRequirement(str)
-
-        if user_msg.lower() in {"exit", "quit"}:
-            yield "Goodbye!"
-            break
-
-        # Process and respond
-        response = await process_message(user_msg)
-        yield response
-```
-
-## Interactive Debugging
-
-### Pause Execution
-
-Use GraphQL mutations to pause at specific points:
-
-```graphql
-mutation {
-  pauseRun(runId: "your-run-id", timing: BEFORE, breakpointTypes: [LLM, TOOL])
-}
-```
-
-### Resume Execution
-
-```graphql
-mutation {
-  resumeRun(runId: "your-run-id")
-}
-```
-
-### Send User Input
-
-```graphql
-mutation {
-  sendInput(runId: "your-run-id", inputData: "User's response")
-}
-```
-
-## Type Safety
-
-Pixie supports type-safe applications using Pydantic models:
-
-```python
-from pydantic import BaseModel
-from pixie import app, PixieGenerator
-
-class UserPreferences(BaseModel):
-    language: str
-    max_results: int
-
-class SearchResult(BaseModel):
-    title: str
-    url: str
-    snippet: str
-
-@app
-async def search(query: str) -> PixieGenerator[SearchResult, UserPreferences]:
-    """Type-safe search with user preferences."""
-    yield SearchResult(
-        title="Initial Result",
-        url="https://example.com",
-        snippet="..."
-    )
-
-    # Get structured user preferences
-    prefs = yield UserInputRequirement(UserPreferences)
-
-    # Continue with preferences
-    for result in search_with_preferences(query, prefs):
-        yield result
-```
-
-## Framework Integrations
-
-Pixie automatically instruments popular AI frameworks:
-
-- **Pydantic AI**: `Agent.instrument_all()`
-- **OpenAI Agents SDK**: Auto-instrumented
-- **Google ADK**: Auto-instrumented
-- **CrewAI**: Auto-instrumented
-- **DSpy**: Auto-instrumented
-- **LangChain**: Compatible via OpenTelemetry
-- **LangGraph**: Compatible via OpenTelemetry
-
-## Configuration
-
-### Environment Variables
-
-Create a `.env` file in your project root:
-
-```bash
-# Pixie Server
-PIXIE_SDK_PORT=8000
-
-# Langfuse (for enhanced observability)
-LANGFUSE_PUBLIC_KEY=pk-...
-LANGFUSE_SECRET_KEY=sk-...
-LANGFUSE_HOST=https://cloud.langfuse.com
-
-# Your AI Provider Keys
-OPENAI_API_KEY=sk-...
-```
-
-### Server Options
-
-```python
-from pixie.server import start_server
-
-start_server(
-    host="0.0.0.0",
-    port=8000,
-    reload=True  # Enable auto-reload for development
+# You can implement your application using any major AI development framework
+agent = Agent(
+    name="Simple chatbot",
+    instructions="You are a helpful assistant.",
+    model="gpt-4o-mini",
 )
-```
 
-## GraphQL API
 
-### Queries
-
-- `healthCheck`: Server health status
-- `listApps`: List all registered applications with schemas
-
-### Mutations
-
-- `pauseRun(runId, timing, breakpointTypes)`: Pause execution
-- `resumeRun(runId)`: Resume paused execution
-- `sendInput(runId, inputData)`: Send user input
-
-### Subscriptions
-
-- `run(id, inputData)`: Execute an application and stream updates
-
-## Examples
-
-Check out the [pixie-examples](https://github.com/yiouli/pixie-examples) repository for complete examples:
-
-- **Quickstart**: Simple chatbot and agent examples
-- **Pydantic AI**: Bank support, flight booking, SQL generation
-- **OpenAI Agents SDK**: Customer service, routing, LLM-as-a-judge
-- **LangChain**: Basic agents, SQL agents, personal assistant
-- **LangGraph**: RAG systems, multi-agent workflows
-
-## Development
-
-### Install for Development
-
-```bash
-# Clone the repository
-git clone https://github.com/yiouli/pixie-sdk-py.git
-cd pixie-sdk-py
-
-# Install with Poetry
-poetry install
-
-# Run tests
-poetry run pytest
-```
-
-### Project Structure
+@pixie.app
+async def my_chatbot():
+    """Chatbot application example."""
+    yield "How can I help you today?"
+    messages = []
+    while True:
+        user_msg = yield pixie.InputRequired(str)
+        response = await agent.run(user_msg, message_history=messages)
+        messages = response.all_messages()
+        yield response.output
 
 ```
-pixie-sdk-py/
-├── pixie/              # Core SDK
-│   ├── __init__.py     # Public API
-│   ├── execution_context.py  # Pause/resume functionality
-│   ├── otel_types.py   # OpenTelemetry types
-│   ├── registry.py     # Application registry
-│   ├── schema.py       # GraphQL schema
-│   ├── server.py       # FastAPI server
-│   ├── types.py        # Core types
-│   └── utils.py        # Utilities
-├── langfuse/           # Langfuse SDK (bundled)
-└── tests/              # Test suite
-```
 
-## Requirements
+You should see in the log of `pixie` server that your app is registered.
 
-- Python 3.10 or higher
-- FastAPI
-- Strawberry GraphQL
-- Pydantic
-- OpenTelemetry
+### 3. Debug with web UI
 
-## License
+Visit the web UI [gopixie.ai](https://gopixie.ai) to start debugging.
 
-MIT License - see [LICENSE](LICENSE) file for details.
+## Important Links
 
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Support
-
-- 📧 Email: yol@gopixie.ai
-- 🐛 Issues: [GitHub Issues](https://github.com/yiouli/pixie-sdk-py/issues)
+- [**Documentation**](https://yiouli.github.io/pixie-sdk-py/)
+- [**Examples**](https://github.com/yiouli/pixie-examples)
+- [**Discord**](https://discord.gg/YMNYu6Z3)
 
 ## Acknowledgments
 
-Built with ❤️ using [Langfuse](https://langfuse.com) for observability.
+This project is built on top of many awesome open-source projects:
+
+- [Langfuse](https://github.com/langfuse/langfuse) for instrumentation
+- [Pydantic](https://github.com/pydantic/pydantic) for structured data validation
+- [FastAPI](https://github.com/fastapi/fastapi) for web API
+- [Strawberry](https://github.com/strawberry-graphql/strawberry) for graphql
+- [Uvicorn](https://github.com/Kludex/uvicorn) for web server
+- [Janus](https://github.com/aio-libs/janus) for sync-async queue
+- [docstring-parser](https://github.com/rr-/docstring_parser) for docstring parsing
