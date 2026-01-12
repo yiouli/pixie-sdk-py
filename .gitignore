@@ -31,3 +31,6 @@ tests/mocks/llama-index-storage
 
 *.local.*
 poetry.lock
+
+.vscode/
+docs/
