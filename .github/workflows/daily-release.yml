@@ -36,11 +36,6 @@ jobs:
           poetry install --no-interaction
           pip install setuptools-scm build twine
 
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
       - name: Generate version with setuptools-scm
         id: version
         run: |
@@ -58,13 +53,6 @@ jobs:
           poetry version ${{ steps.version.outputs.version }}
           echo "Updated pyproject.toml version to: ${{ steps.version.outputs.version }}"
       
-      - name: Create and push tag
-        run: |
-          TAG="v${{ steps.version.outputs.version }}"
-          echo "Creating tag: $TAG"
-          git tag -a "$TAG" -m "Daily release $TAG"
-          git push origin "$TAG"
-      
       - name: Build package
         run: |
           poetry build
@@ -75,22 +63,3 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
         run: |
           twine upload --repository testpypi dist/* --verbose
-
-      - name: Create GitHub Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: v${{ steps.version.outputs.version }}
-          release_name: Release v${{ steps.version.outputs.version }}
-          body: |
-            Daily automated release v${{ steps.version.outputs.version }}
-
-            Published to TestPyPI: https://test.pypi.org/project/pixie-sdk/
-
-            Install with:
-            ```bash
-            pip install -i https://test.pypi.org/simple/ pixie-sdk==${{ steps.version.outputs.version }}
-            ```
-          draft: false
-          prerelease: true
