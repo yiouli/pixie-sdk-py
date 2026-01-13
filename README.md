@@ -44,7 +44,7 @@ OPENAI_API_KEY=...
 Add AI Development framework depdendencies as needed:
 
 ```bash
-pip install pydantic-ai-slim
+pip install pydantic-ai-slim[openai]
 ```
 
 Start the local server for debugging by running:
