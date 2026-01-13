@@ -33,8 +33,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          poetry install --no-interaction
-          pip install setuptools-scm build twine
+          poetry install --only main --no-interaction
 
       - name: Generate version with setuptools-scm
         id: version
@@ -59,7 +58,6 @@ jobs:
 
       - name: Publish to TestPyPI
         env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+          POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          twine upload dist/* --verbose`
+          poetry publish
