@@ -8,13 +8,15 @@
 
 ## Why?
 
-Debugging AI applications is time-consuming and cumbersome. 
-Especially for early stage development, it doesn’t make sense to build e2e product just to test, or setup automated tests/evals. 
+Debugging AI applications is time-consuming and cumbersome.
+Especially for early stage development, it doesn’t make sense to build e2e product just to test, or setup automated tests/evals.
 So the process ends up being a lot of inputting awkwardly into the command line, and looking through walls of logs in different places.
 
 ## Demo
 
 <video src="https://github.com/user-attachments/assets/8c164f1f-9f0f-4a4e-a1f2-ba0c3ca6f58c" controls></video>
+
+[Demo Video](https://github.com/user-attachments/assets/8c164f1f-9f0f-4a4e-a1f2-ba0c3ca6f58c)
 
 ## Features
 
