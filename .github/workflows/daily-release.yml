@@ -44,21 +44,27 @@ jobs:
       - name: Generate version with setuptools-scm
         id: version
         run: |
-          # Install setuptools-scm in the current environment
           pip install setuptools-scm
           VERSION=$(python -m setuptools_scm)
+          # Strip local version identifier (+g...) for PyPI compatibility
+          CLEAN_VERSION=$(echo $VERSION | cut -d'+' -f1)
           echo "Generated version: $VERSION"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
+          echo "Clean version for PyPI: $CLEAN_VERSION"
+          echo "version=$CLEAN_VERSION" >> $GITHUB_OUTPUT
+          echo "full_version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Update Poetry version
+        run: |
+          poetry version ${{ steps.version.outputs.version }}
+          echo "Updated pyproject.toml version to: ${{ steps.version.outputs.version }}"
+      
       - name: Create and push tag
-        env:
-          GITHUB_TOKEN: ${{ secrets.PAT }}
         run: |
           TAG="v${{ steps.version.outputs.version }}"
           echo "Creating tag: $TAG"
           git tag -a "$TAG" -m "Daily release $TAG"
           git push origin "$TAG"
-
+      
       - name: Build package
         run: |
           poetry build
