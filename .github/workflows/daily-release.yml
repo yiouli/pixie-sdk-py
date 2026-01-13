@@ -51,6 +51,8 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Create and push tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
         run: |
           TAG="v${{ steps.version.outputs.version }}"
           echo "Creating tag: $TAG"
