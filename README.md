@@ -1,12 +1,18 @@
-# Pixie SDK
+# Pixie
 
 [![MIT License](https://img.shields.io/badge/License-MIT-red.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/discord/1459772566528069715?style=flat-square&logo=Discord&logoColor=white&label=Discord&color=%23434EE4)](https://discord.gg/YMNYu6Z3)
 
-**Interactive debugging tool for AI applications.**
+**Enable interactive debugging in web browser for your AI application with a few lines of code.**
 
-Debug your AI application interactively, and inspect traces in real-time, all in one single web UI.
+## Why?
+
+Debugging AI applications is time-consuming and cumbersome. 
+Especially for early stage development, it doesn’t make sense to build e2e product just to test, or setup automated tests/evals. 
+So the process ends up being a lot of inputting awkwardly into the command line, and looking through walls of logs in different places.
+
+## Demo
 
 <video src="https://github.com/user-attachments/assets/8c164f1f-9f0f-4a4e-a1f2-ba0c3ca6f58c" controls></video>
 
