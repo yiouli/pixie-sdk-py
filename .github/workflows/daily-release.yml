@@ -13,6 +13,7 @@ jobs:
       contents: write  # Required for creating tags
       id-token: write  # Required for trusted publishing
       actions: write
+      workflows: write
 
     steps:
       - name: Checkout repository
