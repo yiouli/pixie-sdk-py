@@ -38,6 +38,7 @@ from pixie.otel_types import (
 )
 
 import pixie.execution_context as exec_ctx
+from importlib.metadata import PackageNotFoundError, version
 
 
 # Global registry for input queues per run
@@ -247,9 +248,11 @@ class AppRunUpdate:
             user_input_schema=user_input_schema,
             user_input=JSON(instance.user_input),
             data=JSON(instance.data),
-            breakpoint=BreakpointDetail.from_pydantic(instance.breakpoint)
-            if instance.breakpoint
-            else None,
+            breakpoint=(
+                BreakpointDetail.from_pydantic(instance.breakpoint)
+                if instance.breakpoint
+                else None
+            ),
             trace=_convert_trace_to_union(instance.trace),
         )
 
@@ -287,7 +290,13 @@ class Query:
     async def health_check(self) -> str:
         """Health check endpoint."""
         logger.debug("Health check endpoint called")
-        return "OK"
+        try:
+            version_str = version("pixie-sdk")
+            logger.debug("Pixie SDK version: %s", version_str)
+            return version_str
+        except PackageNotFoundError as e:
+            logger.warning("Failed to get Pixie SDK version: %s", str(e))
+            return "0.0.0"
 
     @strawberry.field
     def list_apps(self) -> list[AppInfo]:
