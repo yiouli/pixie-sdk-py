@@ -39,6 +39,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install Python dependencies
+        working-directory: .
+        run: poetry install --with docs
+
+      - name: Generate API docs with pdoc
+        working-directory: .
+        run: |
+          poetry run pdoc pixie -o docs/static/api --template-directory docs/pdoc-templates --footer-text "Pixie SDK" --no-search
+
       - name: Build website
         run: npm run build
 

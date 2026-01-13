@@ -18,19 +18,21 @@ const sidebars: SidebarsConfig = {
     "quickstart",
     {
       type: "category",
-      label: "Tutorial",
+      label: "Guides",
       items: [
-        "tutorial/setup",
-        "tutorial/web-ui",
-        "tutorial/structured-io",
-        "tutorial/interactive-app",
-        "tutorial/interactive-tool",
+        "guides/register-your-application",
+        "guides/run-local-server-with-options",
+        "guides/app-names-and-descriptions",
+        "guides/use-structured-io",
+        "guides/make-your-application-interactive",
+        "guides/interactivity-inside-tools",
+        "guides/enable-tracing-langchain-langgraph",
       ],
     },
     {
       type: "category",
-      label: "Concepts",
-      items: ["concepts/architecture", "concepts/instrumentation"],
+      label: "Deep Dives",
+      items: ["concepts/system-architecture"],
     },
     {
       type: "link",
@@ -38,9 +40,9 @@ const sidebars: SidebarsConfig = {
       href: "https://github.com/yiouli/pixie-examples",
     },
     {
-      type: "category",
+      type: "link",
       label: "API Reference",
-      items: ["api/overview"],
+      href: "pathname:///api/pixie.html",
     },
   ],
 };

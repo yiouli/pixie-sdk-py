@@ -12,228 +12,66 @@ Get started with Pixie SDK in 5 minutes! This guide will walk you through creati
 - pip or poetry for package management
 - An OpenAI API key (or other LLM provider)
 
-## Installation
+## Setup
 
-Install Pixie SDK using pip or poetry:
+In your project folder, install `pixie-sdk` package:
 
 ```bash
-# Using pip
 pip install pixie-sdk
-
-# Using poetry
-poetry add pixie-sdk
 ```
 
-## Your First Pixie Application
+Create _.env_ file in your project folder and add LLM API key(s):
 
-Let's create a simple weather assistant agent.
-
-### 1. Create the Agent
-
-Create a new file `weather_agent.py`:
-
-```python
-from pixie import app
-from pydantic_ai import Agent
-
-# Create the agent
-weather_agent = Agent(
-    "openai:gpt-4o-mini",
-    system_prompt="You are a helpful weather assistant."
-)
-
-# Decorate with @app
-@app
-async def weather(query: str) -> str:
-    """Get weather information for any location."""
-    # Enable instrumentation for observability
-    Agent.instrument_all()
-
-    # Run the agent
-    result = await weather_agent.run(query)
-
-    # Return the output
-    return result.output
+```ini
+# .env
+OPENAI_API_KEY=...
 ```
 
-That's it! Just three simple steps:
-
-1. Create your agent
-2. Decorate your function with `@app`
-3. Call `Agent.instrument_all()` for tracing
-
-### 2. Set Up Environment
-
-Create a `.env` file with your API keys:
+Add AI Development framework depdendencies as needed:
 
 ```bash
-OPENAI_API_KEY=your_openai_api_key_here
+pip install pydantic-ai-slim[openai]
 ```
 
-### 3. Start the Pixie Server
-
-Run the Pixie server to make your agent available:
+Start the local server for debugging by running:
 
 ```bash
 pixie
 ```
 
-You should see:
+## Connect Your Application
 
-```
-INFO:     Started server process
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://127.0.0.1:8000
-```
-
-The server automatically discovers all `@app` decorated functions in your project!
-
-### 4. Open the Web UI
-
-Open your browser and navigate to:
-
-```
-http://127.0.0.1:8000
-```
-
-You'll see the Pixie web interface with your `weather` agent available.
-
-### 5. Test Your Agent
-
-1. Select your `weather` agent from the list
-2. Enter a query like "What's the weather in San Francisco?"
-3. Click "Run" or press Enter
-4. Watch your agent execute in real-time!
-
-## What Just Happened?
-
-With just a few lines of code, you've created an AI agent that:
-
-- ✅ Is automatically instrumented with tracing
-- ✅ Exposes a GraphQL API
-- ✅ Has a web UI for testing
-- ✅ Captures all LLM calls and reasoning
-- ✅ Streams responses in real-time
-
-## Explore the Traces
-
-Click on the "Debug" tab in the web UI to see:
-
-- **Execution timeline** - When each step occurred
-- **LLM calls** - Prompts, responses, and token usage
-- **Performance metrics** - Latency and duration
-- **Agent reasoning** - Internal decision-making process
-
-## Next Steps
-
-Now that you have a basic agent running, explore more advanced features:
-
-### Add Structured Input
-
-Use Pydantic models for type-safe input:
+Add `@pixie.app` decorator to your main application function:
 
 ```python
-from pydantic import BaseModel
+# my_chatbot.py
+from pydantic_ai import Agent
 
-class WeatherQuery(BaseModel):
-    location: str
-    units: str = "celsius"
+import pixie
 
-@app
-async def weather(query: WeatherQuery) -> str:
-    Agent.instrument_all()
-    result = await weather_agent.run(
-        f"What's the weather in {query.location}? Use {query.units}."
-    )
-    return result.output
-```
+# You can implement your application using any major AI development framework
+agent = Agent(
+    name="Simple chatbot",
+    instructions="You are a helpful assistant.",
+    model="gpt-4o-mini",
+)
 
-### Build Interactive Agents
 
-Create multi-turn conversations:
-
-```python
-from pixie import PixieGenerator, UserInputRequirement
-
-@app
-async def chat(_: None) -> PixieGenerator[str, str]:
-    Agent.instrument_all()
-
-    yield "Hello! How can I help you today?"
-
+@pixie.app
+async def my_chatbot():
+    """Chatbot application example."""
+    yield "How can I help you today?"
+    messages = []
     while True:
-        user_input = yield UserInputRequirement(str)
+        user_msg = yield pixie.InputRequired(str)
+        response = await agent.run(user_msg, message_history=messages)
+        messages = response.all_messages()
+        yield response.output
 
-        if user_input.lower() in {"exit", "quit"}:
-            yield "Goodbye!"
-            break
-
-        result = await agent.run(user_input)
-        yield result.output
 ```
 
-### Add Tools to Your Agent
+You should see in the log of `pixie` server that your app is registered.
 
-Give your agent capabilities:
+## Debug with web UI
 
-```python
-from pydantic_ai import RunContext
-
-@weather_agent.tool
-async def get_temperature(ctx: RunContext[None], location: str) -> float:
-    """Get the current temperature for a location."""
-    # Your implementation here
-    return 72.5
-
-@app
-async def weather(query: str) -> str:
-    Agent.instrument_all()
-    result = await weather_agent.run(query)
-    return result.output
-```
-
-## Learn More
-
-- [Tutorial: Setup](./tutorial/setup.md) - Detailed setup and configuration
-- [Tutorial: Web UI](./tutorial/web-ui.md) - Learn all Web UI features
-- [Examples Repository](https://github.com/yiouli/pixie-examples) - More examples
-- [Concepts: Architecture](./concepts/architecture.md) - How Pixie works
-
-## Troubleshooting
-
-### Agent Not Discovered
-
-Make sure your Python file is in a directory that Pixie scans. By default, Pixie looks in:
-
-- Current directory
-- `examples/` directory
-- Any directory specified with `--app-dir`
-
-### Import Errors
-
-Ensure pixie-sdk is installed:
-
-```bash
-pip install --upgrade pixie-sdk
-```
-
-### Server Won't Start
-
-Check that port 8000 is not already in use:
-
-```bash
-lsof -i :8000
-```
-
-Or specify a different port:
-
-```bash
-pixie --port 8080
-```
-
-## Need Help?
-
-- Check the [Examples Repository](https://github.com/yiouli/pixie-examples)
-- Review the [Tutorial](./tutorial/setup.md) section
-- Read the [Concepts](./concepts/architecture.md) documentation
+Visit the web UI [gopixie.ai](https://gopixie.ai) to start debugging.

@@ -5,9 +5,9 @@ import type * as Preset from "@docusaurus/preset-classic";
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
 const config: Config = {
-  title: "Pixie SDK",
-  tagline: "Observability and control for AI agents",
-  favicon: "img/favicon.ico",
+  title: "Pixie",
+  tagline: "Interactive debugging tool for AI applications",
+  favicon: "img/pixie.png",
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
   future: {
@@ -25,7 +25,7 @@ const config: Config = {
   organizationName: "yiouli", // Usually your GitHub org/user name.
   projectName: "pixie-sdk-py", // Usually your repo name.
 
-  onBrokenLinks: "throw",
+  onBrokenLinks: "warn",
 
   // Even if you don't use internationalization, you can use this field to set
   // useful metadata like html lang. For example, if your site is Chinese, you
@@ -41,7 +41,7 @@ const config: Config = {
       {
         docs: {
           sidebarPath: "./sidebars.ts",
-          routeBasePath: "docs",
+          routeBasePath: "/",
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl: "https://github.com/yiouli/pixie-sdk-py/tree/main/docs/",
@@ -61,10 +61,10 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: "Pixie SDK",
+      title: "Pixie",
       logo: {
         alt: "Pixie SDK Logo",
-        src: "img/logo.svg",
+        src: "img/pixie.png",
       },
       items: [
         {
@@ -85,45 +85,9 @@ const config: Config = {
         },
       ],
     },
-    footer: {
-      style: "dark",
-      links: [
-        {
-          title: "Docs",
-          items: [
-            {
-              label: "Introduction",
-              to: "/docs/introduction",
-            },
-            {
-              label: "Quickstart",
-              to: "/docs/quickstart",
-            },
-            {
-              label: "Tutorial",
-              to: "/docs/tutorial/setup",
-            },
-          ],
-        },
-        {
-          title: "Resources",
-          items: [
-            {
-              label: "Examples",
-              href: "https://github.com/yiouli/pixie-examples",
-            },
-            {
-              label: "GitHub",
-              href: "https://github.com/yiouli/pixie-sdk-py",
-            },
-          ],
-        },
-      ],
-      copyright: `Copyright © ${new Date().getFullYear()} Pixie SDK. Built with Docusaurus.`,
-    },
     prism: {
-      theme: prismThemes.github,
-      darkTheme: prismThemes.dracula,
+      theme: prismThemes.oneLight,
+      darkTheme: prismThemes.oneDark,
       additionalLanguages: ["python", "bash"],
     },
   } satisfies Preset.ThemeConfig,

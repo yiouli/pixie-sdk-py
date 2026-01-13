@@ -1,0 +1,10 @@
+{% extends "default/module.html.jinja2" %}
+
+{% block search_box %}
+<div style="padding: 0 0 1rem 0; border-bottom: 1px solid var(--accent2); margin-bottom: 1rem;">
+    <a href="/pixie-sdk-py/" class="pdoc-button" style="display: inline-block; text-decoration: none; padding: 0.5rem 1rem; background-color: var(--accent2); border-radius: 4px; margin: 0.5rem 0;">
+        ← Back to Docs
+    </a>
+</div>
+{{ super() }}
+{% endblock %}
