@@ -11,6 +11,13 @@ authors = ["Yiou Li <yol@gopixie.ai>"]
 license = "MIT"
 readme = "README.md"
 
+[tool.poetry.urls]
+Homepage = "https://gopixie.ai"
+Repository = "https://github.com/yiouli/pixie-sdk-py"
+Documentation = "https://yiouli.github.io/pixie-sdk-py/"
+Issues = "https://github.com/yiouli/pixie-sdk-py/issues"
+Changelog = "https://github.com/yiouli/pixie-sdk-py/commits/main/"
+
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
 httpx = ">=0.15.4,<1.0"
