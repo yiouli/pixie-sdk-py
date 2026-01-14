@@ -96,8 +96,8 @@ Visit the web UI [gopixie.ai](https://gopixie.ai) to start debugging.
 
 - [**Documentation**](https://yiouli.github.io/pixie-sdk-py/) - Complete documentation with tutorials and API reference
 - [**Examples**](https://github.com/yiouli/pixie-examples) - Real-world examples and sample applications
+- [**Demo**](https://gopixie.ai/?url=https%3A%2F%2Fdemo.yiouli.us%2Fgraphql) - Live Demo with the examples server setup
 - [**Discord**](https://discord.gg/YMNYu6Z3) - Join our community for support and discussions
-- [**Web UI Repo**](https://github.com/yiouli/pixie-ui) - Github repository for the Web UI
 
 ## Acknowledgments
 
