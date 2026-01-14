@@ -4,7 +4,8 @@
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/discord/1459772566528069715?style=flat-square&logo=Discord&logoColor=white&label=Discord&color=%23434EE4)](https://discord.gg/YMNYu6Z3)
 
-**Make it easy & enjoyable to manually test AI applications.**
+**web UI for AI agents manual testing.**
+LangSmith Studio/Google ADK Web for AI agents built with other frameworks. Easy to setup, support multi-turn interactions, Human-in-the-loop, live tracing, and more.
 
 ## Why?
 
