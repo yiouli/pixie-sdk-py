@@ -4,11 +4,11 @@
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/discord/1459772566528069715?style=flat-square&logo=Discord&logoColor=white&label=Discord&color=%23434EE4)](https://discord.gg/YMNYu6Z3)
 
-**Enable interactive debugging in web browser for your AI application with a few lines of code.**
+**Make it easy & enjoyable to manually test AI applications.**
 
 ## Why?
 
-Debugging AI applications is time-consuming and cumbersome.
+Manually testing AI applications is time-consuming and cumbersome.
 Especially for early stage development, it doesn’t make sense to build e2e product just to test, or setup automated tests/evals.
 So the process ends up being a lot of inputting awkwardly into the command line, and looking through walls of logs in different places.
 
@@ -18,7 +18,7 @@ So the process ends up being a lot of inputting awkwardly into the command line,
 
 ## Features
 
-- **Interactive Debugging**: Support for two way interaction with your application, plus the ability to pause/resume/stop.
+- **Interactive Testing**: Support for two way interaction with your application, plus the ability to pause/resume/stop.
 - **Real-time Observability**: Application traces are streamed in real-time while you debug.
 - **Structured Input/Output**: Native support for structured input/output using Pydantic models.
 - **Data Privacy**: Communications are only between your browser and your server, your data stays private.
