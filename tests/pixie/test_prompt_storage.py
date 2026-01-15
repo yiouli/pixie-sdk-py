@@ -7,7 +7,7 @@ import pytest
 from types import NoneType
 from typing import Dict
 
-from pixie.prompts.prompt import BaseUntypedPrompt, _prompt_registry
+from pixie.prompts.prompt import BaseUntypedPrompt, BasePrompt, _prompt_registry
 from pixie.prompts.storage import _FilePromptStorage
 
 
@@ -851,21 +851,379 @@ class TestStorageBackedPrompt:
         default_id = await prompt.get_default_version_id()
         assert default_id == "v2"
 
-    async def test_storage_backed_prompt_update_and_save_new(self, temp_dir: str):
-        """Test update_and_save creates new prompt when not in storage."""
+    async def test_storage_backed_prompt_append_version(self, temp_dir: str):
+        """Test that StorageBackedPrompt.append_version works correctly."""
         from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+
+        # Create prompt file
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "append_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Hello {name}"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {"type": "object", "properties": {}},
+                },
+                f,
+            )
 
         initialize_prompt_storage(temp_dir)
 
-        prompt = StorageBackedPrompt(id="new_update_test")
-        updated_prompt = await prompt.update_and_save(versions={"v1": "New version"})
-        assert updated_prompt.id == "new_update_test"
-        assert await updated_prompt.get_versions() == {"v1": "New version"}
-        assert await updated_prompt.get_default_version_id() == "v1"
+        prompt = StorageBackedPrompt(id="append_test")
 
-        # Verify it was saved
-        retrieved = await prompt._get_prompt()
-        assert await retrieved.get_versions() == {"v1": "New version"}
+        # Append new version
+        result_prompt = await prompt.append_version(
+            version_id="v2", content="Hi {name}", set_as_default=True
+        )
+
+        # Check that it returns the underlying BasePrompt
+        assert isinstance(result_prompt, BasePrompt)
+        assert result_prompt.id == "append_test"
+
+        # Check versions were updated
+        versions = await result_prompt.get_versions()
+        assert "v2" in versions
+        assert versions["v2"] == "Hi {name}"
+        assert await result_prompt.get_default_version_id() == "v2"
+
+        # Check that storage was updated
+        storage = _FilePromptStorage(temp_dir)
+        stored_prompt = await storage.get("append_test")
+        stored_versions = await stored_prompt.get_versions()
+        assert "v2" in stored_versions
+        assert stored_versions["v2"] == "Hi {name}"
+        assert await stored_prompt.get_default_version_id() == "v2"
+
+    async def test_storage_backed_prompt_update_default_version_id(self, temp_dir: str):
+        """Test that StorageBackedPrompt.update_default_version_id works correctly."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+
+        # Create prompt file with multiple versions
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "update_default_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {
+                        "v1": "Version 1",
+                        "v2": "Version 2",
+                        "v3": "Version 3",
+                    },
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {"type": "object", "properties": {}},
+                },
+                f,
+            )
+
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(id="update_default_test")
+
+        # Update default version
+        result_prompt = await prompt.update_default_version_id("v3")
+
+        # Check that it returns the underlying BasePrompt
+        assert isinstance(result_prompt, BasePrompt)
+        assert result_prompt.id == "update_default_test"
+        assert await result_prompt.get_default_version_id() == "v3"
+
+        # Check that storage was updated
+        storage = _FilePromptStorage(temp_dir)
+        stored_prompt = await storage.get("update_default_test")
+        assert await stored_prompt.get_default_version_id() == "v3"
+
+    async def test_storage_backed_prompt_exists_in_storage_without_init_raises_error(
+        self,
+    ):
+        """Test exists_in_storage raises error when storage not initialized."""
+        from pixie.prompts.storage import StorageBackedPrompt
+        import pixie.prompts.storage as storage_module
+
+        # Ensure storage is not initialized
+        storage_module._storage_instance = None
+
+        prompt = StorageBackedPrompt(id="test")
+
+        with pytest.raises(
+            RuntimeError, match="Prompt storage has not been initialized"
+        ):
+            await prompt.exists_in_storage()
+
+    async def test_storage_backed_prompt_actualize_loads_prompt(self, temp_dir: str):
+        """Test that actualize loads the prompt and returns self."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+
+        # Create prompt file
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "actualize_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Hello {name}"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {"type": "object", "properties": {}},
+                },
+                f,
+            )
+
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(id="actualize_test")
+        assert prompt._prompt is None
+
+        # Call actualize
+        result = await prompt.actualize()
+        assert result is prompt
+        assert prompt._prompt is not None
+
+        # Verify it works
+        versions = await prompt.get_versions()
+        assert versions == {"v1": "Hello {name}"}
+
+    async def test_storage_backed_prompt_actualize_with_variables_definition(
+        self, temp_dir: str
+    ):
+        """Test actualize with variables_definition performs schema compatibility check."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+        from pixie.prompts.prompt import PromptVariables
+
+        class TestVars(PromptVariables):
+            name: str
+
+        # Create prompt file with compatible schema
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "actualize_vars_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Hello {name}"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                        "required": ["name"],
+                    },
+                },
+                f,
+            )
+
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(
+            id="actualize_vars_test", variables_definition=TestVars
+        )
+
+        # Should succeed - schemas are compatible
+        result = await prompt.actualize()
+        assert result is prompt
+        assert prompt._prompt is not None
+
+    async def test_storage_backed_prompt_actualize_incompatible_schema_raises_error(
+        self, temp_dir: str
+    ):
+        """Test actualize raises error when schema is incompatible."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+        from pixie.prompts.prompt import PromptVariables
+
+        class TestVars(PromptVariables):
+            age: int  # Different from what's in storage
+
+        # Create prompt file with incompatible schema
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "incompatible_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Hello {name}"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                        "required": ["name"],
+                    },
+                },
+                f,
+            )
+
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(
+            id="incompatible_test", variables_definition=TestVars
+        )
+
+        # Should raise TypeError due to incompatible schema
+        with pytest.raises(
+            TypeError, match="The provided variables_definition is not compatible"
+        ):
+            await prompt.actualize()
+
+    async def test_storage_backed_prompt_append_version_updates_storage(
+        self, temp_dir: str
+    ):
+        """Test that append_version updates the storage file."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+
+        # Create initial prompt file
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "storage_update_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Initial"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {"type": "object", "properties": {}},
+                },
+                f,
+            )
+
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(id="storage_update_test")
+
+        # Append version
+        await prompt.append_version(version_id="v2", content="Added version")
+
+        # Check file was updated
+        with open(prompt_file, "r") as f:
+            data = json.load(f)
+
+        assert "v2" in data["versions"]
+        assert data["versions"]["v2"] == "Added version"
+
+    async def test_storage_backed_prompt_update_default_updates_storage(
+        self, temp_dir: str
+    ):
+        """Test that update_default_version_id updates the storage file."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+
+        # Create initial prompt file
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "default_update_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Version 1", "v2": "Version 2"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {"type": "object", "properties": {}},
+                },
+                f,
+            )
+
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(id="default_update_test")
+
+        # Update default
+        await prompt.update_default_version_id("v2")
+
+        # Check file was updated
+        with open(prompt_file, "r") as f:
+            data = json.load(f)
+
+        assert data["defaultVersionId"] == "v2"
+
+    async def test_storage_backed_prompt_append_version_raises_for_existing_id(
+        self, temp_dir: str
+    ):
+        """Test that append_version raises error for existing version ID."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+
+        # Create prompt file
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "duplicate_version_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Version 1"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {"type": "object", "properties": {}},
+                },
+                f,
+            )
+
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(id="duplicate_version_test")
+
+        # Try to append existing version
+        with pytest.raises(ValueError, match="Version ID 'v1' already exists"):
+            await prompt.append_version(version_id="v1", content="Duplicate")
+
+    async def test_storage_backed_prompt_update_default_raises_for_nonexistent_id(
+        self, temp_dir: str
+    ):
+        """Test that update_default_version_id raises error for nonexistent version ID."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+
+        # Create prompt file
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "nonexistent_default_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Version 1"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {"type": "object", "properties": {}},
+                },
+                f,
+            )
+
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(id="nonexistent_default_test")
+
+        # Try to update to nonexistent version
+        with pytest.raises(ValueError, match="Version ID 'nonexistent' does not exist"):
+            await prompt.update_default_version_id("nonexistent")
+
+    async def test_storage_backed_prompt_append_version_without_init_raises_error(self):
+        """Test that append_version raises error when storage not initialized."""
+        from pixie.prompts.storage import StorageBackedPrompt
+        import pixie.prompts.storage as storage_module
+
+        # Ensure storage is not initialized
+        storage_module._storage_instance = None
+
+        prompt = StorageBackedPrompt(id="test")
+
+        with pytest.raises(
+            RuntimeError, match="Prompt storage has not been initialized"
+        ):
+            await prompt.append_version(version_id="v2", content="New version")
+
+    async def test_storage_backed_prompt_update_default_without_init_raises_error(self):
+        """Test that update_default_version_id raises error when storage not initialized."""
+        from pixie.prompts.storage import StorageBackedPrompt
+        import pixie.prompts.storage as storage_module
+
+        # Ensure storage is not initialized
+        storage_module._storage_instance = None
+
+        prompt = StorageBackedPrompt(id="test")
+
+        with pytest.raises(
+            RuntimeError, match="Prompt storage has not been initialized"
+        ):
+            await prompt.update_default_version_id("v2")
 
 
 class TestInitializePromptStorage:

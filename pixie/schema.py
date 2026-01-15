@@ -437,54 +437,62 @@ class Mutation:
     """GraphQL mutations."""
 
     @strawberry.mutation
-    async def update_prompt(
+    async def add_prompt_version(
         self,
-        id: strawberry.ID,
-        versions: list[IKeyValue] | None = None,
-        default_version_id: str | None = None,
-    ) -> bool:
-        prompt = get_prompt((str(id)))
-        if prompt is None:
-            raise GraphQLError(f"Prompt with id '{id}' not found.")
-        await prompt.update_and_save(
-            versions=(
-                {kv.key: kv.value for kv in versions} if versions is not None else None
-            ),
-            default_version_id=default_version_id,
-        )
-        return True
-
-    @strawberry.mutation
-    async def update_prompt_version(
-        self,
-        id: strawberry.ID,
+        prompt_id: strawberry.ID,
         version_id: str,
         content: str,
         set_as_default: bool = False,
     ) -> str:
-        """return original version value or empty string if version didn't exist before"""
-        prompt = get_prompt((str(id)))
+        """Add a new version to an existing prompt.
+
+        Args:
+            prompt_id: The unique identifier of the prompt.
+            version_id: The identifier for the new version.
+            content: The content of the new prompt version.
+            set_as_default: Whether to set this version as the default.
+
+        Returns:
+            The updated BasePrompt object.
+        """
+        prompt = get_prompt((str(prompt_id)))
         if prompt is None:
-            raise GraphQLError(f"Prompt with id '{id}' not found.")
+            raise GraphQLError(f"Prompt with id '{prompt_id}' not found.")
         try:
-            versions = await prompt.get_versions()
-        except KeyError:
-            raise GraphQLError(
-                f"Prompt with id '{id}' does not exist in storage. Please use update_prompt first."
+            await prompt.append_version(
+                version_id=version_id,
+                content=content,
+                set_as_default=set_as_default,
             )
-        if version_id in versions:
-            original_value = versions[version_id]
-        else:
-            original_value = ""
-        versions[version_id] = content
-        if set_as_default:
-            default_version_id = version_id
-        else:
-            default_version_id = await prompt.get_default_version_id()
-        await prompt.update_and_save(
-            versions=versions, default_version_id=default_version_id
-        )
-        return original_value
+        except Exception as e:
+            raise GraphQLError(f"Failed to add prompt version: {str(e)}") from e
+        return "OK"
+
+    @strawberry.mutation
+    async def update_default_prompt_version(
+        self,
+        prompt_id: strawberry.ID,
+        default_version_id: str,
+    ) -> str:
+        """Update the default version of an existing prompt.
+
+        Args:
+            prompt_id: The unique identifier of the prompt.
+            default_version_id: The identifier of the version to set as default.
+
+        Returns:
+            True if the update was successful.
+        """
+        prompt = get_prompt((str(prompt_id)))
+        if prompt is None:
+            raise GraphQLError(f"Prompt with id '{prompt_id}' not found.")
+        try:
+            await prompt.update_default_version_id(default_version_id)
+        except Exception as e:
+            raise GraphQLError(
+                f"Failed to update default prompt version: {str(e)}"
+            ) from e
+        return "OK"
 
     @strawberry.mutation
     async def pause_run(

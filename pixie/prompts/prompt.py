@@ -28,17 +28,6 @@ def get_prompt_by_id(prompt_id: str) -> "BasePrompt":
     return _prompt_registry[prompt_id]
 
 
-async def update_prompt_registry(untyped_prompt: "BaseUntypedPrompt") -> "BasePrompt":
-    existing = get_prompt_by_id(untyped_prompt.id)
-    outdated_prompt = await OutdatedPrompt.from_prompt(existing)
-    _mark_compiled_prompts_outdated(existing.id, outdated_prompt)
-    await existing.update(
-        versions=await untyped_prompt.get_versions(),
-        default_version_id=await untyped_prompt.get_default_version_id(),
-    )
-    return existing
-
-
 @dataclass(frozen=True)
 class _CompiledPrompt:
     value: str
@@ -232,7 +221,7 @@ class BasePrompt(BaseUntypedPrompt, Generic[TPromptVar]):
         )
         return ret
 
-    async def update(
+    async def _update(
         self,
         *,
         versions: str | dict[str, str] | None = None,
@@ -245,6 +234,50 @@ class BasePrompt(BaseUntypedPrompt, Generic[TPromptVar]):
             self._default_version = default_version_id
         _mark_compiled_prompts_outdated(self.id, outdated_prompt)
         return self, outdated_prompt
+
+    @staticmethod
+    async def update_prompt_registry(
+        untyped_prompt: "BaseUntypedPrompt",
+    ) -> "BasePrompt":
+        """IMPORTANT: should only be called from storage on storage load!
+
+        Update the matching entry in type prompt registry in-place.
+        DO NOT call other than from initial storage load, to keep immutability of prompts in code.
+        """
+        existing = get_prompt_by_id(untyped_prompt.id)
+        outdated_prompt = await OutdatedPrompt.from_prompt(existing)
+        _mark_compiled_prompts_outdated(existing.id, outdated_prompt)
+        await existing._update(
+            versions=await untyped_prompt.get_versions(),
+            default_version_id=await untyped_prompt.get_default_version_id(),
+        )
+        return existing
+
+    async def append_version(
+        self,
+        *,
+        version_id: str,
+        content: str,
+        set_as_default: bool = False,
+    ) -> None:
+        if version_id in self._versions:
+            raise ValueError(f"Version ID '{version_id}' already exists.")
+        await self._update(
+            versions={version_id: content, **self._versions},
+            default_version_id=version_id if set_as_default else None,
+        )
+
+    async def update_default_version_id(
+        self,
+        default_version_id: str,
+    ) -> None:
+        if default_version_id not in self._versions:
+            raise ValueError(f"Version ID '{default_version_id}' does not exist.")
+        if self._default_version == default_version_id:
+            return
+        await self._update(
+            default_version_id=default_version_id,
+        )
 
 
 class OutdatedPrompt(BasePrompt[TPromptVar]):
@@ -273,7 +306,7 @@ class OutdatedPrompt(BasePrompt[TPromptVar]):
             id=prompt.id,
         )
 
-    def update(
+    async def _update(
         self,
         *,
         versions: str | dict[str, str] | None = None,
