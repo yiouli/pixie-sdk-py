@@ -1,7 +1,7 @@
 from copy import deepcopy
 from dataclasses import dataclass
 from types import NoneType
-from typing import Any, Generic, Protocol, TypeVar, cast, overload
+from typing import Any, Generic, Protocol, Self, TypeVar, cast, overload
 from uuid import uuid4
 
 from jsonsubschema import isSubschema
@@ -237,14 +237,14 @@ class BasePrompt(BaseUntypedPrompt, Generic[TPromptVar]):
         *,
         versions: str | dict[str, str] | None = None,
         default_version_id: str | None = None,
-    ) -> "OutdatedPrompt[TPromptVar]":
+    ) -> "tuple[Self, OutdatedPrompt[TPromptVar]]":
         outdated_prompt = await OutdatedPrompt.from_prompt(self)
         if versions is not None:
             self._versions = _to_versions_dict(versions)
         if default_version_id is not None:
             self._default_version = default_version_id
         _mark_compiled_prompts_outdated(self.id, outdated_prompt)
-        return outdated_prompt
+        return self, outdated_prompt
 
 
 class OutdatedPrompt(BasePrompt[TPromptVar]):
@@ -279,7 +279,7 @@ class OutdatedPrompt(BasePrompt[TPromptVar]):
         versions: str | dict[str, str] | None = None,
         default_version_id: str | None = None,
     ) -> "OutdatedPrompt[TPromptVar]":
-        return self
+        raise ValueError("Cannot update an outdated prompt.")
 
     async def get_default_version_id(self) -> str:
         return self._default_version

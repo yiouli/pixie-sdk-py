@@ -756,6 +756,117 @@ class TestStorageBackedPrompt:
         ):
             create_prompt(id="conflict_test", variables_definition=TestVars2)
 
+    async def test_storage_backed_prompt_properties(self, temp_dir: str):
+        """Test StorageBackedPrompt id and variables_definition properties."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+        from pixie.prompts.prompt import PromptVariables
+
+        class TestVars(PromptVariables):
+            name: str
+
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(id="test_id", variables_definition=TestVars)
+        assert prompt.id == "test_id"
+        assert prompt.variables_definition == TestVars
+
+    async def test_storage_backed_prompt_get_variables_schema(self, temp_dir: str):
+        """Test StorageBackedPrompt.get_variables_schema."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+        from pixie.prompts.prompt import PromptVariables
+
+        class TestVars(PromptVariables):
+            name: str
+            age: int
+
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(id="test_id", variables_definition=TestVars)
+        schema = await prompt.get_variables_schema()
+        assert schema == {
+            "type": "object",
+            "title": "TestVars",
+            "properties": {
+                "name": {"title": "Name", "type": "string"},
+                "age": {"title": "Age", "type": "integer"},
+            },
+            "required": ["name", "age"],
+        }
+
+    async def test_storage_backed_prompt_exists_in_storage_true(self, temp_dir: str):
+        """Test exists_in_storage returns True when prompt exists."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+
+        # Create prompt file
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "exists_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Hello"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {"type": "object", "properties": {}},
+                },
+                f,
+            )
+
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(id="exists_test")
+        assert await prompt.exists_in_storage() is True
+
+    async def test_storage_backed_prompt_exists_in_storage_false(self, temp_dir: str):
+        """Test exists_in_storage returns False when prompt does not exist."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(id="nonexistent")
+        assert await prompt.exists_in_storage() is False
+
+    async def test_storage_backed_prompt_get_default_version_id(self, temp_dir: str):
+        """Test StorageBackedPrompt.get_default_version_id."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+
+        # Create prompt file
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "default_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Version 1", "v2": "Version 2"},
+                    "defaultVersionId": "v2",
+                    "variablesSchema": {"type": "object", "properties": {}},
+                },
+                f,
+            )
+
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(id="default_test")
+        default_id = await prompt.get_default_version_id()
+        assert default_id == "v2"
+
+    async def test_storage_backed_prompt_update_and_save_new(self, temp_dir: str):
+        """Test update_and_save creates new prompt when not in storage."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(id="new_update_test")
+        updated_prompt = await prompt.update_and_save(versions={"v1": "New version"})
+        assert updated_prompt.id == "new_update_test"
+        assert await updated_prompt.get_versions() == {"v1": "New version"}
+        assert await updated_prompt.get_default_version_id() == "v1"
+
+        # Verify it was saved
+        retrieved = await prompt._get_prompt()
+        assert await retrieved.get_versions() == {"v1": "New version"}
+
 
 class TestInitializePromptStorage:
     """Tests for initialize_prompt_storage function."""

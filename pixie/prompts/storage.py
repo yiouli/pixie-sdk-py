@@ -39,6 +39,7 @@ class _FilePromptStorage(PromptStorage):
     def __init__(self, directory: str) -> None:
         self._directory = directory
         self._prompts: Dict[str, BaseUntypedPrompt] = {}
+        """prompts that are in storage"""
         if not os.path.exists(directory):
             os.makedirs(directory)
         for filename in os.listdir(directory):
@@ -146,6 +147,15 @@ class StorageBackedPrompt(Prompt[TPromptVar]):
         await self._get_prompt()
         return self
 
+    async def exists_in_storage(self) -> bool:
+        if _storage_instance is None:
+            raise RuntimeError("Prompt storage has not been initialized.")
+        try:
+            await self.actualize()
+            return True
+        except KeyError:
+            return False
+
     async def get_versions(self) -> dict[str, str]:
         prompt = await self._get_prompt()
         return await prompt.get_versions()
@@ -162,3 +172,34 @@ class StorageBackedPrompt(Prompt[TPromptVar]):
     ) -> str:
         prompt = await self._get_prompt()
         return prompt.compile(variables=variables, version_id=version_id)
+
+    async def update_and_save(
+        self,
+        *,
+        versions: str | dict[str, str] | None = None,
+        default_version_id: str | None = None,
+    ) -> BasePrompt[TPromptVar]:
+        if _storage_instance is None:
+            raise RuntimeError("Prompt storage has not been initialized.")
+        try:
+            prompt = await self._get_prompt()
+            await prompt.update(
+                versions=versions,
+                default_version_id=default_version_id,
+            )
+            new_prompt = prompt
+        except KeyError:
+            # this means prompt is not in storage
+            # thus it should be safe to assume there's no actualized prompt for this id
+            # thus it should be same to create a new instance of BasePrompt
+            if not versions:
+                raise ValueError(
+                    "Cannot create new prompt in storage without versions."
+                )
+            new_prompt = BasePrompt(
+                id=self.id,
+                versions=versions,
+                variables_definition=self.variables_definition,
+            )
+        await _storage_instance.save(new_prompt)
+        return new_prompt
