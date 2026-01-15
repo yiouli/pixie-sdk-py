@@ -61,9 +61,12 @@ def _mark_compiled_prompts_outdated(
             )
 
 
+DEFAULT_VERSION_ID = "v0"
+
+
 def _to_versions_dict(versions: str | dict[str, str]) -> dict[str, str]:
     if isinstance(versions, str):
-        return {"default": versions}
+        return {DEFAULT_VERSION_ID: versions}
     return deepcopy(versions)
 
 

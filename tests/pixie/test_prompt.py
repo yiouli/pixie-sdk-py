@@ -8,6 +8,7 @@ from types import NoneType
 
 from pixie.prompts.storage import _FilePromptStorage
 from pixie.prompts.prompt import (
+    DEFAULT_VERSION_ID,
     BasePrompt,
     PromptVariables,
     update_prompt_registry,
@@ -41,8 +42,8 @@ class TestPromptInitialization:
         prompt = BasePrompt(versions="Hello, world!")
 
         assert isinstance(prompt._versions, dict)
-        assert "default" in prompt._versions
-        assert prompt._versions["default"] == "Hello, world!"
+        assert DEFAULT_VERSION_ID in prompt._versions
+        assert prompt._versions[DEFAULT_VERSION_ID] == "Hello, world!"
 
     @pytest.mark.asyncio
     async def test_init_with_dict_versions(self):
@@ -126,7 +127,7 @@ class TestPromptProperties:
         """Test version_ids with a single version."""
         prompt = BasePrompt(versions="Single version")
 
-        assert set(prompt._versions.keys()) == {"default"}
+        assert set(prompt._versions.keys()) == {DEFAULT_VERSION_ID}
 
     @pytest.mark.asyncio
     async def test_default_version_id_property(self):
@@ -141,7 +142,7 @@ class TestPromptProperties:
         """Test default_version_id when initialized with string."""
         prompt = BasePrompt(versions="Test prompt")
 
-        assert await prompt.get_default_version_id() == "default"
+        assert await prompt.get_default_version_id() == DEFAULT_VERSION_ID
 
 
 class TestPromptCompileWithoutVariables:
