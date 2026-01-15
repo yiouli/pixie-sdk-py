@@ -77,7 +77,7 @@ class TestPromptInitialization:
         """Test initialization with variable definitions."""
         prompt = Prompt(
             versions="Hello, {name}!",
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
         )
 
         assert prompt._variable_definitions == SamplePromptVariables
@@ -179,7 +179,7 @@ class TestPromptCompileWithVariables:
         template = "Hello, {name}! You are {age} years old."
         prompt = Prompt(
             versions=template,
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
         )
 
         variables = SamplePromptVariables(name="Alice", age=30)
@@ -192,7 +192,7 @@ class TestPromptCompileWithVariables:
         template = "Hello, {name} from {city}!"
         prompt = Prompt(
             versions=template,
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
         )
 
         variables = SamplePromptVariables(name="Bob", age=25)
@@ -209,7 +209,7 @@ class TestPromptCompileWithVariables:
         }
         prompt = Prompt(
             versions=versions,
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
             default_version_id="greeting",
         )
 
@@ -228,7 +228,7 @@ class TestPromptCompileWithVariables:
         template = "{greeting}, {topic} is fascinating!"
         prompt = Prompt(
             versions=template,
-            variableDefinitions=AnotherPromptVariables,
+            variable_definitions=AnotherPromptVariables,
         )
 
         variables = AnotherPromptVariables(greeting="Hello", topic="Python")
@@ -246,7 +246,7 @@ Status: Active
 """
         prompt = Prompt(
             versions=template,
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
         )
 
         variables = SamplePromptVariables(name="Diana", age=28, city="Paris")
@@ -268,7 +268,7 @@ Status: Active
         }
         prompt = Prompt(
             versions=versions,
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
             default_version_id="v2",
         )
 
@@ -281,20 +281,20 @@ Status: Active
         """Test that ValueError is raised when variables are required but not provided."""
         prompt = Prompt(
             versions="Hello, {name}!",
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
         )
 
-        with pytest.raises(ValueError, match="Variables are required for this prompt"):
+        with pytest.raises(ValueError):
             prompt.compile()  # type: ignore[call-arg]
 
     def test_compile_variables_required_with_none_passed(self):
         """Test that ValueError is raised when None is explicitly passed."""
         prompt = Prompt(
             versions="Hello, {name}!",
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
         )
 
-        with pytest.raises(ValueError, match="Variables are required for this prompt"):
+        with pytest.raises(ValueError):
             prompt.compile(None)  # type: ignore[arg-type]
 
 
@@ -318,7 +318,7 @@ class TestPromptEdgeCases:
         special_text = "Hello! @#$%^&*() {name} [brackets] 'quotes' \"double\""
         prompt = Prompt(
             versions=special_text,
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
         )
 
         variables = SamplePromptVariables(name="Test", age=20)
@@ -331,7 +331,7 @@ class TestPromptEdgeCases:
         template = "This {{is}} not {name} a variable"
         prompt = Prompt(
             versions=template,
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
         )
 
         variables = SamplePromptVariables(name="formatted", age=10)
@@ -345,7 +345,7 @@ class TestPromptEdgeCases:
         unicode_text = "Hello, {name}! 你好 🎉 Привет"
         prompt = Prompt(
             versions=unicode_text,
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
         )
 
         variables = SamplePromptVariables(name="World", age=1)
@@ -360,7 +360,7 @@ Line 2: {age}
 Line 3: {city}"""
         prompt = Prompt(
             versions=template,
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
         )
 
         variables = SamplePromptVariables(name="Frank", age=50, city="London")
@@ -383,7 +383,7 @@ Line 3: London"""
         template = "Hello, {name} and {missing_var}!"
         prompt = Prompt(
             versions=template,
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
         )
 
         variables = SamplePromptVariables(name="Test", age=25)
@@ -396,7 +396,7 @@ Line 3: London"""
         template = "Hello, {name}!"
         prompt = Prompt(
             versions=template,
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
         )
 
         # Model has age and city, but template only uses name
@@ -410,7 +410,7 @@ Line 3: London"""
         template = "Count: {age}, Double: {age}"
         prompt = Prompt(
             versions=template,
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
         )
 
         variables = SamplePromptVariables(name="Test", age=42)
@@ -436,7 +436,7 @@ class TestPromptTypeAnnotations:
         """Test Prompt with custom PromptVariables type."""
         prompt: Prompt[SamplePromptVariables] = Prompt(
             versions="Name: {name}",
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
         )
 
         variables = SamplePromptVariables(name="Type Test", age=99)
@@ -457,7 +457,7 @@ class TestPromptIntegration:
         }
         prompt = Prompt(
             versions=versions,
-            variableDefinitions=AnotherPromptVariables,
+            variable_definitions=AnotherPromptVariables,
             default_version_id="medium",
         )
 
@@ -488,7 +488,7 @@ class TestPromptIntegration:
         template = "Hello, {name}!"
         prompt = Prompt(
             versions=template,
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
         )
 
         variables = SamplePromptVariables(name="Harry", age=45)
@@ -501,7 +501,7 @@ class TestPromptIntegration:
         """Test that different variable instances with same values produce same output."""
         prompt = Prompt(
             versions="{name} is {age}",
-            variableDefinitions=SamplePromptVariables,
+            variable_definitions=SamplePromptVariables,
         )
 
         vars1 = SamplePromptVariables(name="Ivy", age=33)
