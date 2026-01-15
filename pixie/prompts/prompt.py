@@ -22,6 +22,21 @@ def get_prompt_by_id(prompt_id: str) -> "Prompt":
     return _prompt_registry[prompt_id]
 
 
+def update_prompt_registry(untyped_prompt: "UntypedPrompt") -> "Prompt":
+    try:
+        existing = get_prompt_by_id(untyped_prompt.id)
+        var_def = existing.variable_definitions
+        existing.invalidate()
+    except KeyError:
+        # If not in registry, it's a new prompt, use NoneType
+        var_def = NoneType
+    ret = _prompt_registry[untyped_prompt.id] = Prompt.from_untyped(
+        untyped_prompt,
+        variable_definitions=var_def,
+    )
+    return ret
+
+
 @dataclass(frozen=True)
 class _CompiledPrompt:
     id: str
@@ -106,10 +121,8 @@ class Prompt(UntypedPrompt, Generic[T]):
         _prompt_registry[self.id] = self
 
     @property
-    def variable_definitions(self) -> type[T] | None:
+    def variable_definitions(self) -> type[T]:
         self._raise_if_invalid()
-        if self._variable_definitions is NoneType:
-            return None
         return self._variable_definitions
 
     @overload

@@ -1,8 +1,19 @@
 """Comprehensive unit tests for pixie.prompts.prompt module."""
 
+import os
+import json
 import pytest
+import tempfile
+from types import NoneType
 
-from pixie.prompts.prompt import Prompt, PromptVariables
+from pixie.prompts.storage import FilePromptStorage
+from pixie.prompts.prompt import (
+    Prompt,
+    PromptVariables,
+    update_prompt_registry,
+    UntypedPrompt,
+    _prompt_registry,  # Import the registry explicitly
+)
 
 
 class SamplePromptVariables(PromptVariables):
@@ -512,3 +523,90 @@ class TestPromptIntegration:
 
         assert result1 == result2
         assert result1 == "Ivy is 33"
+
+
+class TestUpdatePromptRegistry:
+    """Tests for the update_prompt_registry function."""
+
+    def test_update_prompt_registry_new_prompt(self):
+        """Test that update_prompt_registry handles new prompts."""
+        new_prompt = UntypedPrompt(versions={"v1": "New version"})
+
+        result = update_prompt_registry(new_prompt)
+
+        assert result.id == new_prompt.id
+        assert result.versions["v1"] == "New version"
+        assert result.variable_definitions == NoneType
+        assert result.is_valid
+
+    def test_update_prompt_registry_existing_prompt(self):
+        """Test that update_prompt_registry updates existing prompts."""
+        original_prompt = UntypedPrompt(versions={"v1": "Original version"})
+        # Manually add to registry with variable definitions
+        _prompt_registry[original_prompt.id] = Prompt.from_untyped(
+            original_prompt, variable_definitions=SamplePromptVariables
+        )
+
+        # Temporarily remove from registry to create updated UntypedPrompt
+        del _prompt_registry[original_prompt.id]
+
+        updated_prompt = UntypedPrompt(
+            id=original_prompt.id, versions={"v1": "Updated version"}
+        )
+
+        # Add back to registry to simulate existing
+        _prompt_registry[original_prompt.id] = Prompt.from_untyped(
+            original_prompt, variable_definitions=SamplePromptVariables
+        )
+
+        result = update_prompt_registry(updated_prompt)
+
+        assert result.id == original_prompt.id
+        assert result.versions["v1"] == "Updated version"
+        assert (
+            result.variable_definitions == SamplePromptVariables
+        )  # Should retain original var_def
+        assert result.is_valid
+
+
+@pytest.mark.asyncio
+class TestFilePromptStorage:
+    """Tests for the FilePromptStorage class."""
+
+    async def test_save_new_prompt(self):
+        """Test saving a new prompt to storage."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = FilePromptStorage(directory=temp_dir)
+
+            new_prompt = UntypedPrompt(versions={"v1": "New version"})
+            is_new = await storage.save(new_prompt)  # Use await for async call
+
+            assert is_new
+            assert os.path.exists(os.path.join(temp_dir, f"{new_prompt.id}.json"))
+
+    async def test_save_existing_prompt(self):
+        """Test saving an existing prompt updates its data."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = FilePromptStorage(directory=temp_dir)
+
+            prompt = UntypedPrompt(versions={"v1": "Initial version"})
+            await storage.save(prompt)  # Use await for async call
+
+            # Temporarily remove from registry to create updated UntypedPrompt
+            del _prompt_registry[prompt.id]
+
+            # Update the prompt
+            updated_prompt = UntypedPrompt(
+                id=prompt.id, versions={"v1": "Updated version"}
+            )
+
+            is_new = await storage.save(updated_prompt)  # Use await for async call
+
+            assert not is_new
+
+            # Verify the file content
+            filepath = os.path.join(temp_dir, f"{prompt.id}.json")
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            assert data["versions"]["v1"] == "Updated version"

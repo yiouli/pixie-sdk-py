@@ -1,5 +1,5 @@
 from typing_extensions import Protocol
-from .prompt import UntypedPrompt
+from .prompt import UntypedPrompt, update_prompt_registry
 import json
 import os
 from typing import Dict
@@ -49,6 +49,7 @@ class FilePromptStorage:
         filepath = os.path.join(self._directory, f"{prompt_id}.json")
         with open(filepath, "w") as f:
             json.dump(data, f, indent=2)
+        update_prompt_registry(prompt)
         self._prompts[prompt_id] = prompt
         return is_new
 
