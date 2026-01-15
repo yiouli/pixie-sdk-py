@@ -1,24 +1,40 @@
+from types import NoneType
 from typing_extensions import Protocol
-from .prompt import UntypedPrompt, update_prompt_registry, get_prompt_by_id
+from .prompt import (
+    T,
+    BasePrompt,
+    Prompt,
+    BaseUntypedPrompt,
+    update_prompt_registry,
+    variables_definition_to_schema,
+)
 import json
 import os
-from typing import Dict
+from typing import Any, Dict, TypedDict
+
+from jsonsubschema import isSubschema
 
 
 class PromptStorage(Protocol):
 
     async def exists(self, prompt_id: str) -> bool: ...
 
-    async def save(self, prompt: UntypedPrompt) -> None: ...
+    async def save(self, prompt: BaseUntypedPrompt) -> None: ...
 
-    async def get(self, prompt_id: str) -> UntypedPrompt: ...
+    async def get(self, prompt_id: str) -> BaseUntypedPrompt: ...
 
 
-class FilePromptStorage:
+class _BasePromptJson(TypedDict):
+    versions: Dict[str, str]
+    defaultVersionId: str
+    variablesSchema: Dict[str, Any]
+
+
+class _FilePromptStorage(PromptStorage):
 
     def __init__(self, directory: str) -> None:
         self._directory = directory
-        self._prompts: Dict[str, UntypedPrompt] = {}
+        self._prompts: Dict[str, BaseUntypedPrompt] = {}
         if not os.path.exists(directory):
             os.makedirs(directory)
         for filename in os.listdir(directory):
@@ -26,34 +42,115 @@ class FilePromptStorage:
                 prompt_id = filename[:-5]  # remove .json
                 filepath = os.path.join(directory, filename)
                 with open(filepath, "r") as f:
-                    data = json.load(f)
+                    data: _BasePromptJson = json.load(f)
                 versions = data["versions"]
-                default_version_id = data.get("defaultVersionId")
-                prompt = UntypedPrompt(
+                default_version_id = data["defaultVersionId"]
+                variables_schema = data["variablesSchema"]
+                prompt = BaseUntypedPrompt(
                     id=prompt_id,
                     versions=versions,
                     default_version_id=default_version_id,
+                    variables_schema=variables_schema,
                 )
                 self._prompts[prompt_id] = prompt
 
     async def exists(self, prompt_id: str) -> bool:
         return prompt_id in self._prompts
 
-    async def save(self, prompt: UntypedPrompt) -> None:
+    async def save(self, prompt: BaseUntypedPrompt) -> bool:
         prompt_id = prompt.id
-        try:
-            get_prompt_by_id(prompt_id)
-        except KeyError:
-            raise KeyError(f"Prompt with ID '{prompt_id}' does not exist.")
-        data = {
-            "versions": prompt.versions,
-            "defaultVersionId": prompt.default_version_id,
+        original = self._prompts.get(prompt_id)
+        new_schema = await prompt.get_variables_schema()
+        if original:
+            original_schema = await original.get_variables_schema()
+            if not isSubschema(original_schema, new_schema):
+                raise ValueError(
+                    "Original schema must be a subschema of the new schema."
+                )
+        data: _BasePromptJson = {
+            "versions": await prompt.get_versions(),
+            "defaultVersionId": await prompt.get_default_version_id(),
+            "variablesSchema": await prompt.get_variables_schema(),
         }
         filepath = os.path.join(self._directory, f"{prompt_id}.json")
         with open(filepath, "w") as f:
             json.dump(data, f, indent=2)
-        update_prompt_registry(prompt)
+        try:
+            await update_prompt_registry(prompt)
+        except KeyError:
+            pass  # Prompt not in registry yet
         self._prompts[prompt_id] = prompt
+        return original is None
 
-    async def get(self, prompt_id: str) -> UntypedPrompt:
+    async def get(self, prompt_id: str) -> BaseUntypedPrompt:
         return self._prompts[prompt_id]
+
+
+_storage_instance: PromptStorage | None = None
+
+
+# TODO allow other storage types later
+def initialize_prompt_storage(directory: str) -> None:
+    global _storage_instance
+    if _storage_instance is not None:
+        raise RuntimeError("Prompt storage has already been initialized.")
+    _storage_instance = _FilePromptStorage(directory)
+
+
+class StorageBackedPrompt(Prompt[T]):
+
+    def __init__(
+        self,
+        id: str,
+        *,
+        variables_definition: type[T] = NoneType,
+    ) -> None:
+        self._id = id
+        self._variables_definition = variables_definition
+        self._prompt: BasePrompt[T] | None = None
+
+    @property
+    def id(self) -> str:
+        return self._id
+
+    @property
+    def variables_definition(self) -> type[T]:
+        return self._variables_definition
+
+    async def get_variables_schema(self) -> dict[str, Any]:
+        return variables_definition_to_schema(self._variables_definition)
+
+    async def _get_prompt(self) -> BasePrompt[T]:
+        if _storage_instance is None:
+            raise RuntimeError("Prompt storage has not been initialized.")
+        if self._prompt is None:
+            untyped_prompt = await _storage_instance.get(self.id)
+            self._prompt = await BasePrompt.from_untyped(
+                untyped_prompt,
+                variables_definition=self.variables_definition,
+            )
+        return self._prompt
+
+    async def get_versions(self) -> dict[str, str]:
+        prompt = await self._get_prompt()
+        return await prompt.get_versions()
+
+    async def get_default_version_id(self) -> str | None:
+        prompt = await self._get_prompt()
+        return await prompt.get_default_version_id()
+
+    async def compile(
+        self,
+        variables: T = None,
+        *,
+        version_id: str | None = None,
+    ) -> str:
+        prompt = await self._get_prompt()
+        return prompt.compile(variables=variables, version_id=version_id)
+
+
+def create_prompt(
+    id: str,
+    variables_definition: type[T] = NoneType,
+) -> StorageBackedPrompt[T]:
+    return StorageBackedPrompt(id=id, variables_definition=variables_definition)
