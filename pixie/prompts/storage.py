@@ -64,7 +64,7 @@ class _FilePromptStorage(PromptStorage):
         if original:
             original_schema = await original.get_variables_schema()
             if not isSubschema(original_schema, new_schema):
-                raise ValueError(
+                raise TypeError(
                     "Original schema must be a subschema of the new schema."
                 )
         data: _BasePromptJson = {
@@ -128,6 +128,12 @@ class StorageBackedPrompt(Prompt[T]):
             self._prompt = await BasePrompt.from_untyped(
                 untyped_prompt,
                 variables_definition=self.variables_definition,
+            )
+        schema_from_storage = await untyped_prompt.get_variables_schema()
+        schema_from_definition = await self.get_variables_schema()
+        if not isSubschema(schema_from_definition, schema_from_storage):
+            raise TypeError(
+                "Schema from definition is not a subschema of the schema from storage."
             )
         return self._prompt
 

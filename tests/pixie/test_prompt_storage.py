@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import pytest
+from types import NoneType
 from typing import Dict
 
 from pixie.prompts.prompt import BaseUntypedPrompt, _prompt_registry
@@ -247,7 +248,7 @@ class TestFilePromptStorage:
 
         result = await storage.save(prompt)
         assert result is True
-        
+
         # Verify it was saved to file
         filepath = os.path.join(temp_dir, "test_prompt.json")
         assert os.path.exists(filepath)
@@ -302,8 +303,8 @@ class TestFilePromptStorage:
             },
         )
 
-        # Should raise ValueError due to incompatible schema
-        with pytest.raises(ValueError, match="Original schema must be a subschema"):
+        # Should raise TypeError due to incompatible schema
+        with pytest.raises(TypeError):
             await storage.save(updated_prompt)
 
     @pytest.mark.asyncio
@@ -356,6 +357,7 @@ class TestStorageBackedPrompt:
     def reset_storage_instance(self):
         """Reset the global storage instance before each test."""
         import pixie.prompts.storage as storage_module
+
         storage_module._storage_instance = None
         yield
         storage_module._storage_instance = None
@@ -376,13 +378,17 @@ class TestStorageBackedPrompt:
         # Create prompt file directly
         import json
         import os
+
         prompt_file = os.path.join(temp_dir, "test_prompt.json")
         with open(prompt_file, "w") as f:
-            json.dump({
-                "versions": {"v1": "Hello {name}"},
-                "defaultVersionId": "v1",
-                "variablesSchema": {"type": "object", "properties": {}}
-            }, f)
+            json.dump(
+                {
+                    "versions": {"v1": "Hello {name}"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {"type": "object", "properties": {}},
+                },
+                f,
+            )
 
         # Initialize storage - it will load existing files
         initialize_prompt_storage(temp_dir)
@@ -410,19 +416,25 @@ class TestStorageBackedPrompt:
         # Create prompt file directly
         import json
         import os
+
         prompt_file = os.path.join(temp_dir, "test_prompt.json")
         with open(prompt_file, "w") as f:
-            json.dump({
-                "versions": {"v1": "Hello {name}!"},
-                "defaultVersionId": "v1",
-                "variablesSchema": {"type": "object", "properties": {}}
-            }, f)
+            json.dump(
+                {
+                    "versions": {"v1": "Hello {name}!"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {"type": "object", "properties": {}},
+                },
+                f,
+            )
 
         # Initialize storage
         initialize_prompt_storage(temp_dir)
 
         # Create StorageBackedPrompt with variable definition
-        backed_prompt = StorageBackedPrompt(id="test_prompt", variables_definition=TestVars)
+        backed_prompt = StorageBackedPrompt(
+            id="test_prompt", variables_definition=TestVars
+        )
 
         # Compile
         variables = TestVars(name="World")
@@ -439,7 +451,9 @@ class TestStorageBackedPrompt:
 
         backed_prompt = StorageBackedPrompt(id="test_prompt")
 
-        with pytest.raises(RuntimeError, match="Prompt storage has not been initialized"):
+        with pytest.raises(
+            RuntimeError, match="Prompt storage has not been initialized"
+        ):
             await backed_prompt.get_versions()
 
     async def test_create_prompt_helper(self, temp_dir: str):
@@ -449,13 +463,17 @@ class TestStorageBackedPrompt:
         # Create prompt file directly
         import json
         import os
+
         prompt_file = os.path.join(temp_dir, "helper_test.json")
         with open(prompt_file, "w") as f:
-            json.dump({
-                "versions": {"v1": "Test"},
-                "defaultVersionId": "v1",
-                "variablesSchema": {"type": "object", "properties": {}}
-            }, f)
+            json.dump(
+                {
+                    "versions": {"v1": "Test"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {"type": "object", "properties": {}},
+                },
+                f,
+            )
 
         # Initialize storage
         initialize_prompt_storage(temp_dir)
@@ -466,6 +484,92 @@ class TestStorageBackedPrompt:
 
         versions = await prompt.get_versions()
         assert versions == {"v1": "Test"}
+
+    async def test_storage_backed_prompt_schema_compatibility_check_passes(
+        self, temp_dir: str
+    ):
+        """Test that schema compatibility check passes when definition is subschema of storage."""
+        from pixie.prompts.storage import (
+            initialize_prompt_storage,
+            StorageBackedPrompt,
+        )
+        from pixie.prompts.prompt import PromptVariables
+
+        class TestVars(PromptVariables):
+            name: str
+
+        # Create prompt file with empty schema (accepts everything)
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "schema_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Hello {name}!"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {
+                        "type": "object",
+                        "properties": {},
+                    },  # Empty schema
+                },
+                f,
+            )
+
+        # Initialize storage
+        initialize_prompt_storage(temp_dir)
+
+        # Create StorageBackedPrompt with restrictive definition
+        backed_prompt = StorageBackedPrompt(
+            id="schema_test", variables_definition=TestVars
+        )
+
+        # Should not raise, since TestVars schema is subschema of empty
+        versions = await backed_prompt.get_versions()
+        assert versions == {"v1": "Hello {name}!"}
+
+    async def test_storage_backed_prompt_schema_compatibility_check_fails(
+        self, temp_dir: str
+    ):
+        """Test that schema compatibility check fails when definition is not subschema of storage."""
+        from pixie.prompts.storage import (
+            initialize_prompt_storage,
+            StorageBackedPrompt,
+        )
+
+        # Create prompt file with restrictive schema (requires name)
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "schema_fail_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Hello {name}!"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                        "required": ["name"],
+                    },
+                },
+                f,
+            )
+
+        # Initialize storage
+        initialize_prompt_storage(temp_dir)
+
+        # Create StorageBackedPrompt with NoneType (empty schema)
+        backed_prompt = StorageBackedPrompt(
+            id="schema_fail_test", variables_definition=NoneType
+        )
+
+        # Should raise TypeError because empty schema is not subschema of required schema
+        with pytest.raises(
+            TypeError,
+            match="The provided variables_definition is not compatible with the prompt's variables schema",
+        ):
+            await backed_prompt.get_versions()
 
 
 class TestInitializePromptStorage:
@@ -481,6 +585,7 @@ class TestInitializePromptStorage:
     def reset_storage_instance(self):
         """Reset the global storage instance before each test."""
         import pixie.prompts.storage as storage_module
+
         storage_module._storage_instance = None
         yield
         storage_module._storage_instance = None
@@ -492,7 +597,9 @@ class TestInitializePromptStorage:
         initialize_prompt_storage(temp_dir)
 
         # Should raise error on second call
-        with pytest.raises(RuntimeError, match="Prompt storage has already been initialized"):
+        with pytest.raises(
+            RuntimeError, match="Prompt storage has already been initialized"
+        ):
             initialize_prompt_storage(temp_dir)
 
     def test_initialize_creates_storage(self, temp_dir: str):

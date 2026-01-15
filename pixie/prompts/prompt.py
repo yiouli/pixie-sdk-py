@@ -155,7 +155,7 @@ class BasePrompt(BaseUntypedPrompt, Generic[T]):
         base_schema = await untyped_prompt.get_variables_schema()
         typed_schema = variables_definition_to_schema(variables_definition)
         if not isSubschema(typed_schema, base_schema):
-            raise ValueError(
+            raise TypeError(
                 "The provided variables_definition is not compatible with the prompt's variables schema."
             )
         return cls(

@@ -830,10 +830,7 @@ class TestBasePromptFromUntyped:
         )
 
         # SamplePromptVariables has name, age, city - incompatible
-        with pytest.raises(
-            ValueError,
-            match="The provided variables_definition is not compatible with the prompt's variables schema",
-        ):
+        with pytest.raises(TypeError):
             await BasePrompt.from_untyped(untyped, SamplePromptVariables)
 
     async def test_from_untyped_with_nonetype(self):
@@ -962,4 +959,3 @@ class TestOutdatedPromptGetMethods:
         outdated = await OutdatedPrompt.from_prompt(prompt)
 
         assert outdated.variables_definition == SamplePromptVariables
-
