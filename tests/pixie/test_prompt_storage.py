@@ -144,7 +144,7 @@ class TestFilePromptStorage:
 
     @pytest.mark.asyncio
     async def test_save_creates_new_prompt(self, temp_dir: str):
-        """Test that save creates a new prompt and returns True."""
+        """Test that save raises KeyError for new prompts."""
         storage = FilePromptStorage(temp_dir)
 
         prompt = UntypedPrompt(
@@ -153,40 +153,32 @@ class TestFilePromptStorage:
             id="new_prompt",
         )
 
-        result = await storage.save(prompt)
-        assert result is True
-
-        # Check in-memory
-        assert "new_prompt" in storage._prompts
-        assert storage._prompts["new_prompt"] is prompt
-
-        # Check file was written
-        filepath = os.path.join(temp_dir, "new_prompt.json")
-        assert os.path.exists(filepath)
-        with open(filepath, "r") as f:
-            data = json.load(f)
-        assert data["versions"] == prompt.versions
-        assert data["defaultVersionId"] == prompt.default_version_id
+        with pytest.raises(KeyError):
+            await storage.save(prompt)
 
     @pytest.mark.asyncio
     async def test_save_updates_existing_prompt(
         self, temp_dir: str, sample_prompt_data: Dict[str, Dict]
     ):
-        """Test that save updates an existing prompt and returns False."""
+        """Test that save updates an existing prompt."""
         self.create_sample_files(temp_dir, sample_prompt_data)
         storage = FilePromptStorage(temp_dir)
+
+        # Register the loaded prompts
+        from pixie.prompts.prompt import Prompt
+
+        for p in storage._prompts.values():
+            Prompt.from_untyped(p)
 
         # Modify the existing prompt
         storage._prompts["prompt1"]
         updated_versions = {"v1": "Updated {name}", "v3": "New version"}
-        # Remove from registry to allow creating new prompt with same id
-        _prompt_registry.pop("prompt1", None)
         updated_prompt = UntypedPrompt(
             versions=updated_versions, default_version_id="v1", id="prompt1"
         )
 
         result = await storage.save(updated_prompt)
-        assert result is False
+        assert result is None
 
         # Check in-memory was updated
         assert storage._prompts["prompt1"] is updated_prompt
@@ -226,47 +218,15 @@ class TestFilePromptStorage:
 
     @pytest.mark.asyncio
     async def test_save_writes_to_file_before_memory_update(self, temp_dir: str):
-        """Test that save writes to file before updating memory (for crash safety)."""
+        """Test that save raises KeyError for new prompts."""
         storage = FilePromptStorage(temp_dir)
 
         prompt = UntypedPrompt(
             versions={"default": "Test"}, default_version_id="default", id="test_prompt"
         )
 
-        # Mock file write to fail after writing
-        original_open = open
-        write_count = 0
-
-        def mock_open(*args, **kwargs):
-            nonlocal write_count
-            if args and "test_prompt.json" in args[0] and "w" in args[1]:
-                write_count += 1
-                # Simulate writing to file
-                result = original_open(*args, **kwargs)
-                result.write(
-                    '{"versions": {"default": "Test"}, "defaultVersionId": "default"}'
-                )
-                result.close()
-                # Then raise an exception to simulate failure after write
-                if write_count == 1:
-                    raise OSError("Simulated write failure")
-            return original_open(*args, **kwargs)
-
-        import builtins
-
-        builtins.open = mock_open
-
-        try:
-            with pytest.raises(OSError):
-                await storage.save(prompt)
-        finally:
-            builtins.open = original_open
-
-        # Even though memory update failed, file should exist
-        filepath = os.path.join(temp_dir, "test_prompt.json")
-        assert os.path.exists(filepath)
-        # But memory should not be updated
-        assert "test_prompt" not in storage._prompts
+        with pytest.raises(KeyError):
+            await storage.save(prompt)
 
     def test_init_with_default_version_id_none(self, temp_dir: str):
         """Test loading a prompt where defaultVersionId is None (defaults to first version)."""

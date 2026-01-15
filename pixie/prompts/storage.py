@@ -1,5 +1,5 @@
 from typing_extensions import Protocol
-from .prompt import UntypedPrompt, update_prompt_registry
+from .prompt import UntypedPrompt, update_prompt_registry, get_prompt_by_id
 import json
 import os
 from typing import Dict
@@ -9,7 +9,7 @@ class PromptStorage(Protocol):
 
     async def exists(self, prompt_id: str) -> bool: ...
 
-    async def save(self, prompt: UntypedPrompt) -> bool: ...
+    async def save(self, prompt: UntypedPrompt) -> None: ...
 
     async def get(self, prompt_id: str) -> UntypedPrompt: ...
 
@@ -39,9 +39,12 @@ class FilePromptStorage:
     async def exists(self, prompt_id: str) -> bool:
         return prompt_id in self._prompts
 
-    async def save(self, prompt: UntypedPrompt) -> bool:
+    async def save(self, prompt: UntypedPrompt) -> None:
         prompt_id = prompt.id
-        is_new = prompt_id not in self._prompts
+        try:
+            get_prompt_by_id(prompt_id)
+        except KeyError:
+            raise KeyError(f"Prompt with ID '{prompt_id}' does not exist.")
         data = {
             "versions": prompt.versions,
             "defaultVersionId": prompt.default_version_id,
@@ -51,7 +54,6 @@ class FilePromptStorage:
             json.dump(data, f, indent=2)
         update_prompt_registry(prompt)
         self._prompts[prompt_id] = prompt
-        return is_new
 
     async def get(self, prompt_id: str) -> UntypedPrompt:
         return self._prompts[prompt_id]

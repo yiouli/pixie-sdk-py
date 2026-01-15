@@ -12,7 +12,9 @@ from pixie.prompts.prompt import (
     PromptVariables,
     update_prompt_registry,
     UntypedPrompt,
+    OutdatedPrompt,
     _prompt_registry,  # Import the registry explicitly
+    _compiled_prompt_registry,
 )
 
 
@@ -95,7 +97,6 @@ class TestPromptInitialization:
 
     def test_init_with_none_variable_definitions(self):
         """Test initialization with NoneType variable definitions (default)."""
-        from types import NoneType
 
         prompt = Prompt(versions="Hello!")
 
@@ -435,7 +436,6 @@ class TestPromptTypeAnnotations:
 
     def test_prompt_with_nonetype_generic(self):
         """Test Prompt with NoneType explicitly."""
-        from types import NoneType
 
         prompt: Prompt[NoneType] = Prompt(versions="No variables here")
 
@@ -525,19 +525,138 @@ class TestPromptIntegration:
         assert result1 == "Ivy is 33"
 
 
+class TestPromptUpdateAndOutdated:
+    """Tests for Prompt.update() and OutdatedPrompt behavior."""
+
+    def test_prompt_update_returns_outdated_prompt(self):
+        """Test that Prompt.update() returns an OutdatedPrompt."""
+        prompt = Prompt(versions={"v1": "Original"})
+        outdated = prompt.update(versions={"v1": "Updated"})
+
+        assert isinstance(outdated, OutdatedPrompt)
+        assert outdated.id == prompt.id
+        assert outdated.versions == {"v1": "Original"}
+
+    def test_prompt_update_modifies_prompt_in_place(self):
+        """Test that Prompt.update() modifies the prompt object in place."""
+        prompt = Prompt(versions={"v1": "Original"}, default_version_id="v1")
+
+        prompt.update(
+            versions={"v1": "Updated", "v2": "New version"}, default_version_id="v2"
+        )
+
+        assert prompt.versions["v1"] == "Updated"
+        assert prompt.versions["v2"] == "New version"
+        assert prompt.default_version_id == "v2"
+
+    def test_prompt_remains_usable_after_update(self):
+        """Test that Prompt remains usable after update."""
+        prompt = Prompt(versions={"v1": "Original {name}"})
+
+        # Compile before update
+        result_before = prompt.compile()
+
+        # Update
+        prompt.update(versions={"v1": "Updated {name}"})
+
+        # Compile after update
+        result_after = prompt.compile()
+
+        assert result_before == "Original {name}"
+        assert result_after == "Updated {name}"
+
+    def test_outdated_prompt_compile_raises_error(self):
+        """Test that OutdatedPrompt.compile() raises ValueError."""
+        outdated = OutdatedPrompt(
+            versions={"v1": "Test"}, default_version_id="v1", id="test_id"
+        )
+
+        with pytest.raises(ValueError, match="This prompt is outdated"):
+            outdated.compile()
+
+    def test_outdated_prompt_update_does_nothing(self):
+        """Test that OutdatedPrompt.update() returns self without changes."""
+        outdated = OutdatedPrompt(
+            versions={"v1": "Original"}, default_version_id="v1", id="test_id"
+        )
+
+        result = outdated.update(versions={"v1": "Updated"})
+
+        assert result is outdated
+        assert outdated.versions["v1"] == "Original"
+
+    def test_compiled_prompts_become_outdated_on_update(self):
+        """Test that compiled prompts reference OutdatedPrompt after prompt update."""
+        prompt = Prompt(
+            versions={"v1": "Version {name}"},
+            variable_definitions=SamplePromptVariables,
+        )
+        variables = SamplePromptVariables(name="Test", age=25)
+
+        # Compile a prompt
+        compiled_result = prompt.compile(variables)
+
+        # Find the compiled prompt in registry
+        compiled_prompt = None
+        for cp in _compiled_prompt_registry.values():
+            if cp.value == compiled_result:
+                compiled_prompt = cp
+                break
+
+        assert compiled_prompt is not None
+        assert isinstance(compiled_prompt.prompt, Prompt)
+
+        # Update the prompt
+        prompt.update(versions={"v1": "Updated {name}"})
+
+        # Check that the same compiled prompt now references OutdatedPrompt
+        updated_compiled = None
+        for cp in _compiled_prompt_registry.values():
+            if cp.value == compiled_result:
+                updated_compiled = cp
+                break
+
+        assert updated_compiled is not None
+        assert isinstance(updated_compiled.prompt, OutdatedPrompt)
+        assert updated_compiled.prompt.versions["v1"] == "Version {name}"
+
+    def test_outdated_compiled_prompt_cannot_compile(self):
+        """Test that trying to compile an outdated compiled prompt raises error."""
+        prompt = Prompt(
+            versions={"v1": "Version {name}"},
+            variable_definitions=SamplePromptVariables,
+        )
+        variables = SamplePromptVariables(name="Test", age=25)
+
+        # Compile a prompt
+        compiled_result = prompt.compile(variables)
+
+        # Update the prompt, making compiled prompt outdated
+        prompt.update(versions={"v1": "Updated {name}"})
+
+        # Find the outdated compiled prompt
+        outdated_cp = None
+        for cp in _compiled_prompt_registry.values():
+            if cp.value == compiled_result:
+                outdated_cp = cp
+                break
+
+        assert outdated_cp is not None
+        assert isinstance(outdated_cp.prompt, OutdatedPrompt)
+
+        with pytest.raises(ValueError, match="This prompt is outdated"):
+            outdated_cp.prompt.compile(variables)
+
+
 class TestUpdatePromptRegistry:
     """Tests for the update_prompt_registry function."""
 
-    def test_update_prompt_registry_new_prompt(self):
-        """Test that update_prompt_registry handles new prompts."""
+    def test_update_prompt_registry_new_prompt_raises_error(self):
+        """Test that update_prompt_registry raises KeyError for new prompts."""
         new_prompt = UntypedPrompt(versions={"v1": "New version"})
 
-        result = update_prompt_registry(new_prompt)
-
-        assert result.id == new_prompt.id
-        assert result.versions["v1"] == "New version"
-        assert result.variable_definitions == NoneType
-        assert result.is_valid
+        with pytest.raises(KeyError):
+            update_prompt_registry(new_prompt)
 
     def test_update_prompt_registry_existing_prompt(self):
         """Test that update_prompt_registry updates existing prompts."""
@@ -566,34 +685,31 @@ class TestUpdatePromptRegistry:
         assert (
             result.variable_definitions == SamplePromptVariables
         )  # Should retain original var_def
-        assert result.is_valid
 
 
 @pytest.mark.asyncio
 class TestFilePromptStorage:
     """Tests for the FilePromptStorage class."""
 
-    async def test_save_new_prompt(self):
-        """Test saving a new prompt to storage."""
+    async def test_save_new_prompt_raises_error(self):
+        """Test that save raises KeyError for new prompts."""
         with tempfile.TemporaryDirectory() as temp_dir:
             storage = FilePromptStorage(directory=temp_dir)
 
             new_prompt = UntypedPrompt(versions={"v1": "New version"})
-            is_new = await storage.save(new_prompt)  # Use await for async call
-
-            assert is_new
-            assert os.path.exists(os.path.join(temp_dir, f"{new_prompt.id}.json"))
+            with pytest.raises(KeyError):
+                await storage.save(new_prompt)
 
     async def test_save_existing_prompt(self):
         """Test saving an existing prompt updates its data."""
         with tempfile.TemporaryDirectory() as temp_dir:
             storage = FilePromptStorage(directory=temp_dir)
 
+            # Create the prompt in registry first
             prompt = UntypedPrompt(versions={"v1": "Initial version"})
-            await storage.save(prompt)  # Use await for async call
+            Prompt.from_untyped(prompt)
 
-            # Temporarily remove from registry to create updated UntypedPrompt
-            del _prompt_registry[prompt.id]
+            await storage.save(prompt)  # Use await for async call
 
             # Update the prompt
             updated_prompt = UntypedPrompt(

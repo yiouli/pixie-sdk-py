@@ -23,30 +23,47 @@ def get_prompt_by_id(prompt_id: str) -> "Prompt":
 
 
 def update_prompt_registry(untyped_prompt: "UntypedPrompt") -> "Prompt":
-    try:
-        existing = get_prompt_by_id(untyped_prompt.id)
-        var_def = existing.variable_definitions
-        existing.invalidate()
-    except KeyError:
-        # If not in registry, it's a new prompt, use NoneType
-        var_def = NoneType
-    ret = _prompt_registry[untyped_prompt.id] = Prompt.from_untyped(
-        untyped_prompt,
-        variable_definitions=var_def,
+    existing = get_prompt_by_id(untyped_prompt.id)
+    outdated_prompt = OutdatedPrompt.from_prompt(existing)
+    _mark_compiled_prompts_outdated(existing.id, outdated_prompt)
+    existing.update(
+        versions=untyped_prompt.versions,
+        default_version_id=untyped_prompt.default_version_id,
     )
-    return ret
+    return existing
 
 
 @dataclass(frozen=True)
 class _CompiledPrompt:
     id: str
     value: str
-    prompt: "Prompt"
+    prompt: "Prompt | OutdatedPrompt"
     version_id: str
     variables: PromptVariables | None
 
 
 _compiled_prompt_registry: dict[str, _CompiledPrompt] = {}
+
+
+def _mark_compiled_prompts_outdated(
+    prompt_id: str, outdated_prompt: "OutdatedPrompt"
+) -> None:
+    for key in list(_compiled_prompt_registry.keys()):
+        compiled_prompt = _compiled_prompt_registry[key]
+        if compiled_prompt.prompt.id == prompt_id:
+            _compiled_prompt_registry[key] = _CompiledPrompt(
+                id=compiled_prompt.id,
+                value=compiled_prompt.value,
+                version_id=compiled_prompt.version_id,
+                variables=compiled_prompt.variables,
+                prompt=outdated_prompt,
+            )
+
+
+def _to_versions_dict(versions: str | dict[str, str]) -> dict[str, str]:
+    if isinstance(versions, str):
+        return {"default": versions}
+    return deepcopy(versions)
 
 
 class UntypedPrompt:
@@ -62,18 +79,13 @@ class UntypedPrompt:
             id = uuid4().hex
             while id in _prompt_registry:
                 id = uuid4().hex
-        if id in _prompt_registry:
-            raise ValueError(f"Prompt with ID '{id}' already exists.")
 
         self._id = id
         if not versions:
             raise ValueError("No versions provided for the prompt.")
-        if isinstance(versions, str):
-            self._versions = {"default": versions}
-        else:
-            self._versions = deepcopy(versions)
+        self._versions: dict[str, str]
+        self._versions = _to_versions_dict(versions)
         self._default_version = default_version_id or next(iter(self._versions))
-        self.is_valid = True
 
     @property
     def id(self) -> str:
@@ -122,7 +134,6 @@ class Prompt(UntypedPrompt, Generic[T]):
 
     @property
     def variable_definitions(self) -> type[T]:
-        self._raise_if_invalid()
         return self._variable_definitions
 
     @overload
@@ -137,7 +148,6 @@ class Prompt(UntypedPrompt, Generic[T]):
         *,
         version_id: str | None = None,
     ) -> str:
-        self._raise_if_invalid()
         version_id = version_id or self._default_version
         template = self._versions[version_id]
         if self._variable_definitions is not NoneType:
@@ -158,15 +168,57 @@ class Prompt(UntypedPrompt, Generic[T]):
         )
         return ret
 
-    def _raise_if_invalid(self) -> None:
-        if not self.is_valid:
-            raise ValueError("This prompt is no longer valid.")
+    def update(
+        self,
+        *,
+        versions: str | dict[str, str] | None = None,
+        default_version_id: str | None = None,
+    ) -> "OutdatedPrompt[T]":
+        outdated_prompt = OutdatedPrompt.from_prompt(self)
+        if versions is not None:
+            self._versions = _to_versions_dict(versions)
+        if default_version_id is not None:
+            self._default_version = default_version_id
+        _mark_compiled_prompts_outdated(self.id, outdated_prompt)
+        return outdated_prompt
 
-    def invalidate(self) -> None:
-        self.is_valid = False
-        _prompt_registry.pop(self._id, None)
-        for compiled_prompt_id, compiled_prompt in list(
-            _compiled_prompt_registry.items()
-        ):
-            if compiled_prompt.prompt.id == self._id:
-                _compiled_prompt_registry.pop(compiled_prompt_id, None)
+
+class OutdatedPrompt(Prompt[T]):
+
+    def __init__(
+        self,
+        *,
+        versions: str | dict[str, str],
+        default_version_id: str | NoneType = None,
+        variable_definitions: type[T] = NoneType,
+        id: str | NoneType = None,
+    ) -> NoneType:
+        self._id = id
+        self._versions = _to_versions_dict(versions)
+        self._default_version = default_version_id
+        self._variable_definitions = variable_definitions
+
+    @classmethod
+    def from_prompt(cls, prompt: Prompt[T]) -> "OutdatedPrompt[T]":
+        return cls(
+            variable_definitions=prompt.variable_definitions,
+            versions=prompt.versions,
+            default_version_id=prompt.default_version_id,
+            id=prompt.id,
+        )
+
+    def update(
+        self,
+        *,
+        versions: str | dict[str, str] | None = None,
+        default_version_id: str | None = None,
+    ) -> "OutdatedPrompt[T]":
+        return self
+
+    def compile(
+        self,
+        _variables: T | None = None,
+        *,
+        _version_id: str | None = None,
+    ) -> str:
+        raise ValueError("This prompt is outdated and can no longer be used.")
