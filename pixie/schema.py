@@ -15,6 +15,8 @@ import strawberry.experimental.pydantic
 from strawberry.scalars import JSON
 
 from langfuse import get_client
+from pixie.prompts.prompt import variables_definition_to_schema
+from pixie.prompts.prompt_management import get_prompt, list_prompts
 from pixie.registry import call_application, get_application, list_applications
 from pixie.utils import get_json_schema_for_type
 from pixie.types import (
@@ -283,6 +285,33 @@ class AppInfo:
 
 
 @strawberry.type
+class PromptInfo:
+    """Schema information for a registered prompt via create_prompt."""
+
+    id: strawberry.ID
+    variables_schema: JSON
+
+
+@strawberry.type
+class KeyValue:
+    """Key-value attribute."""
+
+    key: str
+    value: str
+
+
+@strawberry.type
+class PromptDetails:
+    """Detailed information for a registered prompt."""
+
+    id: strawberry.ID
+    variables_schema: JSON
+    versions: list[KeyValue]
+    default_version_id: str | None
+    """default version id can only be None if versions is empty"""
+
+
+@strawberry.type
 class Query:
     """GraphQL queries."""
 
@@ -339,6 +368,63 @@ class Query:
             )
 
         return agent_schemas
+
+    @strawberry.field
+    def list_prompts(self) -> list[PromptInfo]:
+        """List all registered prompt templates.
+
+        Returns:
+            A list of PromptInfo objects containing id and variables_schema
+            for each registered prompt.
+        """
+        return [
+            PromptInfo(
+                id=strawberry.ID(p.id),
+                variables_schema=JSON(
+                    # NOTE: avoid p.get_variables_schema() to prevent potential fetching from storage
+                    # this in theory could be different from the stored schema but in practice should not be
+                    variables_definition_to_schema(p.variables_definition)
+                ),
+            )
+            for p in list_prompts()
+        ]
+
+    @strawberry.field
+    async def get_prompt_details(self, id: strawberry.ID) -> Optional[PromptDetails]:
+        """Get detailed information for a registered prompt.
+
+        Args:
+            id: The unique identifier of the prompt.
+        Returns:
+            PromptDetails object containing id, variables_schema, versions,
+            and default_version_id, or None if prompt not found.
+        """
+        prompt = get_prompt((str(id)))
+        if prompt is None:
+            return None
+        try:
+            await prompt.actualize()
+        except KeyError:
+            # prompt exists in code but not in storage
+            return PromptDetails(
+                id=id,
+                variables_schema=JSON(
+                    # NOTE: avoid prompt.get_variables_schema() to prevent potential fetching from storage
+                    variables_definition_to_schema(prompt.variables_definition)
+                ),
+                versions=[],
+                default_version_id=None,
+            )
+        versions_dict = await prompt.get_versions()
+        versions = [KeyValue(key=k, value=v) for k, v in versions_dict.items()]
+        default_version_id: str = await prompt.get_default_version_id()
+        variables_schema = await prompt.get_variables_schema()
+        return PromptDetails(
+            id=id,
+            variables_schema=JSON(variables_schema),
+            versions=versions,
+            default_version_id=default_version_id,
+        )
 
 
 @strawberry.type

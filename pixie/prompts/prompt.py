@@ -13,10 +13,15 @@ class PromptVariables(BaseModel):
     pass
 
 
-T = TypeVar("T", bound=PromptVariables | None)
+TPromptVar = TypeVar("TPromptVar", bound=PromptVariables | None)
 
 
 _prompt_registry: dict[str, "BasePrompt"] = {}
+"""Registry of all actualized prompts.
+
+Purpose of the registry is to ensure there's single actualized prompt instance per prompt ID globally,
+so that every compiled prompt can track back to one single instance of the prompt it was compiled from.
+"""
 
 
 def get_prompt_by_id(prompt_id: str) -> "BasePrompt":
@@ -36,14 +41,17 @@ async def update_prompt_registry(untyped_prompt: "BaseUntypedPrompt") -> "BasePr
 
 @dataclass(frozen=True)
 class _CompiledPrompt:
-    id: str
     value: str
     prompt: "BasePrompt | OutdatedPrompt"
     version_id: str
     variables: PromptVariables | None
 
 
-_compiled_prompt_registry: dict[str, _CompiledPrompt] = {}
+_compiled_prompt_registry: dict[int, _CompiledPrompt] = {}
+"""Registry of all compiled prompts.
+
+This is to keep track of every result string returned by BasePrompt.compile().
+key is the id() of the compiled string."""
 
 
 def _mark_compiled_prompts_outdated(
@@ -53,7 +61,6 @@ def _mark_compiled_prompts_outdated(
         compiled_prompt = _compiled_prompt_registry[key]
         if compiled_prompt.prompt.id == prompt_id:
             _compiled_prompt_registry[key] = _CompiledPrompt(
-                id=compiled_prompt.id,
                 value=compiled_prompt.value,
                 version_id=compiled_prompt.version_id,
                 variables=compiled_prompt.variables,
@@ -121,9 +128,9 @@ class BaseUntypedPrompt(_UnTypedPrompt):
         return deepcopy(self._variables_schema)
 
 
-class Prompt(_UnTypedPrompt, Generic[T]):
+class Prompt(_UnTypedPrompt, Generic[TPromptVar]):
     @property
-    def variables_definition(self) -> type[T]: ...
+    def variables_definition(self) -> type[TPromptVar]: ...
 
     @overload
     def compile(
@@ -131,30 +138,32 @@ class Prompt(_UnTypedPrompt, Generic[T]):
     ) -> str: ...
 
     @overload
-    def compile(self, variables: T, *, version_id: str | None = None) -> str: ...
+    def compile(
+        self, variables: TPromptVar, *, version_id: str | None = None
+    ) -> str: ...
 
     def compile(
         self,
-        variables: T | None = None,
+        variables: TPromptVar | None = None,
         *,
         version_id: str | None = None,
     ) -> str: ...
 
 
-def variables_definition_to_schema(definition: type[T]) -> dict[str, Any]:
+def variables_definition_to_schema(definition: type[TPromptVar]) -> dict[str, Any]:
     if definition is NoneType:
         return EMPTY_VARIABLES_SCHEMA
 
     return cast(type[PromptVariables], definition).model_json_schema()
 
 
-class BasePrompt(BaseUntypedPrompt, Generic[T]):
+class BasePrompt(BaseUntypedPrompt, Generic[TPromptVar]):
     @classmethod
     async def from_untyped(
         cls,
         untyped_prompt: "BaseUntypedPrompt",
-        variables_definition: type[T] = NoneType,
-    ) -> "BasePrompt[T]":
+        variables_definition: type[TPromptVar] = NoneType,
+    ) -> "BasePrompt[TPromptVar]":
         base_schema = await untyped_prompt.get_variables_schema()
         typed_schema = variables_definition_to_schema(variables_definition)
         if not isSubschema(typed_schema, base_schema):
@@ -173,7 +182,7 @@ class BasePrompt(BaseUntypedPrompt, Generic[T]):
         *,
         versions: str | dict[str, str],
         default_version_id: str | None = None,
-        variables_definition: type[T] = NoneType,
+        variables_definition: type[TPromptVar] = NoneType,
         id: str | None = None,
     ) -> None:
         super().__init__(
@@ -186,7 +195,7 @@ class BasePrompt(BaseUntypedPrompt, Generic[T]):
         _prompt_registry[self.id] = self
 
     @property
-    def variables_definition(self) -> type[T]:
+    def variables_definition(self) -> type[TPromptVar]:
         return self._variables_definition
 
     @overload
@@ -195,11 +204,13 @@ class BasePrompt(BaseUntypedPrompt, Generic[T]):
     ) -> str: ...
 
     @overload
-    def compile(self, variables: T, *, version_id: str | None = None) -> str: ...
+    def compile(
+        self, variables: TPromptVar, *, version_id: str | None = None
+    ) -> str: ...
 
     def compile(
         self,
-        variables: T | None = None,
+        variables: TPromptVar | None = None,
         *,
         version_id: str | None = None,
     ) -> str:
@@ -213,9 +224,7 @@ class BasePrompt(BaseUntypedPrompt, Generic[T]):
             ret = template.format(**variables.model_dump(mode="json"))
         else:
             ret = template
-        compiled_prompt_id = uuid4().hex
-        _compiled_prompt_registry[compiled_prompt_id] = _CompiledPrompt(
-            id=compiled_prompt_id,
+        _compiled_prompt_registry[id(ret)] = _CompiledPrompt(
             value=ret,
             version_id=version_id,
             prompt=self,
@@ -228,7 +237,7 @@ class BasePrompt(BaseUntypedPrompt, Generic[T]):
         *,
         versions: str | dict[str, str] | None = None,
         default_version_id: str | None = None,
-    ) -> "OutdatedPrompt[T]":
+    ) -> "OutdatedPrompt[TPromptVar]":
         outdated_prompt = await OutdatedPrompt.from_prompt(self)
         if versions is not None:
             self._versions = _to_versions_dict(versions)
@@ -238,14 +247,14 @@ class BasePrompt(BaseUntypedPrompt, Generic[T]):
         return outdated_prompt
 
 
-class OutdatedPrompt(BasePrompt[T]):
+class OutdatedPrompt(BasePrompt[TPromptVar]):
 
     def __init__(
         self,
         *,
         versions: str | dict[str, str],
         default_version_id: str,
-        variables_definition: type[T],
+        variables_definition: type[TPromptVar],
         id: str,
     ) -> NoneType:
         self._id = id
@@ -254,7 +263,9 @@ class OutdatedPrompt(BasePrompt[T]):
         self._variables_definition = variables_definition
 
     @classmethod
-    async def from_prompt(cls, prompt: BasePrompt[T]) -> "OutdatedPrompt[T]":
+    async def from_prompt(
+        cls, prompt: BasePrompt[TPromptVar]
+    ) -> "OutdatedPrompt[TPromptVar]":
         return cls(
             variables_definition=prompt.variables_definition,
             versions=await prompt.get_versions(),
@@ -267,7 +278,7 @@ class OutdatedPrompt(BasePrompt[T]):
         *,
         versions: str | dict[str, str] | None = None,
         default_version_id: str | None = None,
-    ) -> "OutdatedPrompt[T]":
+    ) -> "OutdatedPrompt[TPromptVar]":
         return self
 
     async def get_default_version_id(self) -> str:
@@ -278,7 +289,7 @@ class OutdatedPrompt(BasePrompt[T]):
 
     def compile(
         self,
-        _variables: T | None = None,
+        _variables: TPromptVar | None = None,
         *,
         _version_id: str | None = None,
     ) -> str:

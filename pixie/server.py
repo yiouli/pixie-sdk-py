@@ -201,6 +201,10 @@ def create_app() -> FastAPI:
 
     enable_instrumentations()
 
+    dotenv.load_dotenv(os.getcwd() + "/.env")
+    storage_directory = os.getenv("PIXIE_PROMPT_STORAGE_DIR", ".pixie/prompts")
+    initialize_prompt_storage(storage_directory)
+
     app = FastAPI(
         title="Pixie SDK Server",
         description="Server for running AI applications and agents",
@@ -240,7 +244,6 @@ def start_server(
     port: int = 8000,
     reload: bool = False,
     log_mode: str = "default",
-    storage_directory: str = ".pixie/prompts",
 ) -> None:
     """Start the SDK server.
 
@@ -258,7 +261,6 @@ def start_server(
 
     # Setup logging (will be called again in create_app for reload scenarios)
     setup_logging(log_mode)
-    initialize_prompt_storage(storage_directory)
 
     # Determine server URL
     server_url = f"http://{host}:{port}"
@@ -331,13 +333,6 @@ def main():
         default=None,
         help="Port to run the server on (overrides PIXIE_SDK_PORT env var)",
     )
-    parser.add_argument(
-        "--directory",
-        "-D",
-        type=str,
-        default=".pixie/prompts",
-        help="Directory to store prompt definitions",
-    )
     args = parser.parse_args()
 
     # Determine logging mode
@@ -350,11 +345,7 @@ def main():
     dotenv.load_dotenv(os.getcwd() + "/.env")
     port = args.port or int(os.getenv("PIXIE_SDK_PORT", "8000"))
 
-    storage_directory = args.directory or ".pixie/prompts"
-
-    start_server(
-        port=port, reload=True, log_mode=log_mode, storage_directory=storage_directory
-    )
+    start_server(port=port, reload=True, log_mode=log_mode)
 
 
 if __name__ == "__main__":

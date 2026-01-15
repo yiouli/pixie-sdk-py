@@ -458,7 +458,8 @@ class TestStorageBackedPrompt:
 
     async def test_create_prompt_helper(self, temp_dir: str):
         """Test the create_prompt helper function."""
-        from pixie.prompts.storage import initialize_prompt_storage, create_prompt
+        from pixie.prompts.storage import initialize_prompt_storage
+        from pixie.prompts.prompt_management import create_prompt
 
         # Create prompt file directly
         import json
@@ -570,6 +571,190 @@ class TestStorageBackedPrompt:
             match="The provided variables_definition is not compatible with the prompt's variables schema",
         ):
             await backed_prompt.get_versions()
+
+    async def test_storage_backed_prompt_actualize(self, temp_dir: str):
+        """Test that StorageBackedPrompt.actualize() loads the prompt and returns self."""
+        from pixie.prompts.storage import (
+            initialize_prompt_storage,
+            StorageBackedPrompt,
+        )
+
+        # Create prompt file directly
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "actualize_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Hello {name}"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {"type": "object", "properties": {}},
+                },
+                f,
+            )
+
+        # Initialize storage
+        initialize_prompt_storage(temp_dir)
+
+        # Create StorageBackedPrompt - should not load yet
+        backed_prompt = StorageBackedPrompt(id="actualize_test")
+        assert backed_prompt._prompt is None
+
+        # Call actualize - should load and return self
+        result = await backed_prompt.actualize()
+        assert result is backed_prompt
+        assert backed_prompt._prompt is not None
+
+        # Verify it works
+        versions = await backed_prompt.get_versions()
+        assert versions == {"v1": "Hello {name}"}
+
+    async def test_list_prompts_empty(self):
+        """Test that list_prompts returns empty list initially."""
+        from pixie.prompts.prompt_management import list_prompts
+        import pixie.prompts.prompt_management as pm_module
+
+        # Clear the registry
+        pm_module._registry.clear()
+
+        prompts = list_prompts()
+        assert prompts == []
+
+    async def test_get_prompt_nonexistent(self):
+        """Test that get_prompt returns None for non-existent prompt."""
+        from pixie.prompts.prompt_management import get_prompt
+        import pixie.prompts.prompt_management as pm_module
+
+        # Clear the registry
+        pm_module._registry.clear()
+
+        prompt = get_prompt("nonexistent")
+        assert prompt is None
+
+    async def test_create_prompt_new(self, temp_dir: str):
+        """Test creating a new prompt with create_prompt."""
+        from pixie.prompts.storage import initialize_prompt_storage
+        from pixie.prompts.prompt_management import (
+            create_prompt,
+            get_prompt,
+            list_prompts,
+        )
+        import pixie.prompts.prompt_management as pm_module
+
+        # Clear the registry and initialize storage
+        pm_module._registry.clear()
+        initialize_prompt_storage(temp_dir)
+
+        # Create prompt file
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "create_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Hello {name}"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {"type": "object", "properties": {}},
+                },
+                f,
+            )
+
+        # Create new prompt
+        prompt = create_prompt(id="create_test")
+        assert prompt.id == "create_test"
+        assert prompt.variables_definition == NoneType
+
+        # Should be in registry
+        retrieved = get_prompt("create_test")
+        assert retrieved is prompt
+
+        # Should be in list
+        prompts = list_prompts()
+        assert len(prompts) == 1
+        assert prompts[0] is prompt
+
+    async def test_create_prompt_existing_same_definition(self, temp_dir: str):
+        """Test getting existing prompt with same variables_definition."""
+        from pixie.prompts.storage import initialize_prompt_storage
+        from pixie.prompts.prompt_management import create_prompt
+        import pixie.prompts.prompt_management as pm_module
+        from pixie.prompts.prompt import PromptVariables
+
+        class TestVars(PromptVariables):
+            name: str
+
+        # Clear the registry and initialize storage
+        pm_module._registry.clear()
+        initialize_prompt_storage(temp_dir)
+
+        # Create prompt file
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "existing_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Hello {name}"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {"type": "object", "properties": {}},
+                },
+                f,
+            )
+
+        # Create prompt first time
+        prompt1 = create_prompt(id="existing_test", variables_definition=TestVars)
+        assert prompt1.variables_definition == TestVars
+
+        # Create same prompt second time - should return same instance
+        prompt2 = create_prompt(id="existing_test", variables_definition=TestVars)
+        assert prompt2 is prompt1
+
+    async def test_create_prompt_existing_different_definition_raises(
+        self, temp_dir: str
+    ):
+        """Test that creating prompt with different variables_definition raises error."""
+        from pixie.prompts.storage import initialize_prompt_storage
+        from pixie.prompts.prompt_management import create_prompt
+        import pixie.prompts.prompt_management as pm_module
+        from pixie.prompts.prompt import PromptVariables
+
+        class TestVars1(PromptVariables):
+            name: str
+
+        class TestVars2(PromptVariables):
+            age: int
+
+        # Clear the registry and initialize storage
+        pm_module._registry.clear()
+        initialize_prompt_storage(temp_dir)
+
+        # Create prompt file
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "conflict_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Hello {name}"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {"type": "object", "properties": {}},
+                },
+                f,
+            )
+
+        # Create prompt first time
+        create_prompt(id="conflict_test", variables_definition=TestVars1)
+
+        # Try to create with different definition - should raise
+        with pytest.raises(
+            ValueError,
+            match="Prompt with id 'conflict_test' already exists with a different variables definition",
+        ):
+            create_prompt(id="conflict_test", variables_definition=TestVars2)
 
 
 class TestInitializePromptStorage:

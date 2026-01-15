@@ -1,18 +1,22 @@
+import json
+import logging
+import os
 from types import NoneType
+from typing import Any, Dict, Self, TypedDict
 from typing_extensions import Protocol
+
+from jsonsubschema import isSubschema
+
 from .prompt import (
-    T,
     BasePrompt,
-    Prompt,
     BaseUntypedPrompt,
+    Prompt,
+    TPromptVar,
     update_prompt_registry,
     variables_definition_to_schema,
 )
-import json
-import os
-from typing import Any, Dict, TypedDict
 
-from jsonsubschema import isSubschema
+logger = logging.getLogger(__name__)
 
 
 class PromptStorage(Protocol):
@@ -95,32 +99,33 @@ def initialize_prompt_storage(directory: str) -> None:
     if _storage_instance is not None:
         raise RuntimeError("Prompt storage has already been initialized.")
     _storage_instance = _FilePromptStorage(directory)
+    logger.info(f"Initialized prompt storage at directory: {directory}")
 
 
-class StorageBackedPrompt(Prompt[T]):
+class StorageBackedPrompt(Prompt[TPromptVar]):
 
     def __init__(
         self,
         id: str,
         *,
-        variables_definition: type[T] = NoneType,
+        variables_definition: type[TPromptVar] = NoneType,
     ) -> None:
         self._id = id
         self._variables_definition = variables_definition
-        self._prompt: BasePrompt[T] | None = None
+        self._prompt: BasePrompt[TPromptVar] | None = None
 
     @property
     def id(self) -> str:
         return self._id
 
     @property
-    def variables_definition(self) -> type[T]:
+    def variables_definition(self) -> type[TPromptVar]:
         return self._variables_definition
 
     async def get_variables_schema(self) -> dict[str, Any]:
         return variables_definition_to_schema(self._variables_definition)
 
-    async def _get_prompt(self) -> BasePrompt[T]:
+    async def _get_prompt(self) -> BasePrompt[TPromptVar]:
         if _storage_instance is None:
             raise RuntimeError("Prompt storage has not been initialized.")
         if self._prompt is None:
@@ -129,34 +134,31 @@ class StorageBackedPrompt(Prompt[T]):
                 untyped_prompt,
                 variables_definition=self.variables_definition,
             )
-        schema_from_storage = await untyped_prompt.get_variables_schema()
-        schema_from_definition = await self.get_variables_schema()
-        if not isSubschema(schema_from_definition, schema_from_storage):
-            raise TypeError(
-                "Schema from definition is not a subschema of the schema from storage."
-            )
+            schema_from_storage = await untyped_prompt.get_variables_schema()
+            schema_from_definition = await self.get_variables_schema()
+            if not isSubschema(schema_from_definition, schema_from_storage):
+                raise TypeError(
+                    "Schema from definition is not a subschema of the schema from storage."
+                )
         return self._prompt
+
+    async def actualize(self) -> Self:
+        await self._get_prompt()
+        return self
 
     async def get_versions(self) -> dict[str, str]:
         prompt = await self._get_prompt()
         return await prompt.get_versions()
 
-    async def get_default_version_id(self) -> str | None:
+    async def get_default_version_id(self) -> str:
         prompt = await self._get_prompt()
         return await prompt.get_default_version_id()
 
     async def compile(
         self,
-        variables: T = None,
+        variables: TPromptVar = None,
         *,
         version_id: str | None = None,
     ) -> str:
         prompt = await self._get_prompt()
         return prompt.compile(variables=variables, version_id=version_id)
-
-
-def create_prompt(
-    id: str,
-    variables_definition: type[T] = NoneType,
-) -> StorageBackedPrompt[T]:
-    return StorageBackedPrompt(id=id, variables_definition=variables_definition)
