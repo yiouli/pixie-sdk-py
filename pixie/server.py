@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from strawberry.fastapi import GraphQLRouter
 import nest_asyncio
 
+from pixie.prompts.storage import initialize_prompt_storage
 from pixie.schema import schema
 
 
@@ -239,6 +240,7 @@ def start_server(
     port: int = 8000,
     reload: bool = False,
     log_mode: str = "default",
+    storage_directory: str = ".pixie/prompts",
 ) -> None:
     """Start the SDK server.
 
@@ -247,6 +249,7 @@ def start_server(
         port: Port to bind to
         reload: Enable auto-reload for development
         log_mode: Logging mode - "default", "verbose", or "debug"
+        storage_directory: Directory to store prompt definitions
     """
     from pixie.registry import list_applications
 
@@ -255,6 +258,7 @@ def start_server(
 
     # Setup logging (will be called again in create_app for reload scenarios)
     setup_logging(log_mode)
+    initialize_prompt_storage(storage_directory)
 
     # Determine server URL
     server_url = f"http://{host}:{port}"
@@ -327,6 +331,13 @@ def main():
         default=None,
         help="Port to run the server on (overrides PIXIE_SDK_PORT env var)",
     )
+    parser.add_argument(
+        "--directory",
+        "-D",
+        type=str,
+        default=".pixie/prompts",
+        help="Directory to store prompt definitions",
+    )
     args = parser.parse_args()
 
     # Determine logging mode
@@ -339,7 +350,11 @@ def main():
     dotenv.load_dotenv(os.getcwd() + "/.env")
     port = args.port or int(os.getenv("PIXIE_SDK_PORT", "8000"))
 
-    start_server(port=port, reload=True, log_mode=log_mode)
+    storage_directory = args.directory or ".pixie/prompts"
+
+    start_server(
+        port=port, reload=True, log_mode=log_mode, storage_directory=storage_directory
+    )
 
 
 if __name__ == "__main__":
