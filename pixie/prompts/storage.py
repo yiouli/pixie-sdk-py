@@ -200,14 +200,26 @@ class StorageBackedPrompt(Prompt[TPromptVar]):
     ) -> BasePrompt[TPromptVar]:
         if _storage_instance is None:
             raise RuntimeError("Prompt storage has not been initialized.")
-        prompt = await self._get_prompt()
-        await prompt.append_version(
-            version_id=version_id,
-            content=content,
-            set_as_default=set_as_default,
-        )
-        await _storage_instance.save(prompt)
-        return prompt
+        if await self.exists_in_storage():
+            prompt = await self._get_prompt()
+            await prompt.append_version(
+                version_id=version_id,
+                content=content,
+                set_as_default=set_as_default,
+            )
+            await _storage_instance.save(prompt)
+            return prompt
+        else:
+            # it should be safe to assume there's no actualized prompt for this id
+            # thus it should be same to create a new instance of BasePrompt
+            new_prompt = BasePrompt(
+                id=self.id,
+                versions={version_id: content},
+                variables_definition=self.variables_definition,
+                default_version_id=version_id,
+            )
+            await _storage_instance.save(new_prompt)
+            return new_prompt
 
     async def update_default_version_id(
         self,

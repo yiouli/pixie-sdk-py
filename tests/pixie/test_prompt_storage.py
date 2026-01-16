@@ -19,6 +19,15 @@ class TestFilePromptStorage:
         """Clear the global prompt registry before each test."""
         _prompt_registry.clear()
 
+    @pytest.fixture(autouse=True)
+    def reset_storage_instance(self):
+        """Reset the global storage instance before each test."""
+        import pixie.prompts.storage as storage_module
+
+        storage_module._storage_instance = None
+        yield
+        storage_module._storage_instance = None
+
     @pytest.fixture
     def temp_dir(self):
         """Create a temporary directory for testing."""
@@ -343,31 +352,7 @@ class TestFilePromptStorage:
         result = await storage.save(updated_prompt)
         assert result is False  # Existing prompt
 
-
-@pytest.mark.asyncio
-class TestStorageBackedPrompt:
-    """Tests for StorageBackedPrompt class."""
-
-    @pytest.fixture(autouse=True)
-    def clear_prompt_registry(self):
-        """Clear the global prompt registry before each test."""
-        _prompt_registry.clear()
-
-    @pytest.fixture(autouse=True)
-    def reset_storage_instance(self):
-        """Reset the global storage instance before each test."""
-        import pixie.prompts.storage as storage_module
-
-        storage_module._storage_instance = None
-        yield
-        storage_module._storage_instance = None
-
-    @pytest.fixture
-    def temp_dir(self):
-        """Create a temporary directory for testing."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield tmpdir
-
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_lazy_loading(self, temp_dir: str):
         """Test that StorageBackedPrompt loads from storage on first access."""
         from pixie.prompts.storage import (
@@ -402,6 +387,7 @@ class TestStorageBackedPrompt:
         assert versions == {"v1": "Hello {name}"}
         assert backed_prompt._prompt is not None
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_compile(self, temp_dir: str):
         """Test that StorageBackedPrompt.compile works correctly."""
         from pixie.prompts.storage import (
@@ -441,6 +427,7 @@ class TestStorageBackedPrompt:
         result = backed_prompt.compile(variables)
         assert result == "Hello World!"
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_raises_without_init(self):
         """Test that StorageBackedPrompt raises error if storage not initialized."""
         from pixie.prompts.storage import StorageBackedPrompt
@@ -456,6 +443,7 @@ class TestStorageBackedPrompt:
         ):
             await backed_prompt.get_versions()
 
+    @pytest.mark.asyncio
     async def test_create_prompt_helper(self, temp_dir: str):
         """Test the create_prompt helper function."""
         from pixie.prompts.storage import initialize_prompt_storage
@@ -486,6 +474,7 @@ class TestStorageBackedPrompt:
         versions = await prompt.get_versions()
         assert versions == {"v1": "Test"}
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_schema_compatibility_check_passes(
         self, temp_dir: str
     ):
@@ -529,6 +518,7 @@ class TestStorageBackedPrompt:
         versions = await backed_prompt.get_versions()
         assert versions == {"v1": "Hello {name}!"}
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_schema_compatibility_check_fails(
         self, temp_dir: str
     ):
@@ -572,6 +562,7 @@ class TestStorageBackedPrompt:
         ):
             await backed_prompt.get_versions()
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_actualize(self, temp_dir: str):
         """Test that StorageBackedPrompt.actualize() loads the prompt and returns self."""
         from pixie.prompts.storage import (
@@ -610,6 +601,7 @@ class TestStorageBackedPrompt:
         versions = await backed_prompt.get_versions()
         assert versions == {"v1": "Hello {name}"}
 
+    @pytest.mark.asyncio
     async def test_list_prompts_empty(self):
         """Test that list_prompts returns empty list initially."""
         from pixie.prompts.prompt_management import list_prompts
@@ -621,6 +613,7 @@ class TestStorageBackedPrompt:
         prompts = list_prompts()
         assert prompts == []
 
+    @pytest.mark.asyncio
     async def test_get_prompt_nonexistent(self):
         """Test that get_prompt returns None for non-existent prompt."""
         from pixie.prompts.prompt_management import get_prompt
@@ -632,6 +625,7 @@ class TestStorageBackedPrompt:
         prompt = get_prompt("nonexistent")
         assert prompt is None
 
+    @pytest.mark.asyncio
     async def test_create_prompt_new(self, temp_dir: str):
         """Test creating a new prompt with create_prompt."""
         from pixie.prompts.storage import initialize_prompt_storage
@@ -675,6 +669,7 @@ class TestStorageBackedPrompt:
         assert len(prompts) == 1
         assert prompts[0] is prompt
 
+    @pytest.mark.asyncio
     async def test_create_prompt_existing_same_definition(self, temp_dir: str):
         """Test getting existing prompt with same variables_definition."""
         from pixie.prompts.storage import initialize_prompt_storage
@@ -712,6 +707,7 @@ class TestStorageBackedPrompt:
         prompt2 = create_prompt(id="existing_test", variables_definition=TestVars)
         assert prompt2 is prompt1
 
+    @pytest.mark.asyncio
     async def test_create_prompt_existing_different_definition_raises(
         self, temp_dir: str
     ):
@@ -756,6 +752,7 @@ class TestStorageBackedPrompt:
         ):
             create_prompt(id="conflict_test", variables_definition=TestVars2)
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_properties(self, temp_dir: str):
         """Test StorageBackedPrompt id and variables_definition properties."""
         from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
@@ -770,6 +767,7 @@ class TestStorageBackedPrompt:
         assert prompt.id == "test_id"
         assert prompt.variables_definition == TestVars
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_get_variables_schema(self, temp_dir: str):
         """Test StorageBackedPrompt.get_variables_schema."""
         from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
@@ -793,6 +791,7 @@ class TestStorageBackedPrompt:
             "required": ["name", "age"],
         }
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_exists_in_storage_true(self, temp_dir: str):
         """Test exists_in_storage returns True when prompt exists."""
         from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
@@ -817,6 +816,7 @@ class TestStorageBackedPrompt:
         prompt = StorageBackedPrompt(id="exists_test")
         assert await prompt.exists_in_storage() is True
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_exists_in_storage_false(self, temp_dir: str):
         """Test exists_in_storage returns False when prompt does not exist."""
         from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
@@ -826,6 +826,7 @@ class TestStorageBackedPrompt:
         prompt = StorageBackedPrompt(id="nonexistent")
         assert await prompt.exists_in_storage() is False
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_get_default_version_id(self, temp_dir: str):
         """Test StorageBackedPrompt.get_default_version_id."""
         from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
@@ -851,6 +852,7 @@ class TestStorageBackedPrompt:
         default_id = await prompt.get_default_version_id()
         assert default_id == "v2"
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_append_version(self, temp_dir: str):
         """Test that StorageBackedPrompt.append_version works correctly."""
         from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
@@ -897,6 +899,41 @@ class TestStorageBackedPrompt:
         assert stored_versions["v2"] == "Hi {name}"
         assert await stored_prompt.get_default_version_id() == "v2"
 
+    @pytest.mark.asyncio
+    async def test_storage_backed_prompt_append_version_creates_new_prompt(
+        self, temp_dir: str
+    ):
+        """Test that StorageBackedPrompt.append_version creates a new prompt if it doesn't exist."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(id="new_append_test")
+
+        # Append version to non-existing prompt (should create new)
+        result_prompt = await prompt.append_version(
+            version_id="v1", content="Hello {name}", set_as_default=True
+        )
+
+        # Check that it returns the underlying BasePrompt
+        assert isinstance(result_prompt, BasePrompt)
+        assert result_prompt.id == "new_append_test"
+
+        # Check versions
+        versions = await result_prompt.get_versions()
+        assert "v1" in versions
+        assert versions["v1"] == "Hello {name}"
+        assert await result_prompt.get_default_version_id() == "v1"
+
+        # Check that storage was created
+        storage = _FilePromptStorage(temp_dir)
+        stored_prompt = await storage.get("new_append_test")
+        stored_versions = await stored_prompt.get_versions()
+        assert "v1" in stored_versions
+        assert stored_versions["v1"] == "Hello {name}"
+        assert await stored_prompt.get_default_version_id() == "v1"
+
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_update_default_version_id(self, temp_dir: str):
         """Test that StorageBackedPrompt.update_default_version_id works correctly."""
         from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
@@ -937,6 +974,7 @@ class TestStorageBackedPrompt:
         stored_prompt = await storage.get("update_default_test")
         assert await stored_prompt.get_default_version_id() == "v3"
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_exists_in_storage_without_init_raises_error(
         self,
     ):
@@ -954,11 +992,12 @@ class TestStorageBackedPrompt:
         ):
             await prompt.exists_in_storage()
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_actualize_loads_prompt(self, temp_dir: str):
         """Test that actualize loads the prompt and returns self."""
         from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
 
-        # Create prompt file
+        # Create prompt file directly
         import json
         import os
 
@@ -987,6 +1026,7 @@ class TestStorageBackedPrompt:
         versions = await prompt.get_versions()
         assert versions == {"v1": "Hello {name}"}
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_actualize_with_variables_definition(
         self, temp_dir: str
     ):
@@ -1027,6 +1067,7 @@ class TestStorageBackedPrompt:
         assert result is prompt
         assert prompt._prompt is not None
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_actualize_incompatible_schema_raises_error(
         self, temp_dir: str
     ):
@@ -1068,6 +1109,7 @@ class TestStorageBackedPrompt:
         ):
             await prompt.actualize()
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_append_version_updates_storage(
         self, temp_dir: str
     ):
@@ -1103,6 +1145,7 @@ class TestStorageBackedPrompt:
         assert "v2" in data["versions"]
         assert data["versions"]["v2"] == "Added version"
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_update_default_updates_storage(
         self, temp_dir: str
     ):
@@ -1137,6 +1180,7 @@ class TestStorageBackedPrompt:
 
         assert data["defaultVersionId"] == "v2"
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_append_version_raises_for_existing_id(
         self, temp_dir: str
     ):
@@ -1166,6 +1210,7 @@ class TestStorageBackedPrompt:
         with pytest.raises(ValueError, match="Version ID 'v1' already exists"):
             await prompt.append_version(version_id="v1", content="Duplicate")
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_update_default_raises_for_nonexistent_id(
         self, temp_dir: str
     ):
@@ -1195,6 +1240,7 @@ class TestStorageBackedPrompt:
         with pytest.raises(ValueError, match="Version ID 'nonexistent' does not exist"):
             await prompt.update_default_version_id("nonexistent")
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_append_version_without_init_raises_error(self):
         """Test that append_version raises error when storage not initialized."""
         from pixie.prompts.storage import StorageBackedPrompt
@@ -1210,6 +1256,7 @@ class TestStorageBackedPrompt:
         ):
             await prompt.append_version(version_id="v2", content="New version")
 
+    @pytest.mark.asyncio
     async def test_storage_backed_prompt_update_default_without_init_raises_error(self):
         """Test that update_default_version_id raises error when storage not initialized."""
         from pixie.prompts.storage import StorageBackedPrompt
@@ -1224,6 +1271,41 @@ class TestStorageBackedPrompt:
             RuntimeError, match="Prompt storage has not been initialized"
         ):
             await prompt.update_default_version_id("v2")
+
+    @pytest.mark.asyncio
+    async def test_storage_backed_prompt_deletion_during_runtime(self, temp_dir: str):
+        """Test behavior when a prompt is deleted from storage during runtime."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+        import os
+
+        # Create prompt file
+        prompt_file = os.path.join(temp_dir, "deletion_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Hello {name}"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                    },
+                },
+                f,
+            )
+
+        # Initialize storage
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(id="deletion_test")
+
+        # Delete the prompt file
+        os.remove(prompt_file)
+
+        # Attempt to access the deleted prompt
+        # The prompt is still in storage's in-memory cache, so it should work
+        # but raises TypeError due to schema incompatibility with NoneType default
+        with pytest.raises(TypeError, match="not compatible"):
+            await prompt.get_versions()
 
 
 class TestInitializePromptStorage:
@@ -1265,3 +1347,107 @@ class TestInitializePromptStorage:
 
         assert storage_module._storage_instance is not None
         assert isinstance(storage_module._storage_instance, _FilePromptStorage)
+
+    @pytest.mark.asyncio
+    async def test_storage_backed_prompt_append_version_schema_incompatibility(
+        self, temp_dir: str
+    ):
+        """Test that appending a version with incompatible schema raises an error."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+        from pixie.prompts.prompt import PromptVariables
+
+        class OriginalVars(PromptVariables):
+            name: str
+
+        class IncompatibleVars(PromptVariables):
+            age: int
+
+        # Create prompt file directly
+        import json
+        import os
+
+        prompt_file = os.path.join(temp_dir, "schema_test.json")
+        with open(prompt_file, "w") as f:
+            json.dump(
+                {
+                    "versions": {"v1": "Hello {name}"},
+                    "defaultVersionId": "v1",
+                    "variablesSchema": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                    },
+                },
+                f,
+            )
+
+        # Initialize storage
+        initialize_prompt_storage(temp_dir)
+
+        # Create StorageBackedPrompt with original schema
+        prompt = StorageBackedPrompt(
+            id="schema_test", variables_definition=OriginalVars
+        )
+
+        # Attempt to append a version with incompatible schema
+        with pytest.raises(TypeError, match="Original schema must be a subschema"):
+            await prompt.append_version(version_id="v2", content="Hi {age}")
+
+    @pytest.mark.asyncio
+    async def test_storage_backed_prompt_concurrent_append_version(self, temp_dir: str):
+        """Test concurrent calls to append_version to ensure thread safety."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+        import asyncio
+
+        # Initialize storage
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(id="concurrent_test")
+
+        async def append_version(version_id, content):
+            await prompt.append_version(version_id=version_id, content=content)
+
+        # Run concurrent appends
+        await asyncio.gather(
+            append_version("v1", "Hello {name}"),
+            append_version("v2", "Hi {name}"),
+        )
+
+        # Check that both versions exist
+        versions = await prompt.get_versions()
+        assert "v1" in versions
+        assert "v2" in versions
+        assert versions["v1"] == "Hello {name}"
+        assert versions["v2"] == "Hi {name}"
+
+    @pytest.mark.asyncio
+    async def test_storage_backed_prompt_append_version_invalid_version_id(
+        self, temp_dir: str
+    ):
+        """Test that appending a version with an empty version ID works (no validation)."""
+        from pixie.prompts.storage import initialize_prompt_storage, StorageBackedPrompt
+
+        # Initialize storage
+        initialize_prompt_storage(temp_dir)
+
+        prompt = StorageBackedPrompt(id="invalid_version_test")
+
+        # Empty version ID is actually allowed - no validation in place
+        result = await prompt.append_version(version_id="", content="Hello {name}")
+        assert result is not None
+        versions = await result.get_versions()
+        assert "" in versions
+
+    @pytest.mark.asyncio
+    async def test_storage_backed_prompt_corrupted_storage(self, temp_dir: str):
+        """Test behavior when storage files are corrupted."""
+        from pixie.prompts.storage import initialize_prompt_storage
+        import os
+
+        # Create corrupted prompt file
+        corrupted_file = os.path.join(temp_dir, "corrupted_test.json")
+        with open(corrupted_file, "w") as f:
+            f.write("{invalid_json}")
+
+        # Initialize storage - should raise JSONDecodeError when loading corrupted file
+        with pytest.raises(json.JSONDecodeError):
+            initialize_prompt_storage(temp_dir)
