@@ -1,5 +1,6 @@
 from copy import deepcopy
 from dataclasses import dataclass
+import json
 from types import NoneType
 from typing import Any, Generic, Protocol, Self, TypeVar, cast, overload
 from uuid import uuid4
@@ -41,6 +42,46 @@ _compiled_prompt_registry: dict[int, _CompiledPrompt] = {}
 
 This is to keep track of every result string returned by BasePrompt.compile().
 key is the id() of the compiled string."""
+
+
+def _find_matching_prompt(obj):
+    if isinstance(obj, str):
+        for compiled in _compiled_prompt_registry.values():
+            if compiled.value == obj:
+                return compiled
+        return None
+    elif isinstance(obj, dict):
+        for value in obj.values():
+            result = _find_matching_prompt(value)
+            if result:
+                return result
+        return None
+    elif isinstance(obj, list):
+        for item in obj:
+            result = _find_matching_prompt(item)
+            if result:
+                return result
+        return None
+    else:
+        return None
+
+
+def get_compiled_prompt(text: str) -> _CompiledPrompt | None:
+    """Find the compiled prompt metadata for a given compiled prompt string."""
+    if not _compiled_prompt_registry:
+        return None
+    direct_match = _compiled_prompt_registry.get(id(text))
+    if direct_match:
+        return direct_match
+    for compiled in _compiled_prompt_registry.values():
+        if compiled.value == text:
+            return compiled
+    try:
+        obj = json.loads(text)
+        return _find_matching_prompt(obj)
+
+    except json.JSONDecodeError:
+        return None
 
 
 def _mark_compiled_prompts_outdated(

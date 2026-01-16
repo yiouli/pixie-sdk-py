@@ -39,7 +39,8 @@ from langfuse.version import __version__ as langfuse_version
 
 
 from pixie import execution_context as exec_ctx
-from pixie.types import BreakpointDetail, BreakpointType
+from pixie.prompts.prompt import get_compiled_prompt
+from pixie.types import BreakpointDetail, BreakpointType, PromptForSpan
 
 
 class LangfuseSpanProcessor(BatchSpanProcessor):
@@ -223,6 +224,8 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
         # Check for pause after span ends (AFTER_NEXT mode)
         self._check_breakpoint(span, is_before=False)
 
+        # Emit prompt attributes after breakpoint check
+        self._emit_prompt_attributes(span)
         # Emit trace data to execution context queue if available
         self._emit_trace_to_execution_context(span, is_start=False)
 
@@ -468,9 +471,9 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
         trace_data = {
             "event": "span_start",
             "span_name": span.name,
-            "start_time_unix_nano": str(span.start_time)
-            if hasattr(span, "start_time")
-            else None,
+            "start_time_unix_nano": (
+                str(span.start_time) if hasattr(span, "start_time") else None
+            ),
         }
 
         # Add context information if available
@@ -586,3 +589,30 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
                 str(e),
                 exc_info=True,
             )
+
+    def _emit_prompt_attributes(self, span: ReadableSpan) -> None:
+        if not span.attributes or not span.context:
+            return
+        for attr_value in span.attributes.values():
+            if not isinstance(attr_value, str):
+                continue
+            associated_prompt = get_compiled_prompt(attr_value)
+            if associated_prompt:
+                print("found compiled prompt for ", associated_prompt.value)
+                langfuse_logger.debug(
+                    "Emitting Pixie prompt attributes for span '%s' prompt id '%s'",
+                    span.name,
+                    associated_prompt.prompt.id,
+                )
+                update = PromptForSpan(
+                    trace_id=span.context.trace_id,
+                    span_id=span.context.span_id,
+                    prompt_id=associated_prompt.prompt.id,
+                    version_id=associated_prompt.version_id,
+                    variables=(
+                        associated_prompt.variables.model_dump(mode="json")
+                        if associated_prompt.variables
+                        else None
+                    ),
+                )
+                exec_ctx.emit_status_update(status="running", prompt_for_span=update)

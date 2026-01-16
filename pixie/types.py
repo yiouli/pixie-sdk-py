@@ -141,6 +141,22 @@ class InputRequired(Generic[_UserInputType]):
         self.expected_type = expected_type
 
 
+class PromptForSpan(BaseModel):
+    """Information about the prompt used in the application run.
+
+    Attributes:
+        prompt_id: Unique identifier of the prompt.
+        version_id: Version identifier of the prompt.
+        variables: Optional variables used in the prompt.
+    """
+
+    trace_id: int
+    span_id: int
+    prompt_id: str
+    version_id: str
+    variables: Optional[dict[str, JsonValue]] = None
+
+
 class AppRunUpdate(BaseModel):
     """Status update from running an application.
 
@@ -159,6 +175,7 @@ class AppRunUpdate(BaseModel):
     data: Optional[JsonValue] = None
     breakpoint: Optional[BreakpointDetail] = None
     trace: Optional[TraceDataType] = None
+    prompt_for_span: Optional[PromptForSpan] = None
     _user_input_requirement: InputRequired | None = PrivateAttr(default=None)
 
     def set_user_input_requirement(

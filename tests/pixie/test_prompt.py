@@ -1122,3 +1122,176 @@ class TestOutdatedPromptGetMethods:
         outdated = await OutdatedPrompt.from_prompt(prompt)
 
         assert outdated.variables_definition == SamplePromptVariables
+
+
+class TestGetCompiledPrompt:
+    """Tests for get_compiled_prompt function."""
+
+    def setup_method(self):
+        """Clear registries before each test."""
+        _compiled_prompt_registry.clear()
+        _prompt_registry.clear()
+
+    def teardown_method(self):
+        """Clear registries after each test."""
+        _compiled_prompt_registry.clear()
+        _prompt_registry.clear()
+
+    def test_get_compiled_prompt_empty_registry(self):
+        """Test get_compiled_prompt returns None when registry is empty."""
+        from pixie.prompts.prompt import get_compiled_prompt
+
+        result = get_compiled_prompt("any text")
+        assert result is None
+
+    def test_get_compiled_prompt_direct_match(self):
+        """Test get_compiled_prompt finds prompt by direct id match."""
+        from pixie.prompts.prompt import get_compiled_prompt
+
+        prompt = BasePrompt(versions="Test prompt")
+        compiled_text = prompt.compile()
+
+        # The compiled text should be in the registry with its id as key
+        result = get_compiled_prompt(compiled_text)
+        assert result is not None
+        assert result.value == "Test prompt"
+        assert result.prompt == prompt
+        assert result.version_id == DEFAULT_VERSION_ID
+
+    def test_get_compiled_prompt_value_match(self):
+        """Test get_compiled_prompt finds prompt by value when direct match fails."""
+        from pixie.prompts.prompt import get_compiled_prompt
+
+        prompt = BasePrompt(versions="Test prompt")
+        prompt.compile()
+
+        # Create a new string with same content but different id
+        same_text = "Test prompt"
+
+        result = get_compiled_prompt(same_text)
+        assert result is not None
+        assert result.value == "Test prompt"
+        assert result.prompt == prompt
+
+    def test_get_compiled_prompt_with_variables(self):
+        """Test get_compiled_prompt works with variable-substituted prompts."""
+        from pixie.prompts.prompt import get_compiled_prompt
+
+        prompt = BasePrompt(
+            versions="Hello, {name}!", variables_definition=SamplePromptVariables
+        )
+        variables = SamplePromptVariables(name="Alice", age=25)
+        compiled_text = prompt.compile(variables)
+
+        result = get_compiled_prompt(compiled_text)
+        assert result is not None
+        assert result.value == "Hello, Alice!"
+        assert result.prompt == prompt
+        assert result.variables == variables
+
+    def test_get_compiled_prompt_json_string(self):
+        """Test get_compiled_prompt can find prompts in JSON strings."""
+        from pixie.prompts.prompt import get_compiled_prompt
+
+        prompt = BasePrompt(versions="Test prompt")
+        compiled_text = prompt.compile()
+
+        # Embed the compiled text in JSON
+        json_text = f'{{"message": "{compiled_text}", "other": "data"}}'
+
+        result = get_compiled_prompt(json_text)
+        assert result is not None
+        assert result.value == "Test prompt"
+        assert result.prompt == prompt
+
+    def test_get_compiled_prompt_json_array(self):
+        """Test get_compiled_prompt can find prompts in JSON arrays."""
+        from pixie.prompts.prompt import get_compiled_prompt
+
+        prompt = BasePrompt(versions="Test prompt")
+        compiled_text = prompt.compile()
+
+        # Embed the compiled text in JSON array
+        json_text = f'["start", "{compiled_text}", "end"]'
+
+        result = get_compiled_prompt(json_text)
+        assert result is not None
+        assert result.value == "Test prompt"
+        assert result.prompt == prompt
+
+    def test_get_compiled_prompt_nested_json(self):
+        """Test get_compiled_prompt can find prompts in nested JSON structures."""
+        from pixie.prompts.prompt import get_compiled_prompt
+
+        prompt = BasePrompt(versions="Test prompt")
+        compiled_text = prompt.compile()
+
+        # Embed in nested structure
+        json_text = f'{{"data": {{"messages": ["{compiled_text}"]}}}}'
+
+        result = get_compiled_prompt(json_text)
+        assert result is not None
+        assert result.value == "Test prompt"
+        assert result.prompt == prompt
+
+    def test_get_compiled_prompt_no_match(self):
+        """Test get_compiled_prompt returns None when no match is found."""
+        from pixie.prompts.prompt import get_compiled_prompt
+
+        prompt = BasePrompt(versions="Test prompt")
+        prompt.compile()  # Add to registry
+
+        result = get_compiled_prompt("Completely different text")
+        assert result is None
+
+    def test_get_compiled_prompt_invalid_json(self):
+        """Test get_compiled_prompt handles invalid JSON gracefully."""
+        from pixie.prompts.prompt import get_compiled_prompt
+
+        prompt = BasePrompt(versions="Test prompt")
+        prompt.compile()  # Add to registry
+
+        # Invalid JSON should not crash
+        result = get_compiled_prompt("{invalid json")
+        assert result is None
+
+    def test_get_compiled_prompt_empty_string(self):
+        """Test get_compiled_prompt with empty string."""
+        from pixie.prompts.prompt import get_compiled_prompt
+
+        result = get_compiled_prompt("")
+        assert result is None
+
+    def test_get_compiled_prompt_multiple_prompts(self):
+        """Test get_compiled_prompt with multiple prompts in registry."""
+        from pixie.prompts.prompt import get_compiled_prompt
+
+        prompt1 = BasePrompt(versions="First prompt")
+        prompt2 = BasePrompt(versions="Second prompt")
+
+        compiled1 = prompt1.compile()
+        compiled2 = prompt2.compile()
+
+        result1 = get_compiled_prompt(compiled1)
+        result2 = get_compiled_prompt(compiled2)
+
+        assert result1 is not None
+        assert result1.prompt == prompt1
+        assert result2 is not None
+        assert result2.prompt == prompt2
+
+    @pytest.mark.asyncio
+    async def test_get_compiled_prompt_outdated_prompt(self):
+        """Test get_compiled_prompt handles outdated prompts correctly."""
+        from pixie.prompts.prompt import get_compiled_prompt
+
+        prompt = BasePrompt(versions={"v1": "Original"})
+        compiled_text = prompt.compile()
+
+        # Update the prompt to create an outdated version
+        await prompt._update(versions={"v1": "Updated"})
+
+        result = get_compiled_prompt(compiled_text)
+        assert result is not None
+        assert isinstance(result.prompt, OutdatedPrompt)
+        assert result.value == "Original"

@@ -19,6 +19,7 @@ from pixie.types import (
     BreakpointConfig,
     AppRunUpdate,
     InputRequired,
+    PromptForSpan,
 )
 
 # ContextVar for storing execution context per async task
@@ -129,6 +130,7 @@ def emit_status_update(
     data: Optional[JsonValue] = None,
     breakpt: Optional[BreakpointDetail] = None,
     trace: Optional[dict] = None,
+    prompt_for_span: Optional[PromptForSpan] = None,
 ) -> None:
     """Emit a status update synchronously using sync queue interface.
 
@@ -142,6 +144,7 @@ def emit_status_update(
         data: Optional data string
         breakpt: Optional breakpoint details
         trace: Optional trace data dict
+        prompt_info: Optional prompt information
     """
     ctx = _execution_context.get()
     if ctx:
@@ -156,6 +159,7 @@ def emit_status_update(
                 data=data,
                 breakpoint=breakpt,
                 trace=trace,
+                prompt_for_span=prompt_for_span,
             )
             update.set_user_input_requirement(user_input_requirement)
             logger.debug(

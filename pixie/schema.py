@@ -24,6 +24,7 @@ from pixie.types import (
     BreakpointDetail as PydanticBreakpointDetail,
     AppRunUpdate as PydanticAppRunUpdate,
     InputRequired,
+    PromptForSpan as PydanticPromptForSpan,
 )
 from pixie.otel_types import (
     OTLPKeyValue as PydanticOTLPKeyValue,
@@ -204,6 +205,25 @@ class TraceDataUnion:
     partial_trace: Optional[PartialTraceData] = None
 
 
+@strawberry.experimental.pydantic.type(model=PydanticPromptForSpan)
+class PromptForSpan:
+    """Information about the prompt used in the application run.
+
+    Attributes:
+        trace_id: The trace ID associated with the prompt.
+        span_id: The span ID associated with the prompt.
+        prompt_id: Unique identifier of the prompt.
+        version_id: Version identifier of the prompt.
+        variables: Optional variables used in the prompt.
+    """
+
+    trace_id: strawberry.auto
+    span_id: strawberry.auto
+    prompt_id: strawberry.auto
+    version_id: strawberry.auto
+    variables: JSON | None = None
+
+
 @strawberry.type
 class AppRunUpdate:
     """Represents updates for an application run.
@@ -226,6 +246,7 @@ class AppRunUpdate:
     data: Optional[JSON] = None
     breakpoint: Optional[BreakpointDetail] = None
     trace: Optional[TraceDataUnion] = None
+    prompt_for_span: Optional[PromptForSpan] = None
 
     @classmethod
     def from_pydantic(cls, instance: PydanticAppRunUpdate):
@@ -256,6 +277,11 @@ class AppRunUpdate:
                 else None
             ),
             trace=_convert_trace_to_union(instance.trace),
+            prompt_for_span=(
+                PromptForSpan.from_pydantic(instance.prompt_for_span)
+                if instance.prompt_for_span
+                else None
+            ),
         )
 
 
