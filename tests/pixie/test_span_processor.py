@@ -5,6 +5,9 @@ import asyncio
 import pytest
 from unittest.mock import Mock, patch
 
+
+from opentelemetry.trace import format_span_id, format_trace_id
+
 import pixie.execution_context as exec_ctx
 from pixie.prompts.prompt import BasePrompt, PromptVariables
 from pixie.types import PromptForSpan
@@ -63,8 +66,8 @@ async def test_emit_prompt_attributes_with_compiled_prompt():
         assert isinstance(update.prompt_for_span, PromptForSpan)
         assert update.prompt_for_span.prompt_id == prompt.id
         assert update.prompt_for_span.version_id == "v0"  # default version
-        assert update.prompt_for_span.trace_id == 12345
-        assert update.prompt_for_span.span_id == 67890
+        assert update.prompt_for_span.trace_id == format_trace_id(12345)
+        assert update.prompt_for_span.span_id == format_span_id(67890)
         assert update.prompt_for_span.variables is None  # No variables in this case
 
     # Clean up

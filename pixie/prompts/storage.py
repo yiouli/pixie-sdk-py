@@ -1,9 +1,11 @@
+import asyncio
 import json
 import logging
 import os
 from types import NoneType
 from typing import Any, Dict, Self, TypedDict
 from typing_extensions import Protocol
+import nest_asyncio
 
 from jsonsubschema import isSubschema
 
@@ -14,6 +16,9 @@ from .prompt import (
     TPromptVar,
     variables_definition_to_schema,
 )
+
+# This is critical for the sync version of StorageBackedPrompt.compile to work
+nest_asyncio.apply()
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +170,7 @@ class StorageBackedPrompt(Prompt[TPromptVar]):
         prompt = await self._get_prompt()
         return await prompt.get_default_version_id()
 
-    async def compile(
+    async def acompile(
         self,
         variables: TPromptVar = None,
         *,
@@ -173,6 +178,19 @@ class StorageBackedPrompt(Prompt[TPromptVar]):
     ) -> str:
         prompt = await self._get_prompt()
         return prompt.compile(variables=variables, version_id=version_id)
+
+    def compile(
+        self,
+        variables: TPromptVar = None,
+        *,
+        version_id: str | None = None,
+    ) -> str:
+        return asyncio.run(
+            self.acompile(
+                variables,
+                version_id=version_id,
+            )
+        )
 
     async def append_version(
         self,

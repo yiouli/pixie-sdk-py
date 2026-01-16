@@ -56,8 +56,8 @@ async def test_prompt_for_span_emission():
 
     # Create a PromptForSpan instance
     prompt_info = PromptForSpan(
-        trace_id=12345,
-        span_id=67890,
+        trace_id="12345",
+        span_id="67890",
         prompt_id="test-prompt-id",
         version_id="v1",
         variables={"param": "value"},
@@ -79,8 +79,8 @@ async def test_prompt_for_span_emission():
     assert update is not None
     assert update.status == "running"
     assert update.prompt_for_span is not None
-    assert update.prompt_for_span.trace_id == 12345
-    assert update.prompt_for_span.span_id == 67890
+    assert update.prompt_for_span.trace_id == "12345"
+    assert update.prompt_for_span.span_id == "67890"
     assert update.prompt_for_span.prompt_id == "test-prompt-id"
     assert update.prompt_for_span.version_id == "v1"
     assert update.prompt_for_span.variables == {"param": "value"}
@@ -105,8 +105,8 @@ async def test_combined_trace_and_prompt_emission():
     }
 
     prompt_info = PromptForSpan(
-        trace_id=11111,
-        span_id=22222,
+        trace_id="11111",
+        span_id="22222",
         prompt_id="combined-prompt-id",
         version_id="v2",
         variables=None,

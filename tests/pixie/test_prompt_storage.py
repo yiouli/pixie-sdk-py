@@ -438,7 +438,7 @@ class TestStorageBackedPrompt:
 
         # Compile
         variables = TestVars(name="World")
-        result = await backed_prompt.compile(variables)
+        result = backed_prompt.compile(variables)
         assert result == "Hello World!"
 
     async def test_storage_backed_prompt_raises_without_init(self):
