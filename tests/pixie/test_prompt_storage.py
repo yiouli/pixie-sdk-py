@@ -659,13 +659,15 @@ class TestFilePromptStorage:
         assert prompt.variables_definition == NoneType
 
         # Should be in registry
-        retrieved = get_prompt("create_test")
+        prompt_with_registration = get_prompt("create_test")
+        assert prompt_with_registration is not None
+        retrieved = prompt_with_registration.prompt
         assert retrieved is prompt
 
         # Should be in list
         prompts = list_prompts()
         assert len(prompts) == 1
-        assert prompts[0] is prompt
+        assert prompts[0].prompt is prompt
 
     @pytest.mark.asyncio
     async def test_create_prompt_existing_same_definition(self, temp_dir: str):

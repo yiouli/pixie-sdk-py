@@ -413,11 +413,11 @@ class Query:
         """
         return [
             PromptMetadata(
-                id=strawberry.ID(p.id),
+                id=strawberry.ID(p.prompt.id),
                 variables_schema=JSON(
                     # NOTE: avoid p.get_variables_schema() to prevent potential fetching from storage
                     # this in theory could be different from the stored schema but in practice should not be
-                    variables_definition_to_schema(p.variables_definition)
+                    variables_definition_to_schema(p.prompt.variables_definition)
                 ),
             )
             for p in list_prompts()
@@ -435,9 +435,10 @@ class Query:
         Raises:
             GraphQLError: If prompt with given id is not found.
         """
-        prompt = get_prompt((str(id)))
-        if prompt is None:
+        prompt_with_registration = get_prompt((str(id)))
+        if prompt_with_registration is None:
             raise GraphQLError(f"Prompt with id '{id}' not found.")
+        prompt = prompt_with_registration.prompt
         if not prompt.exists_in_storage():
             return Prompt(
                 id=id,
@@ -483,9 +484,10 @@ class Mutation:
         Returns:
             The updated BasePrompt object.
         """
-        prompt = get_prompt((str(prompt_id)))
-        if prompt is None:
+        prompt_with_registration = get_prompt((str(prompt_id)))
+        if prompt_with_registration is None:
             raise GraphQLError(f"Prompt with id '{prompt_id}' not found.")
+        prompt = prompt_with_registration.prompt
         try:
             prompt.append_version(
                 version_id=version_id,
@@ -511,9 +513,10 @@ class Mutation:
         Returns:
             True if the update was successful.
         """
-        prompt = get_prompt((str(prompt_id)))
-        if prompt is None:
+        prompt_with_registration = get_prompt((str(prompt_id)))
+        if prompt_with_registration is None:
             raise GraphQLError(f"Prompt with id '{prompt_id}' not found.")
+        prompt = prompt_with_registration.prompt
         try:
             prompt.update_default_version_id(default_version_id)
         except Exception as e:
