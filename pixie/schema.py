@@ -316,6 +316,8 @@ class PromptMetadata:
 
     id: strawberry.ID
     variables_schema: JSON
+    description: Optional[str] = None
+    module: Optional[str] = None
 
 
 @strawberry.input
@@ -343,6 +345,8 @@ class Prompt:
     versions: list[TKeyValue]
     default_version_id: str | None
     """default version id can only be None if versions is empty"""
+    description: Optional[str] = None
+    module: Optional[str] = None
 
 
 @strawberry.type
@@ -408,8 +412,8 @@ class Query:
         """List all registered prompt templates.
 
         Returns:
-            A list of PromptMetadata objects containing id and variables_schema
-            for each registered prompt.
+            A list of PromptMetadata objects containing id, variables_schema,
+            description, and module for each registered prompt.
         """
         return [
             PromptMetadata(
@@ -419,6 +423,8 @@ class Query:
                     # this in theory could be different from the stored schema but in practice should not be
                     variables_definition_to_schema(p.prompt.variables_definition)
                 ),
+                description=p.description,
+                module=p.module,
             )
             for p in list_prompts()
         ]
@@ -448,6 +454,8 @@ class Query:
                 ),
                 versions=[],
                 default_version_id=None,
+                description=prompt_with_registration.description,
+                module=prompt_with_registration.module,
             )
         versions_dict = prompt.get_versions()
         versions = [TKeyValue(key=k, value=v) for k, v in versions_dict.items()]
@@ -458,6 +466,8 @@ class Query:
             variables_schema=JSON(variables_schema),
             versions=versions,
             default_version_id=default_version_id,
+            description=prompt_with_registration.description,
+            module=prompt_with_registration.module,
         )
 
 
