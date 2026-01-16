@@ -582,6 +582,46 @@ class Mutation:
         except Exception as e:
             raise GraphQLError(f"Failed to send input: {str(e)}") from e
 
+    @strawberry.mutation
+    async def run_llm(
+        self,
+        model: str,
+        prompt_template: str,
+        variables: JSON,
+        tools: Optional[JSON] = None,
+    ) -> str:
+        """Run an LLM with the given prompt template and variables.
+
+        Args:
+            model: The model name to use (e.g., "openai:gpt-4").
+            prompt_template: The prompt template text.
+            variables: Variables to use in the prompt.
+            tools: Optional tools configuration (not yet implemented).
+
+        Returns:
+            The LLM output as a string.
+
+        Raises:
+            GraphQLError: If the LLM call fails.
+        """
+        try:
+            # Import pydantic_ai here to avoid circular imports
+            from pydantic_ai import Agent
+
+            # Create a simple agent with the given model
+            agent = Agent(
+                model, system_prompt=format(prompt_template, **cast(dict, variables))
+            )
+
+            # Run the agent with empty input since the prompt is in system_prompt
+            # TODO: Support proper variable substitution in prompt template
+            result = await agent.run()
+
+            return result.output
+        except Exception as e:
+            logger.error("Error running LLM: %s", str(e))
+            raise GraphQLError(f"Failed to run LLM: {str(e)}") from e
+
 
 def _convert_trace_to_union(trace_dict: dict | None) -> Optional[TraceDataUnion]:
     """Convert trace data dict to TraceDataUnion.

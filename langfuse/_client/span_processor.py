@@ -24,7 +24,7 @@ from opentelemetry.exporter.otlp.proto.common.trace_encoder import encode_spans
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.trace import ReadableSpan, Span
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.trace import format_span_id, SpanKind
+from opentelemetry.trace import format_span_id, format_trace_id, SpanKind
 
 from langfuse._client.constants import LANGFUSE_TRACER_NAME
 from langfuse._client.environment_variables import (
@@ -466,7 +466,6 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
         Returns:
             Dict with partial trace information available at span start
         """
-        from opentelemetry.trace import format_trace_id
 
         trace_data = {
             "event": "span_start",
@@ -598,15 +597,14 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
                 continue
             associated_prompt = get_compiled_prompt(attr_value)
             if associated_prompt:
-                print("found compiled prompt for ", associated_prompt.value)
                 langfuse_logger.debug(
                     "Emitting Pixie prompt attributes for span '%s' prompt id '%s'",
                     span.name,
                     associated_prompt.prompt.id,
                 )
                 update = PromptForSpan(
-                    trace_id=span.context.trace_id,
-                    span_id=span.context.span_id,
+                    trace_id=format_trace_id(span.context.trace_id),
+                    span_id=format_span_id(span.context.span_id),
                     prompt_id=associated_prompt.prompt.id,
                     version_id=associated_prompt.version_id,
                     variables=(

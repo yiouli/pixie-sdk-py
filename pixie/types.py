@@ -150,8 +150,8 @@ class PromptForSpan(BaseModel):
         variables: Optional variables used in the prompt.
     """
 
-    trace_id: int
-    span_id: int
+    trace_id: str
+    span_id: str
     prompt_id: str
     version_id: str
     variables: Optional[dict[str, JsonValue]] = None
