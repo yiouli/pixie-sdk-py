@@ -14,13 +14,9 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from strawberry.fastapi import GraphQLRouter
-import nest_asyncio
 
 from pixie.prompts.storage import initialize_prompt_storage
 from pixie.schema import schema
-
-
-nest_asyncio.apply()
 
 
 logger = logging.getLogger(__name__)

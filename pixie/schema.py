@@ -311,8 +311,8 @@ class AppInfo:
 
 
 @strawberry.type
-class PromptInfo:
-    """Schema information for a registered prompt via create_prompt."""
+class PromptMetadata:
+    """Metadata for a registered prompt via create_prompt."""
 
     id: strawberry.ID
     variables_schema: JSON
@@ -335,8 +335,8 @@ class TKeyValue:
 
 
 @strawberry.type
-class PromptDetails:
-    """Detailed information for a registered prompt."""
+class Prompt:
+    """Full prompt information including versions."""
 
     id: strawberry.ID
     variables_schema: JSON
@@ -404,15 +404,15 @@ class Query:
         return agent_schemas
 
     @strawberry.field
-    def list_prompts(self) -> list[PromptInfo]:
+    def list_prompts(self) -> list[PromptMetadata]:
         """List all registered prompt templates.
 
         Returns:
-            A list of PromptInfo objects containing id and variables_schema
+            A list of PromptMetadata objects containing id and variables_schema
             for each registered prompt.
         """
         return [
-            PromptInfo(
+            PromptMetadata(
                 id=strawberry.ID(p.id),
                 variables_schema=JSON(
                     # NOTE: avoid p.get_variables_schema() to prevent potential fetching from storage
@@ -424,20 +424,22 @@ class Query:
         ]
 
     @strawberry.field
-    async def get_prompt_details(self, id: strawberry.ID) -> Optional[PromptDetails]:
-        """Get detailed information for a registered prompt.
+    async def get_prompt(self, id: strawberry.ID) -> Prompt:
+        """Get full prompt information including versions.
 
         Args:
             id: The unique identifier of the prompt.
         Returns:
-            PromptDetails object containing id, variables_schema, versions,
-            and default_version_id, or None if prompt not found.
+            Prompt object containing id, variables_schema, versions,
+            and default_version_id.
+        Raises:
+            GraphQLError: If prompt with given id is not found.
         """
         prompt = get_prompt((str(id)))
         if prompt is None:
-            return None
-        if not await prompt.exists_in_storage():
-            return PromptDetails(
+            raise GraphQLError(f"Prompt with id '{id}' not found.")
+        if not prompt.exists_in_storage():
+            return Prompt(
                 id=id,
                 variables_schema=JSON(
                     # NOTE: avoid prompt.get_variables_schema() to prevent potential fetching from storage
@@ -446,11 +448,11 @@ class Query:
                 versions=[],
                 default_version_id=None,
             )
-        versions_dict = await prompt.get_versions()
+        versions_dict = prompt.get_versions()
         versions = [TKeyValue(key=k, value=v) for k, v in versions_dict.items()]
-        default_version_id: str = await prompt.get_default_version_id()
-        variables_schema = await prompt.get_variables_schema()
-        return PromptDetails(
+        default_version_id: str = prompt.get_default_version_id()
+        variables_schema = prompt.get_variables_schema()
+        return Prompt(
             id=id,
             variables_schema=JSON(variables_schema),
             versions=versions,
@@ -485,7 +487,7 @@ class Mutation:
         if prompt is None:
             raise GraphQLError(f"Prompt with id '{prompt_id}' not found.")
         try:
-            await prompt.append_version(
+            prompt.append_version(
                 version_id=version_id,
                 content=content,
                 set_as_default=set_as_default,
@@ -513,7 +515,7 @@ class Mutation:
         if prompt is None:
             raise GraphQLError(f"Prompt with id '{prompt_id}' not found.")
         try:
-            await prompt.update_default_version_id(default_version_id)
+            prompt.update_default_version_id(default_version_id)
         except Exception as e:
             raise GraphQLError(
                 f"Failed to update default prompt version: {str(e)}"

@@ -83,17 +83,17 @@ class TestFilePromptStorage:
         prompt1 = storage._prompts["prompt1"]
         assert isinstance(prompt1, BaseUntypedPrompt)
         assert prompt1.id == "prompt1"
-        assert await prompt1.get_versions() == sample_prompt_data["prompt1"]["versions"]
+        assert prompt1.get_versions() == sample_prompt_data["prompt1"]["versions"]
         assert (
-            await prompt1.get_default_version_id()
+            prompt1.get_default_version_id()
             == sample_prompt_data["prompt1"]["defaultVersionId"]
         )
 
         prompt2 = storage._prompts["prompt2"]
         assert prompt2.id == "prompt2"
-        assert await prompt2.get_versions() == sample_prompt_data["prompt2"]["versions"]
+        assert prompt2.get_versions() == sample_prompt_data["prompt2"]["versions"]
         assert (
-            await prompt2.get_default_version_id()
+            prompt2.get_default_version_id()
             == sample_prompt_data["prompt2"]["defaultVersionId"]
         )
 
@@ -150,15 +150,15 @@ class TestFilePromptStorage:
         self.create_sample_files(temp_dir, sample_prompt_data)
         storage = _FilePromptStorage(temp_dir)
 
-        assert await storage.exists("prompt1") is True
-        assert await storage.exists("prompt2") is True
+        assert storage.exists("prompt1") is True
+        assert storage.exists("prompt2") is True
 
     @pytest.mark.asyncio
     async def test_exists_returns_false_for_non_existing_prompt(self, temp_dir: str):
         """Test that exists returns False for non-existing prompts."""
         storage = _FilePromptStorage(temp_dir)
 
-        assert await storage.exists("nonexistent") is False
+        assert storage.exists("nonexistent") is False
 
     @pytest.mark.asyncio
     async def test_save_creates_new_prompt(self, temp_dir: str):
@@ -172,7 +172,7 @@ class TestFilePromptStorage:
         )
 
         # Save should work for new prompts now and return True
-        result = await storage.save(prompt)
+        result = storage.save(prompt)
         assert result is True
 
         # Verify file was created
@@ -198,7 +198,7 @@ class TestFilePromptStorage:
         from pixie.prompts.prompt import BasePrompt
 
         for p in storage._prompts.values():
-            await BasePrompt.from_untyped(p)
+            BasePrompt.from_untyped(p)
 
         # Modify the existing prompt
         storage._prompts["prompt1"]
@@ -207,12 +207,12 @@ class TestFilePromptStorage:
             versions=updated_versions, default_version_id="v1", id="prompt1"
         )
 
-        result = await storage.save(updated_prompt)
+        result = storage.save(updated_prompt)
         assert result is False  # Should return False for existing prompt
 
         # Check in-memory was updated
         assert storage._prompts["prompt1"] is updated_prompt
-        assert await storage._prompts["prompt1"].get_versions() == updated_versions
+        assert storage._prompts["prompt1"].get_versions() == updated_versions
 
         # Check file was updated
         filepath = os.path.join(temp_dir, "prompt1.json")
@@ -229,12 +229,12 @@ class TestFilePromptStorage:
         self.create_sample_files(temp_dir, sample_prompt_data)
         storage = _FilePromptStorage(temp_dir)
 
-        prompt = await storage.get("prompt1")
+        prompt = storage.get("prompt1")
         assert isinstance(prompt, BaseUntypedPrompt)
         assert prompt.id == "prompt1"
-        assert await prompt.get_versions() == sample_prompt_data["prompt1"]["versions"]
+        assert prompt.get_versions() == sample_prompt_data["prompt1"]["versions"]
         assert (
-            await prompt.get_default_version_id()
+            prompt.get_default_version_id()
             == sample_prompt_data["prompt1"]["defaultVersionId"]
         )
 
@@ -244,7 +244,7 @@ class TestFilePromptStorage:
         storage = _FilePromptStorage(temp_dir)
 
         with pytest.raises(KeyError):
-            await storage.get("nonexistent")
+            storage.get("nonexistent")
 
     @pytest.mark.asyncio
     async def test_save_writes_to_file_before_memory_update(self, temp_dir: str):
@@ -255,7 +255,7 @@ class TestFilePromptStorage:
             versions={"default": "Test"}, default_version_id="default", id="test_prompt"
         )
 
-        result = await storage.save(prompt)
+        result = storage.save(prompt)
         assert result is True
 
         # Verify it was saved to file
@@ -278,9 +278,7 @@ class TestFilePromptStorage:
 
         storage = _FilePromptStorage(temp_dir)
         prompt = storage._prompts["prompt"]
-        assert (
-            await prompt.get_default_version_id() == "v1"
-        )  # Defaults to first version
+        assert prompt.get_default_version_id() == "v1"  # Defaults to first version
 
     @pytest.mark.asyncio
     async def test_save_validates_schema_compatibility(self, temp_dir: str):
@@ -298,7 +296,7 @@ class TestFilePromptStorage:
         )
 
         storage = _FilePromptStorage(temp_dir)
-        await storage.save(initial_prompt)
+        storage.save(initial_prompt)
 
         # Try to update with incompatible schema (removing required field)
         updated_prompt = BaseUntypedPrompt(
@@ -314,7 +312,7 @@ class TestFilePromptStorage:
 
         # Should raise TypeError due to incompatible schema
         with pytest.raises(TypeError):
-            await storage.save(updated_prompt)
+            storage.save(updated_prompt)
 
     @pytest.mark.asyncio
     async def test_save_allows_compatible_schema_extension(self, temp_dir: str):
@@ -334,7 +332,7 @@ class TestFilePromptStorage:
         )
 
         storage = _FilePromptStorage(temp_dir)
-        await storage.save(initial_prompt)
+        storage.save(initial_prompt)
 
         # Update with narrower but compatible schema (fewer fields)
         # Original schema is a subschema of new schema if new schema is more permissive
@@ -349,7 +347,7 @@ class TestFilePromptStorage:
         )
 
         # Should succeed - removing optional fields makes schema more permissive
-        result = await storage.save(updated_prompt)
+        result = storage.save(updated_prompt)
         assert result is False  # Existing prompt
 
     @pytest.mark.asyncio
@@ -383,7 +381,7 @@ class TestFilePromptStorage:
         assert backed_prompt._prompt is None
 
         # Access versions - should trigger loading
-        versions = await backed_prompt.get_versions()
+        versions = backed_prompt.get_versions()
         assert versions == {"v1": "Hello {name}"}
         assert backed_prompt._prompt is not None
 
@@ -441,7 +439,7 @@ class TestFilePromptStorage:
         with pytest.raises(
             RuntimeError, match="Prompt storage has not been initialized"
         ):
-            await backed_prompt.get_versions()
+            backed_prompt.get_versions()
 
     @pytest.mark.asyncio
     async def test_create_prompt_helper(self, temp_dir: str):
@@ -471,7 +469,7 @@ class TestFilePromptStorage:
         prompt = create_prompt(id="helper_test")
         assert prompt.id == "helper_test"
 
-        versions = await prompt.get_versions()
+        versions = prompt.get_versions()
         assert versions == {"v1": "Test"}
 
     @pytest.mark.asyncio
@@ -515,7 +513,7 @@ class TestFilePromptStorage:
         )
 
         # Should not raise, since TestVars schema is subschema of empty
-        versions = await backed_prompt.get_versions()
+        versions = backed_prompt.get_versions()
         assert versions == {"v1": "Hello {name}!"}
 
     @pytest.mark.asyncio
@@ -560,7 +558,7 @@ class TestFilePromptStorage:
             TypeError,
             match="The provided variables_definition is not compatible with the prompt's variables schema",
         ):
-            await backed_prompt.get_versions()
+            backed_prompt.get_versions()
 
     @pytest.mark.asyncio
     async def test_storage_backed_prompt_actualize(self, temp_dir: str):
@@ -593,12 +591,12 @@ class TestFilePromptStorage:
         assert backed_prompt._prompt is None
 
         # Call actualize - should load and return self
-        result = await backed_prompt.actualize()
+        result = backed_prompt.actualize()
         assert result is backed_prompt
         assert backed_prompt._prompt is not None
 
         # Verify it works
-        versions = await backed_prompt.get_versions()
+        versions = backed_prompt.get_versions()
         assert versions == {"v1": "Hello {name}"}
 
     @pytest.mark.asyncio
@@ -780,7 +778,7 @@ class TestFilePromptStorage:
         initialize_prompt_storage(temp_dir)
 
         prompt = StorageBackedPrompt(id="test_id", variables_definition=TestVars)
-        schema = await prompt.get_variables_schema()
+        schema = prompt.get_variables_schema()
         assert schema == {
             "type": "object",
             "title": "TestVars",
@@ -814,7 +812,7 @@ class TestFilePromptStorage:
         initialize_prompt_storage(temp_dir)
 
         prompt = StorageBackedPrompt(id="exists_test")
-        assert await prompt.exists_in_storage() is True
+        assert prompt.exists_in_storage() is True
 
     @pytest.mark.asyncio
     async def test_storage_backed_prompt_exists_in_storage_false(self, temp_dir: str):
@@ -824,7 +822,7 @@ class TestFilePromptStorage:
         initialize_prompt_storage(temp_dir)
 
         prompt = StorageBackedPrompt(id="nonexistent")
-        assert await prompt.exists_in_storage() is False
+        assert prompt.exists_in_storage() is False
 
     @pytest.mark.asyncio
     async def test_storage_backed_prompt_get_default_version_id(self, temp_dir: str):
@@ -849,7 +847,7 @@ class TestFilePromptStorage:
         initialize_prompt_storage(temp_dir)
 
         prompt = StorageBackedPrompt(id="default_test")
-        default_id = await prompt.get_default_version_id()
+        default_id = prompt.get_default_version_id()
         assert default_id == "v2"
 
     @pytest.mark.asyncio
@@ -877,7 +875,7 @@ class TestFilePromptStorage:
         prompt = StorageBackedPrompt(id="append_test")
 
         # Append new version
-        result_prompt = await prompt.append_version(
+        result_prompt = prompt.append_version(
             version_id="v2", content="Hi {name}", set_as_default=True
         )
 
@@ -886,18 +884,18 @@ class TestFilePromptStorage:
         assert result_prompt.id == "append_test"
 
         # Check versions were updated
-        versions = await result_prompt.get_versions()
+        versions = result_prompt.get_versions()
         assert "v2" in versions
         assert versions["v2"] == "Hi {name}"
-        assert await result_prompt.get_default_version_id() == "v2"
+        assert result_prompt.get_default_version_id() == "v2"
 
         # Check that storage was updated
         storage = _FilePromptStorage(temp_dir)
-        stored_prompt = await storage.get("append_test")
-        stored_versions = await stored_prompt.get_versions()
+        stored_prompt = storage.get("append_test")
+        stored_versions = stored_prompt.get_versions()
         assert "v2" in stored_versions
         assert stored_versions["v2"] == "Hi {name}"
-        assert await stored_prompt.get_default_version_id() == "v2"
+        assert stored_prompt.get_default_version_id() == "v2"
 
     @pytest.mark.asyncio
     async def test_storage_backed_prompt_append_version_creates_new_prompt(
@@ -911,7 +909,7 @@ class TestFilePromptStorage:
         prompt = StorageBackedPrompt(id="new_append_test")
 
         # Append version to non-existing prompt (should create new)
-        result_prompt = await prompt.append_version(
+        result_prompt = prompt.append_version(
             version_id="v1", content="Hello {name}", set_as_default=True
         )
 
@@ -920,18 +918,18 @@ class TestFilePromptStorage:
         assert result_prompt.id == "new_append_test"
 
         # Check versions
-        versions = await result_prompt.get_versions()
+        versions = result_prompt.get_versions()
         assert "v1" in versions
         assert versions["v1"] == "Hello {name}"
-        assert await result_prompt.get_default_version_id() == "v1"
+        assert result_prompt.get_default_version_id() == "v1"
 
         # Check that storage was created
         storage = _FilePromptStorage(temp_dir)
-        stored_prompt = await storage.get("new_append_test")
-        stored_versions = await stored_prompt.get_versions()
+        stored_prompt = storage.get("new_append_test")
+        stored_versions = stored_prompt.get_versions()
         assert "v1" in stored_versions
         assert stored_versions["v1"] == "Hello {name}"
-        assert await stored_prompt.get_default_version_id() == "v1"
+        assert stored_prompt.get_default_version_id() == "v1"
 
     @pytest.mark.asyncio
     async def test_storage_backed_prompt_update_default_version_id(self, temp_dir: str):
@@ -962,17 +960,17 @@ class TestFilePromptStorage:
         prompt = StorageBackedPrompt(id="update_default_test")
 
         # Update default version
-        result_prompt = await prompt.update_default_version_id("v3")
+        result_prompt = prompt.update_default_version_id("v3")
 
         # Check that it returns the underlying BasePrompt
         assert isinstance(result_prompt, BasePrompt)
         assert result_prompt.id == "update_default_test"
-        assert await result_prompt.get_default_version_id() == "v3"
+        assert result_prompt.get_default_version_id() == "v3"
 
         # Check that storage was updated
         storage = _FilePromptStorage(temp_dir)
-        stored_prompt = await storage.get("update_default_test")
-        assert await stored_prompt.get_default_version_id() == "v3"
+        stored_prompt = storage.get("update_default_test")
+        assert stored_prompt.get_default_version_id() == "v3"
 
     @pytest.mark.asyncio
     async def test_storage_backed_prompt_exists_in_storage_without_init_raises_error(
@@ -990,7 +988,7 @@ class TestFilePromptStorage:
         with pytest.raises(
             RuntimeError, match="Prompt storage has not been initialized"
         ):
-            await prompt.exists_in_storage()
+            prompt.exists_in_storage()
 
     @pytest.mark.asyncio
     async def test_storage_backed_prompt_actualize_loads_prompt(self, temp_dir: str):
@@ -1018,12 +1016,12 @@ class TestFilePromptStorage:
         assert prompt._prompt is None
 
         # Call actualize
-        result = await prompt.actualize()
+        result = prompt.actualize()
         assert result is prompt
         assert prompt._prompt is not None
 
         # Verify it works
-        versions = await prompt.get_versions()
+        versions = prompt.get_versions()
         assert versions == {"v1": "Hello {name}"}
 
     @pytest.mark.asyncio
@@ -1063,7 +1061,7 @@ class TestFilePromptStorage:
         )
 
         # Should succeed - schemas are compatible
-        result = await prompt.actualize()
+        result = prompt.actualize()
         assert result is prompt
         assert prompt._prompt is not None
 
@@ -1107,7 +1105,7 @@ class TestFilePromptStorage:
         with pytest.raises(
             TypeError, match="The provided variables_definition is not compatible"
         ):
-            await prompt.actualize()
+            prompt.actualize()
 
     @pytest.mark.asyncio
     async def test_storage_backed_prompt_append_version_updates_storage(
@@ -1136,7 +1134,7 @@ class TestFilePromptStorage:
         prompt = StorageBackedPrompt(id="storage_update_test")
 
         # Append version
-        await prompt.append_version(version_id="v2", content="Added version")
+        prompt.append_version(version_id="v2", content="Added version")
 
         # Check file was updated
         with open(prompt_file, "r") as f:
@@ -1172,7 +1170,7 @@ class TestFilePromptStorage:
         prompt = StorageBackedPrompt(id="default_update_test")
 
         # Update default
-        await prompt.update_default_version_id("v2")
+        prompt.update_default_version_id("v2")
 
         # Check file was updated
         with open(prompt_file, "r") as f:
@@ -1208,7 +1206,7 @@ class TestFilePromptStorage:
 
         # Try to append existing version
         with pytest.raises(ValueError, match="Version ID 'v1' already exists"):
-            await prompt.append_version(version_id="v1", content="Duplicate")
+            prompt.append_version(version_id="v1", content="Duplicate")
 
     @pytest.mark.asyncio
     async def test_storage_backed_prompt_update_default_raises_for_nonexistent_id(
@@ -1238,7 +1236,7 @@ class TestFilePromptStorage:
 
         # Try to update to nonexistent version
         with pytest.raises(ValueError, match="Version ID 'nonexistent' does not exist"):
-            await prompt.update_default_version_id("nonexistent")
+            prompt.update_default_version_id("nonexistent")
 
     @pytest.mark.asyncio
     async def test_storage_backed_prompt_append_version_without_init_raises_error(self):
@@ -1254,7 +1252,7 @@ class TestFilePromptStorage:
         with pytest.raises(
             RuntimeError, match="Prompt storage has not been initialized"
         ):
-            await prompt.append_version(version_id="v2", content="New version")
+            prompt.append_version(version_id="v2", content="New version")
 
     @pytest.mark.asyncio
     async def test_storage_backed_prompt_update_default_without_init_raises_error(self):
@@ -1270,7 +1268,7 @@ class TestFilePromptStorage:
         with pytest.raises(
             RuntimeError, match="Prompt storage has not been initialized"
         ):
-            await prompt.update_default_version_id("v2")
+            prompt.update_default_version_id("v2")
 
     @pytest.mark.asyncio
     async def test_storage_backed_prompt_deletion_during_runtime(self, temp_dir: str):
@@ -1305,7 +1303,7 @@ class TestFilePromptStorage:
         # The prompt is still in storage's in-memory cache, so it should work
         # but raises TypeError due to schema incompatibility with NoneType default
         with pytest.raises(TypeError, match="not compatible"):
-            await prompt.get_versions()
+            prompt.get_versions()
 
 
 class TestInitializePromptStorage:
@@ -1390,7 +1388,7 @@ class TestInitializePromptStorage:
 
         # Attempt to append a version with incompatible schema
         with pytest.raises(TypeError, match="Original schema must be a subschema"):
-            await prompt.append_version(version_id="v2", content="Hi {age}")
+            prompt.append_version(version_id="v2", content="Hi {age}")
 
     @pytest.mark.asyncio
     async def test_storage_backed_prompt_concurrent_append_version(self, temp_dir: str):
@@ -1404,7 +1402,7 @@ class TestInitializePromptStorage:
         prompt = StorageBackedPrompt(id="concurrent_test")
 
         async def append_version(version_id, content):
-            await prompt.append_version(version_id=version_id, content=content)
+            prompt.append_version(version_id=version_id, content=content)
 
         # Run concurrent appends
         await asyncio.gather(
@@ -1413,7 +1411,7 @@ class TestInitializePromptStorage:
         )
 
         # Check that both versions exist
-        versions = await prompt.get_versions()
+        versions = prompt.get_versions()
         assert "v1" in versions
         assert "v2" in versions
         assert versions["v1"] == "Hello {name}"
@@ -1432,9 +1430,9 @@ class TestInitializePromptStorage:
         prompt = StorageBackedPrompt(id="invalid_version_test")
 
         # Empty version ID is actually allowed - no validation in place
-        result = await prompt.append_version(version_id="", content="Hello {name}")
+        result = prompt.append_version(version_id="", content="Hello {name}")
         assert result is not None
-        versions = await result.get_versions()
+        versions = result.get_versions()
         assert "" in versions
 
     @pytest.mark.asyncio

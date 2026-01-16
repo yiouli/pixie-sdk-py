@@ -111,11 +111,11 @@ class _UnTypedPrompt(Protocol):
     @property
     def id(self) -> str: ...
 
-    async def get_default_version_id(self) -> str: ...
+    def get_default_version_id(self) -> str: ...
 
-    async def get_versions(self) -> dict[str, str]: ...
+    def get_versions(self) -> dict[str, str]: ...
 
-    async def get_variables_schema(self) -> dict[str, Any]: ...
+    def get_variables_schema(self) -> dict[str, Any]: ...
 
 
 EMPTY_VARIABLES_SCHEMA = {"type": "object", "properties": {}}
@@ -148,13 +148,13 @@ class BaseUntypedPrompt(_UnTypedPrompt):
     def id(self) -> str:
         return self._id
 
-    async def get_default_version_id(self) -> str:
+    def get_default_version_id(self) -> str:
         return self._default_version
 
-    async def get_versions(self) -> dict[str, str]:
+    def get_versions(self) -> dict[str, str]:
         return deepcopy(self._versions)
 
-    async def get_variables_schema(self) -> dict[str, Any]:
+    def get_variables_schema(self) -> dict[str, Any]:
         return deepcopy(self._variables_schema)
 
 
@@ -189,12 +189,12 @@ def variables_definition_to_schema(definition: type[TPromptVar]) -> dict[str, An
 
 class BasePrompt(BaseUntypedPrompt, Generic[TPromptVar]):
     @classmethod
-    async def from_untyped(
+    def from_untyped(
         cls,
         untyped_prompt: "BaseUntypedPrompt",
         variables_definition: type[TPromptVar] = NoneType,
     ) -> "BasePrompt[TPromptVar]":
-        base_schema = await untyped_prompt.get_variables_schema()
+        base_schema = untyped_prompt.get_variables_schema()
         typed_schema = variables_definition_to_schema(variables_definition)
         if not isSubschema(typed_schema, base_schema):
             raise TypeError(
@@ -202,8 +202,8 @@ class BasePrompt(BaseUntypedPrompt, Generic[TPromptVar]):
             )
         return cls(
             variables_definition=variables_definition,
-            versions=await untyped_prompt.get_versions(),
-            default_version_id=await untyped_prompt.get_default_version_id(),
+            versions=untyped_prompt.get_versions(),
+            default_version_id=untyped_prompt.get_default_version_id(),
             id=untyped_prompt.id,
         )
 
@@ -262,13 +262,13 @@ class BasePrompt(BaseUntypedPrompt, Generic[TPromptVar]):
         )
         return ret
 
-    async def _update(
+    def _update(
         self,
         *,
         versions: str | dict[str, str] | None = None,
         default_version_id: str | None = None,
     ) -> "tuple[Self, OutdatedPrompt[TPromptVar]]":
-        outdated_prompt = await OutdatedPrompt.from_prompt(self)
+        outdated_prompt = OutdatedPrompt.from_prompt(self)
         if versions is not None:
             self._versions = _to_versions_dict(versions)
         if default_version_id is not None:
@@ -277,7 +277,7 @@ class BasePrompt(BaseUntypedPrompt, Generic[TPromptVar]):
         return self, outdated_prompt
 
     @staticmethod
-    async def update_prompt_registry(
+    def update_prompt_registry(
         untyped_prompt: "BaseUntypedPrompt",
     ) -> "BasePrompt":
         """IMPORTANT: should only be called from storage on storage load!
@@ -286,15 +286,15 @@ class BasePrompt(BaseUntypedPrompt, Generic[TPromptVar]):
         DO NOT call other than from initial storage load, to keep immutability of prompts in code.
         """
         existing = get_prompt_by_id(untyped_prompt.id)
-        outdated_prompt = await OutdatedPrompt.from_prompt(existing)
+        outdated_prompt = OutdatedPrompt.from_prompt(existing)
         _mark_compiled_prompts_outdated(existing.id, outdated_prompt)
-        await existing._update(
-            versions=await untyped_prompt.get_versions(),
-            default_version_id=await untyped_prompt.get_default_version_id(),
+        existing._update(
+            versions=untyped_prompt.get_versions(),
+            default_version_id=untyped_prompt.get_default_version_id(),
         )
         return existing
 
-    async def append_version(
+    def append_version(
         self,
         *,
         version_id: str,
@@ -303,12 +303,12 @@ class BasePrompt(BaseUntypedPrompt, Generic[TPromptVar]):
     ) -> None:
         if version_id in self._versions:
             raise ValueError(f"Version ID '{version_id}' already exists.")
-        await self._update(
+        self._update(
             versions={version_id: content, **self._versions},
             default_version_id=version_id if set_as_default else None,
         )
 
-    async def update_default_version_id(
+    def update_default_version_id(
         self,
         default_version_id: str,
     ) -> None:
@@ -316,7 +316,7 @@ class BasePrompt(BaseUntypedPrompt, Generic[TPromptVar]):
             raise ValueError(f"Version ID '{default_version_id}' does not exist.")
         if self._default_version == default_version_id:
             return
-        await self._update(
+        self._update(
             default_version_id=default_version_id,
         )
 
@@ -330,24 +330,24 @@ class OutdatedPrompt(BasePrompt[TPromptVar]):
         default_version_id: str,
         variables_definition: type[TPromptVar],
         id: str,
-    ) -> NoneType:
+    ) -> None:
         self._id = id
         self._versions = _to_versions_dict(versions)
         self._default_version = default_version_id
         self._variables_definition = variables_definition
 
     @classmethod
-    async def from_prompt(
+    def from_prompt(
         cls, prompt: BasePrompt[TPromptVar]
     ) -> "OutdatedPrompt[TPromptVar]":
         return cls(
             variables_definition=prompt.variables_definition,
-            versions=await prompt.get_versions(),
-            default_version_id=await prompt.get_default_version_id(),
+            versions=prompt.get_versions(),
+            default_version_id=prompt.get_default_version_id(),
             id=prompt.id,
         )
 
-    async def _update(
+    def _update(
         self,
         *,
         versions: str | dict[str, str] | None = None,
@@ -355,10 +355,10 @@ class OutdatedPrompt(BasePrompt[TPromptVar]):
     ) -> "OutdatedPrompt[TPromptVar]":
         raise ValueError("Cannot update an outdated prompt.")
 
-    async def get_default_version_id(self) -> str:
+    def get_default_version_id(self) -> str:
         return self._default_version
 
-    async def get_versions(self) -> dict[str, str]:
+    def get_versions(self) -> dict[str, str]:
         return deepcopy(self._versions)
 
     def compile(

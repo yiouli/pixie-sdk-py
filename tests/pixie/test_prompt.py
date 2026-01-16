@@ -72,7 +72,7 @@ class TestPromptInitialization:
         versions = {"v1": "Version 1", "v2": "Version 2", "v3": "Version 3"}
         prompt = BasePrompt(versions=versions, default_version_id="v2")
 
-        assert await prompt.get_default_version_id() == "v2"
+        assert prompt.get_default_version_id() == "v2"
 
     @pytest.mark.asyncio
     async def test_init_default_version_is_first_key_when_not_specified(self):
@@ -81,14 +81,14 @@ class TestPromptInitialization:
         versions = {"first": "First version", "second": "Second version"}
         prompt = BasePrompt(versions=versions)
 
-        assert await prompt.get_default_version_id() == "first"
+        assert prompt.get_default_version_id() == "first"
 
     @pytest.mark.asyncio
     async def test_init_with_string_and_default_version(self):
         """Test that default_version_id works with string versions."""
         prompt = BasePrompt(versions="Hello!", default_version_id="default")
 
-        assert await prompt.get_default_version_id() == "default"
+        assert prompt.get_default_version_id() == "default"
 
     def test_init_with_variables_definition(self):
         """Test initialization with variable definitions."""
@@ -134,14 +134,14 @@ class TestPromptProperties:
         versions = {"v1": "Version 1", "v2": "Version 2"}
         prompt = BasePrompt(versions=versions, default_version_id="v2")
 
-        assert await prompt.get_default_version_id() == "v2"
+        assert prompt.get_default_version_id() == "v2"
 
     @pytest.mark.asyncio
     async def test_default_version_id_property_with_string_init(self):
         """Test default_version_id when initialized with string."""
         prompt = BasePrompt(versions="Test prompt")
 
-        assert await prompt.get_default_version_id() == DEFAULT_VERSION_ID
+        assert prompt.get_default_version_id() == DEFAULT_VERSION_ID
 
 
 class TestPromptCompileWithoutVariables:
@@ -501,7 +501,7 @@ class TestPromptIntegration:
 
         assert result1 == "Version 2"
         assert result2 == "Version 1"
-        assert await prompt.get_default_version_id() == "v1"
+        assert prompt.get_default_version_id() == "v1"
 
     def test_same_prompt_compiled_multiple_times(self):
         """Test that compiling the same prompt multiple times produces consistent results."""
@@ -541,28 +541,28 @@ class TestPromptUpdateAndOutdated:
     async def test_prompt_update_returns_outdated_prompt(self):
         """Test that Prompt.update() returns an OutdatedPrompt."""
         prompt = BasePrompt(versions={"v1": "Original"})
-        current, outdated = await prompt._update(versions={"v1": "Updated"})
+        current, outdated = prompt._update(versions={"v1": "Updated"})
 
         assert isinstance(outdated, OutdatedPrompt)
         assert outdated.id == prompt.id
-        assert await outdated.get_versions() == {"v1": "Original"}
+        assert outdated.get_versions() == {"v1": "Original"}
 
         assert current == prompt  # Current prompt remains the same instance
-        assert await current.get_versions() == {"v1": "Updated"}
+        assert current.get_versions() == {"v1": "Updated"}
 
     @pytest.mark.asyncio
     async def test_prompt_update_modifies_prompt_in_place(self):
         """Test that Prompt.update() modifies the prompt object in place."""
         prompt = BasePrompt(versions={"v1": "Original"}, default_version_id="v1")
 
-        await prompt._update(
+        prompt._update(
             versions={"v1": "Updated", "v2": "New version"}, default_version_id="v2"
         )
 
-        versions = await prompt.get_versions()
+        versions = prompt.get_versions()
         assert versions["v1"] == "Updated"
         assert versions["v2"] == "New version"
-        assert await prompt.get_default_version_id() == "v2"
+        assert prompt.get_default_version_id() == "v2"
 
     @pytest.mark.asyncio
     async def test_prompt_remains_usable_after_update(self):
@@ -573,7 +573,7 @@ class TestPromptUpdateAndOutdated:
         result_before = prompt.compile()
 
         # Update
-        await prompt._update(versions={"v1": "Updated {name}"})
+        prompt._update(versions={"v1": "Updated {name}"})
 
         # Compile after update
         result_after = prompt.compile()
@@ -604,7 +604,7 @@ class TestPromptUpdateAndOutdated:
         )
 
         with pytest.raises(ValueError):
-            await outdated._update(versions={"v1": "Updated"})
+            outdated._update(versions={"v1": "Updated"})
 
     @pytest.mark.asyncio
     async def test_compiled_prompts_become_outdated_on_update(self):
@@ -629,7 +629,7 @@ class TestPromptUpdateAndOutdated:
         assert isinstance(compiled_prompt.prompt, BasePrompt)
 
         # Update the prompt
-        await prompt._update(versions={"v1": "Updated {name}"})
+        prompt._update(versions={"v1": "Updated {name}"})
 
         # Check that the same compiled prompt now references OutdatedPrompt
         updated_compiled = None
@@ -640,7 +640,7 @@ class TestPromptUpdateAndOutdated:
 
         assert updated_compiled is not None
         assert isinstance(updated_compiled.prompt, OutdatedPrompt)
-        versions = await updated_compiled.prompt.get_versions()
+        versions = updated_compiled.prompt.get_versions()
         assert versions["v1"] == "Version {name}"
 
     @pytest.mark.asyncio
@@ -656,7 +656,7 @@ class TestPromptUpdateAndOutdated:
         compiled_result = prompt.compile(variables)
 
         # Update the prompt, making compiled prompt outdated
-        await prompt._update(versions={"v1": "Updated {name}"})
+        prompt._update(versions={"v1": "Updated {name}"})
 
         # Find the outdated compiled prompt
         outdated_cp = None
@@ -685,9 +685,9 @@ class TestBasePromptNewMethods:
         """Test that append_version adds a new version to the prompt."""
         prompt = BasePrompt(versions={"v1": "Version 1"})
 
-        await prompt.append_version(version_id="v2", content="Version 2")
+        prompt.append_version(version_id="v2", content="Version 2")
 
-        versions = await prompt.get_versions()
+        versions = prompt.get_versions()
         assert "v2" in versions
         assert versions["v2"] == "Version 2"
         assert versions["v1"] == "Version 1"  # Original version still exists
@@ -696,28 +696,28 @@ class TestBasePromptNewMethods:
         """Test that append_version can set the new version as default."""
         prompt = BasePrompt(versions={"v1": "Version 1"}, default_version_id="v1")
 
-        await prompt.append_version(
+        prompt.append_version(
             version_id="v2", content="Version 2", set_as_default=True
         )
 
-        assert await prompt.get_default_version_id() == "v2"
+        assert prompt.get_default_version_id() == "v2"
 
     async def test_append_version_keeps_existing_default_when_not_requested(self):
         """Test that append_version keeps existing default when set_as_default=False."""
         prompt = BasePrompt(versions={"v1": "Version 1"}, default_version_id="v1")
 
-        await prompt.append_version(
+        prompt.append_version(
             version_id="v2", content="Version 2", set_as_default=False
         )
 
-        assert await prompt.get_default_version_id() == "v1"
+        assert prompt.get_default_version_id() == "v1"
 
     async def test_append_version_raises_error_for_existing_version_id(self):
         """Test that append_version raises ValueError for existing version ID."""
         prompt = BasePrompt(versions={"v1": "Version 1", "v2": "Version 2"})
 
         with pytest.raises(ValueError, match="Version ID 'v1' already exists"):
-            await prompt.append_version(version_id="v1", content="Duplicate")
+            prompt.append_version(version_id="v1", content="Duplicate")
 
     async def test_append_version_creates_outdated_prompt(self):
         """Test that append_version creates an OutdatedPrompt for compiled prompts."""
@@ -731,7 +731,7 @@ class TestBasePromptNewMethods:
         compiled_result = prompt.compile(variables)
 
         # Append new version
-        await prompt.append_version(version_id="v2", content="New {name}")
+        prompt.append_version(version_id="v2", content="New {name}")
 
         # Check that compiled prompt now references OutdatedPrompt
         compiled_prompt = None
@@ -750,16 +750,16 @@ class TestBasePromptNewMethods:
             default_version_id="v1",
         )
 
-        await prompt.update_default_version_id("v2")
+        prompt.update_default_version_id("v2")
 
-        assert await prompt.get_default_version_id() == "v2"
+        assert prompt.get_default_version_id() == "v2"
 
     async def test_update_default_version_id_raises_error_for_nonexistent_version(self):
         """Test that update_default_version_id raises ValueError for nonexistent version."""
         prompt = BasePrompt(versions={"v1": "Version 1"}, default_version_id="v1")
 
         with pytest.raises(ValueError, match="Version ID 'nonexistent' does not exist"):
-            await prompt.update_default_version_id("nonexistent")
+            prompt.update_default_version_id("nonexistent")
 
     async def test_update_default_version_id_noop_when_same_version(self):
         """Test that update_default_version_id does nothing when setting to same version."""
@@ -768,9 +768,9 @@ class TestBasePromptNewMethods:
         )
 
         # This should not raise an error or change anything
-        await prompt.update_default_version_id("v1")
+        prompt.update_default_version_id("v1")
 
-        assert await prompt.get_default_version_id() == "v1"
+        assert prompt.get_default_version_id() == "v1"
 
     async def test_update_default_version_id_creates_outdated_prompt(self):
         """Test that update_default_version_id creates OutdatedPrompt for compiled prompts."""
@@ -785,7 +785,7 @@ class TestBasePromptNewMethods:
         compiled_result = prompt.compile(variables)
 
         # Update default version
-        await prompt.update_default_version_id("v2")
+        prompt.update_default_version_id("v2")
 
         # Check that compiled prompt now references OutdatedPrompt
         compiled_prompt = None
@@ -803,7 +803,7 @@ class TestBasePromptNewMethods:
             versions={"v1": "Hello {name}"}, variables_definition=SamplePromptVariables
         )
 
-        await prompt.append_version(version_id="v2", content="Hi {name}, you are {age}")
+        prompt.append_version(version_id="v2", content="Hi {name}, you are {age}")
 
         variables = SamplePromptVariables(name="Alice", age=30)
 
@@ -828,7 +828,7 @@ class TestBasePromptNewMethods:
         assert result_before == "Version 1"
 
         # Update default to v2
-        await prompt.update_default_version_id("v2")
+        prompt.update_default_version_id("v2")
 
         # Now uses v2 as default
         result_after = prompt.compile(variables)
@@ -844,14 +844,14 @@ class TestUpdatePromptRegistry:
         new_prompt = BaseUntypedPrompt(versions={"v1": "New version"})
 
         with pytest.raises(KeyError):
-            await BasePrompt.update_prompt_registry(new_prompt)
+            BasePrompt.update_prompt_registry(new_prompt)
 
     @pytest.mark.asyncio
     async def test_update_prompt_registry_existing_prompt(self):
         """Test that update_prompt_registry updates existing prompts."""
         original_prompt = BaseUntypedPrompt(versions={"v1": "Original version"})
         # Manually add to registry with variable definitions
-        _prompt_registry[original_prompt.id] = await BasePrompt.from_untyped(
+        _prompt_registry[original_prompt.id] = BasePrompt.from_untyped(
             original_prompt, variables_definition=SamplePromptVariables
         )
 
@@ -863,14 +863,14 @@ class TestUpdatePromptRegistry:
         )
 
         # Add back to registry to simulate existing
-        _prompt_registry[original_prompt.id] = await BasePrompt.from_untyped(
+        _prompt_registry[original_prompt.id] = BasePrompt.from_untyped(
             original_prompt, variables_definition=SamplePromptVariables
         )
 
-        result = await BasePrompt.update_prompt_registry(updated_prompt)
+        result = BasePrompt.update_prompt_registry(updated_prompt)
 
         assert result.id == original_prompt.id
-        versions = await result.get_versions()
+        versions = result.get_versions()
         assert versions["v1"] == "Updated version"
         assert (
             result.variables_definition == SamplePromptVariables
@@ -888,16 +888,16 @@ class TestFilePromptStorage:
 
             # Create the prompt in registry first
             prompt = BaseUntypedPrompt(versions={"v1": "Initial version"})
-            await BasePrompt.from_untyped(prompt)
+            BasePrompt.from_untyped(prompt)
 
-            await storage.save(prompt)  # Use await for async call
+            storage.save(prompt)  # Use await for async call
 
             # Update the prompt
             updated_prompt = BaseUntypedPrompt(
                 id=prompt.id, versions={"v1": "Updated version"}
             )
 
-            is_new = await storage.save(updated_prompt)  # Use await for async call
+            is_new = storage.save(updated_prompt)  # Use await for async call
 
             assert not is_new
 
@@ -971,10 +971,10 @@ class TestBasePromptFromUntyped:
 
         # SamplePromptVariables has name, age, city (with default)
         # This should be compatible
-        typed = await BasePrompt.from_untyped(untyped, SamplePromptVariables)
+        typed = BasePrompt.from_untyped(untyped, SamplePromptVariables)
 
         assert typed.variables_definition == SamplePromptVariables
-        assert await typed.get_versions() == {"v1": "Hello {name}"}
+        assert typed.get_versions() == {"v1": "Hello {name}"}
 
     async def test_from_untyped_with_incompatible_schema_raises_error(self):
         """Test that from_untyped raises ValueError for incompatible schema."""
@@ -994,7 +994,7 @@ class TestBasePromptFromUntyped:
 
         # SamplePromptVariables has name, age, city - incompatible
         with pytest.raises(TypeError):
-            await BasePrompt.from_untyped(untyped, SamplePromptVariables)
+            BasePrompt.from_untyped(untyped, SamplePromptVariables)
 
     async def test_from_untyped_with_nonetype(self):
         """Test that from_untyped works with NoneType."""
@@ -1003,7 +1003,7 @@ class TestBasePromptFromUntyped:
             default_version_id="v1",
         )
 
-        typed = await BasePrompt.from_untyped(untyped, NoneType)
+        typed = BasePrompt.from_untyped(untyped, NoneType)
 
         assert typed.variables_definition == NoneType
         result = typed.compile()
@@ -1017,7 +1017,7 @@ class TestBasePromptFromUntyped:
             id="test_id_123",
         )
 
-        typed = await BasePrompt.from_untyped(untyped, NoneType)
+        typed = BasePrompt.from_untyped(untyped, NoneType)
 
         assert typed.id == "test_id_123"
 
@@ -1030,8 +1030,8 @@ class TestBasePromptFromUntyped:
         )
 
         # Should accept any PromptVariables subclass
-        typed1 = await BasePrompt.from_untyped(untyped, SamplePromptVariables)
-        typed2 = await BasePrompt.from_untyped(untyped, AnotherPromptVariables)
+        typed1 = BasePrompt.from_untyped(untyped, SamplePromptVariables)
+        typed2 = BasePrompt.from_untyped(untyped, AnotherPromptVariables)
 
         assert typed1.variables_definition == SamplePromptVariables
         assert typed2.variables_definition == AnotherPromptVariables
@@ -1054,14 +1054,14 @@ class TestBaseUntypedPromptWithSchema:
             variables_schema=schema,
         )
 
-        result_schema = await prompt.get_variables_schema()
+        result_schema = prompt.get_variables_schema()
         assert result_schema == schema
 
     async def test_init_without_variables_schema_uses_empty(self):
         """Test that missing variables_schema defaults to empty schema."""
         prompt = BaseUntypedPrompt(versions={"v1": "Hello"})
 
-        result_schema = await prompt.get_variables_schema()
+        result_schema = prompt.get_variables_schema()
         assert result_schema == {"type": "object", "properties": {}}
 
     async def test_get_variables_schema_returns_copy(self):
@@ -1076,11 +1076,11 @@ class TestBaseUntypedPromptWithSchema:
             variables_schema=original_schema,
         )
 
-        result_schema = await prompt.get_variables_schema()
+        result_schema = prompt.get_variables_schema()
         result_schema["properties"]["name"]["type"] = "integer"
 
         # Original should be unchanged
-        check_schema = await prompt.get_variables_schema()
+        check_schema = prompt.get_variables_schema()
         assert check_schema["properties"]["name"]["type"] == "string"
 
 
@@ -1097,7 +1097,7 @@ class TestOutdatedPromptGetMethods:
             variables_definition=NoneType,
         )
 
-        versions = await outdated.get_versions()
+        versions = outdated.get_versions()
         assert versions == {"v1": "Test", "v2": "Test2"}
 
     async def test_outdated_prompt_get_default_version_id(self):
@@ -1109,7 +1109,7 @@ class TestOutdatedPromptGetMethods:
             variables_definition=NoneType,
         )
 
-        default_id = await outdated.get_default_version_id()
+        default_id = outdated.get_default_version_id()
         assert default_id == "v1"
 
     async def test_outdated_prompt_preserves_variables_definition(self):
@@ -1119,7 +1119,7 @@ class TestOutdatedPromptGetMethods:
             variables_definition=SamplePromptVariables,
         )
 
-        outdated = await OutdatedPrompt.from_prompt(prompt)
+        outdated = OutdatedPrompt.from_prompt(prompt)
 
         assert outdated.variables_definition == SamplePromptVariables
 
@@ -1289,7 +1289,7 @@ class TestGetCompiledPrompt:
         compiled_text = prompt.compile()
 
         # Update the prompt to create an outdated version
-        await prompt._update(versions={"v1": "Updated"})
+        prompt._update(versions={"v1": "Updated"})
 
         result = get_compiled_prompt(compiled_text)
         assert result is not None
