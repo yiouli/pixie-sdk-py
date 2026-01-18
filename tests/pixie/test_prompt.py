@@ -5,6 +5,7 @@ import json
 import pytest
 import tempfile
 from types import NoneType
+from jinja2 import UndefinedError
 
 from pixie.prompts.storage import _FilePromptStorage
 from pixie.prompts.prompt import (
@@ -31,6 +32,13 @@ class AnotherPromptVariables(PromptVariables):
 
     greeting: str
     topic: str
+
+
+class NestedPromptVariables(PromptVariables):
+    """Sample with nested model."""
+
+    user: SamplePromptVariables
+    message: str
 
 
 class TestPromptInitialization:
@@ -196,7 +204,7 @@ class TestPromptCompileWithVariables:
 
     def test_compile_with_variables(self):
         """Test compiling a prompt with variable substitution."""
-        template = "Hello, {name}! You are {age} years old."
+        template = "Hello, {{name}}! You are {{age}} years old."
         prompt = BasePrompt(
             versions=template,
             variables_definition=SamplePromptVariables,
@@ -209,7 +217,7 @@ class TestPromptCompileWithVariables:
 
     def test_compile_with_variables_and_default_values(self):
         """Test that default values in Pydantic model work correctly."""
-        template = "Hello, {name} from {city}!"
+        template = "Hello, {{name}} from {{city}}!"
         prompt = BasePrompt(
             versions=template,
             variables_definition=SamplePromptVariables,
@@ -223,9 +231,9 @@ class TestPromptCompileWithVariables:
     def test_compile_with_variables_specific_version(self):
         """Test compiling with variables using a specific version."""
         versions = {
-            "greeting": "Hello, {name}!",
-            "farewell": "Goodbye, {name}!",
-            "question": "How are you, {name}?",
+            "greeting": "Hello, {{name}}!",
+            "farewell": "Goodbye, {{name}}!",
+            "question": "How are you, {{name}}?",
         }
         prompt = BasePrompt(
             versions=versions,
@@ -245,7 +253,7 @@ class TestPromptCompileWithVariables:
 
     def test_compile_with_multiple_variables(self):
         """Test compiling with multiple variable substitutions."""
-        template = "{greeting}, {topic} is fascinating!"
+        template = "{{greeting}}, {{topic}} is fascinating!"
         prompt = BasePrompt(
             versions=template,
             variables_definition=AnotherPromptVariables,
@@ -259,9 +267,9 @@ class TestPromptCompileWithVariables:
     def test_compile_with_variables_complex_template(self):
         """Test compiling with a more complex template."""
         template = """
-Name: {name}
-Age: {age}
-City: {city}
+Name: {{name}}
+Age: {{age}}
+City: {{city}}
 Status: Active
 """
         prompt = BasePrompt(
@@ -276,15 +284,14 @@ Status: Active
 Name: Diana
 Age: 28
 City: Paris
-Status: Active
-"""
+Status: Active"""
         assert result == expected
 
     def test_compile_with_variables_uses_default_version(self):
         """Test that compile with variables uses default version when not specified."""
         versions = {
-            "v1": "Version 1: {name}",
-            "v2": "Version 2: {name}",
+            "v1": "Version 1: {{name}}",
+            "v2": "Version 2: {{name}}",
         }
         prompt = BasePrompt(
             versions=versions,
@@ -296,6 +303,24 @@ Status: Active
         result = prompt.compile(variables)
 
         assert result == "Version 2: Eve"
+
+    def test_compile_with_nested_variables(self):
+        """Test compiling with nested property access."""
+        template = (
+            "Hello {{user.name}}, you are {{user.age}} years old. Message: {{message}}"
+        )
+        prompt = BasePrompt(
+            versions=template,
+            variables_definition=NestedPromptVariables,
+        )
+
+        variables = NestedPromptVariables(
+            user=SamplePromptVariables(name="Alice", age=30, city="NYC"),
+            message="Welcome!",
+        )
+        result = prompt.compile(variables)
+
+        assert result == "Hello Alice, you are 30 years old. Message: Welcome!"
 
     def test_compile_variables_required_when_definitions_exist(self):
         """Test that ValueError is raised when variables are required but not provided."""
@@ -335,7 +360,7 @@ class TestPromptEdgeCases:
 
     def test_version_with_special_characters(self):
         """Test version content with special characters."""
-        special_text = "Hello! @#$%^&*() {name} [brackets] 'quotes' \"double\""
+        special_text = "Hello! @#$%^&*() {{name}} [brackets] 'quotes' \"double\""
         prompt = BasePrompt(
             versions=special_text,
             variables_definition=SamplePromptVariables,
@@ -348,7 +373,7 @@ class TestPromptEdgeCases:
 
     def test_version_with_curly_braces_not_variables(self):
         """Test that literal curly braces (doubled) are preserved."""
-        template = "This {{is}} not {name} a variable"
+        template = "This {is} not {{name}} a variable"
         prompt = BasePrompt(
             versions=template,
             variables_definition=SamplePromptVariables,
@@ -362,7 +387,7 @@ class TestPromptEdgeCases:
 
     def test_unicode_content(self):
         """Test with Unicode characters in version content."""
-        unicode_text = "Hello, {name}! 你好 🎉 Привет"
+        unicode_text = "Hello, {{name}}! 你好 🎉 Привет"
         prompt = BasePrompt(
             versions=unicode_text,
             variables_definition=SamplePromptVariables,
@@ -375,9 +400,9 @@ class TestPromptEdgeCases:
 
     def test_multiline_template(self):
         """Test with a multiline template."""
-        template = """Line 1: {name}
-Line 2: {age}
-Line 3: {city}"""
+        template = """Line 1: {{name}}
+Line 2: {{age}}
+Line 3: {{city}}"""
         prompt = BasePrompt(
             versions=template,
             variables_definition=SamplePromptVariables,
@@ -400,7 +425,7 @@ Line 3: London"""
 
     def test_missing_variable_in_template_raises_key_error(self):
         """Test that KeyError is raised when template variable is not in model."""
-        template = "Hello, {name} and {missing_var}!"
+        template = "Hello, {{name}} and {{missing_var}}!"
         prompt = BasePrompt(
             versions=template,
             variables_definition=SamplePromptVariables,
@@ -408,12 +433,12 @@ Line 3: London"""
 
         variables = SamplePromptVariables(name="Test", age=25)
 
-        with pytest.raises(KeyError):
+        with pytest.raises(UndefinedError):
             prompt.compile(variables)
 
     def test_extra_variables_in_model_dont_affect_compile(self):
         """Test that extra variables in the model that aren't in template are ignored."""
-        template = "Hello, {name}!"
+        template = "Hello, {{name}}!"
         prompt = BasePrompt(
             versions=template,
             variables_definition=SamplePromptVariables,
@@ -427,7 +452,7 @@ Line 3: London"""
 
     def test_numeric_values_in_template(self):
         """Test that numeric values are properly converted to strings."""
-        template = "Count: {age}, Double: {age}"
+        template = "Count: {{age}}, Double: {{age}}"
         prompt = BasePrompt(
             versions=template,
             variables_definition=SamplePromptVariables,
@@ -454,7 +479,7 @@ class TestPromptTypeAnnotations:
     def test_prompt_with_custom_type_generic(self):
         """Test Prompt with custom PromptVariables type."""
         prompt: BasePrompt[SamplePromptVariables] = BasePrompt(
-            versions="Name: {name}",
+            versions="Name: {{name}}",
             variables_definition=SamplePromptVariables,
         )
 
@@ -470,9 +495,9 @@ class TestPromptIntegration:
     def test_multiple_versions_with_variables(self):
         """Test using multiple versions with the same variable definitions."""
         versions = {
-            "short": "{greeting}!",
-            "medium": "{greeting}, let's talk about {topic}.",
-            "long": "{greeting}! Today we'll discuss {topic} in detail.",
+            "short": "{{greeting}}!",
+            "medium": "{{greeting}}, let's talk about {{topic}}.",
+            "long": "{{greeting}}! Today we'll discuss {{topic}} in detail.",
         }
         prompt = BasePrompt(
             versions=versions,
@@ -505,7 +530,7 @@ class TestPromptIntegration:
 
     def test_same_prompt_compiled_multiple_times(self):
         """Test that compiling the same prompt multiple times produces consistent results."""
-        template = "Hello, {name}!"
+        template = "Hello, {{name}}!"
         prompt = BasePrompt(
             versions=template,
             variables_definition=SamplePromptVariables,
@@ -520,7 +545,7 @@ class TestPromptIntegration:
     def test_different_variable_instances_same_values(self):
         """Test that different variable instances with same values produce same output."""
         prompt = BasePrompt(
-            versions="{name} is {age}",
+            versions="{{name}} is {{age}}",
             variables_definition=SamplePromptVariables,
         )
 
@@ -696,9 +721,7 @@ class TestBasePromptNewMethods:
         """Test that append_version can set the new version as default."""
         prompt = BasePrompt(versions={"v1": "Version 1"}, default_version_id="v1")
 
-        prompt.append_version(
-            version_id="v2", content="Version 2", set_as_default=True
-        )
+        prompt.append_version(version_id="v2", content="Version 2", set_as_default=True)
 
         assert prompt.get_default_version_id() == "v2"
 
@@ -800,10 +823,11 @@ class TestBasePromptNewMethods:
     async def test_append_version_with_variables_compiles_correctly(self):
         """Test that appended versions compile correctly with variables."""
         prompt = BasePrompt(
-            versions={"v1": "Hello {name}"}, variables_definition=SamplePromptVariables
+            versions={"v1": "Hello {{name}}"},
+            variables_definition=SamplePromptVariables,
         )
 
-        prompt.append_version(version_id="v2", content="Hi {name}, you are {age}")
+        prompt.append_version(version_id="v2", content="Hi {{name}}, you are {{age}}")
 
         variables = SamplePromptVariables(name="Alice", age=30)
 
@@ -1178,7 +1202,7 @@ class TestGetCompiledPrompt:
         from pixie.prompts.prompt import get_compiled_prompt
 
         prompt = BasePrompt(
-            versions="Hello, {name}!", variables_definition=SamplePromptVariables
+            versions="Hello, {{name}}!", variables_definition=SamplePromptVariables
         )
         variables = SamplePromptVariables(name="Alice", age=25)
         compiled_text = prompt.compile(variables)

@@ -5,6 +5,8 @@ from types import NoneType
 from typing import Any, Generic, Protocol, Self, TypeVar, cast, overload
 from uuid import uuid4
 
+import jinja2
+from jinja2 import StrictUndefined
 from jsonsubschema import isSubschema
 from pydantic import BaseModel
 
@@ -245,15 +247,16 @@ class BasePrompt(BaseUntypedPrompt, Generic[TPromptVar]):
         version_id: str | None = None,
     ) -> str:
         version_id = version_id or self._default_version
-        template = self._versions[version_id]
+        template_txt = self._versions[version_id]
         if self._variables_definition is not NoneType:
             if variables is None:
                 raise ValueError(
                     f"Variables[{self._variables_definition}] are required for this prompt."
                 )
-            ret = template.format(**variables.model_dump(mode="json"))
+            template = jinja2.Template(template_txt, undefined=StrictUndefined)
+            ret = template.render(**variables.model_dump(mode="json"))
         else:
-            ret = template
+            ret = template_txt
         _compiled_prompt_registry[id(ret)] = _CompiledPrompt(
             value=ret,
             version_id=version_id,

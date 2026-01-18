@@ -405,7 +405,7 @@ class TestFilePromptStorage:
         with open(prompt_file, "w") as f:
             json.dump(
                 {
-                    "versions": {"v1": "Hello {name}!"},
+                    "versions": {"v1": "Hello {{name}}!"},
                     "defaultVersionId": "v1",
                     "variablesSchema": {"type": "object", "properties": {}},
                 },
