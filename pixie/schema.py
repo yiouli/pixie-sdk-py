@@ -3,12 +3,12 @@
 import asyncio
 import json
 import logging
-import queue
 import uuid
 from enum import Enum
 from typing import AsyncGenerator, Callable, Coroutine, Optional, cast
 
 from graphql import GraphQLError
+import janus
 from pydantic import BaseModel, JsonValue
 import strawberry
 import strawberry.experimental.pydantic
@@ -45,10 +45,10 @@ from importlib.metadata import PackageNotFoundError, version
 
 
 # Global registry for input queues per run
-_input_queues: dict[str, queue.Queue] = {}
+_input_queues: dict[str, janus.Queue] = {}
 
 
-def _get_input_queue(run_id: str) -> queue.Queue:
+def _get_input_queue(run_id: str) -> janus.Queue:
     """Get or create the input queue for a given run ID.
 
     Args:
@@ -57,7 +57,7 @@ def _get_input_queue(run_id: str) -> queue.Queue:
         The queue for this run
     """
     if run_id not in _input_queues:
-        _input_queues[run_id] = queue.Queue()
+        _input_queues[run_id] = janus.Queue()
     return _input_queues[run_id]
 
 
@@ -591,7 +591,7 @@ class Mutation:
 
         try:
             q = _get_input_queue(run_id)
-            q.put(input_data)
+            q.sync_q.put(input_data)
             logger.info("User input sent to run_id=%s", run_id)
             return True
         except Exception as e:
@@ -768,7 +768,7 @@ class Subscription:
                                     user_input_requirement=item,
                                 )
                                 # Wait for input from queue
-                                user_input = await asyncio.to_thread(input_q.get)
+                                user_input = await input_q.async_q.get()
                                 exec_ctx.emit_status_update(
                                     status="running",
                                     user_input=user_input,
