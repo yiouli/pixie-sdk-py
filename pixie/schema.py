@@ -316,6 +316,7 @@ class PromptMetadata:
 
     id: strawberry.ID
     variables_schema: JSON
+    version_count: int
     description: Optional[str] = None
     module: Optional[str] = None
 
@@ -412,7 +413,7 @@ class Query:
         """List all registered prompt templates.
 
         Returns:
-            A list of PromptMetadata objects containing id, variables_schema,
+            A list of PromptMetadata objects containing id, variables_schema, version_count,
             description, and module for each registered prompt.
         """
         return [
@@ -423,6 +424,7 @@ class Query:
                     # this in theory could be different from the stored schema but in practice should not be
                     variables_definition_to_schema(p.prompt.variables_definition)
                 ),
+                version_count=len(p.prompt.get_versions()),
                 description=p.description,
                 module=p.module,
             )
