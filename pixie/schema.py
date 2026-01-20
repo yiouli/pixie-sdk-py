@@ -416,6 +416,7 @@ class Query:
             A list of PromptMetadata objects containing id, variables_schema, version_count,
             description, and module for each registered prompt.
         """
+
         return [
             PromptMetadata(
                 id=strawberry.ID(p.prompt.id),
@@ -424,7 +425,7 @@ class Query:
                     # this in theory could be different from the stored schema but in practice should not be
                     variables_definition_to_schema(p.prompt.variables_definition)
                 ),
-                version_count=len(p.prompt.get_versions()),
+                version_count=p.prompt.get_version_count(),
                 description=p.description,
                 module=p.module,
             )

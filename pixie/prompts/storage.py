@@ -167,6 +167,14 @@ class StorageBackedPrompt(Prompt[TPromptVar]):
         prompt = self._get_prompt()
         return prompt.get_versions()
 
+    def get_version_count(self) -> int:
+        try:
+            prompt = self._get_prompt()
+            versions_dict = prompt.get_versions()
+            return len(versions_dict)
+        except KeyError:
+            return 0
+
     def get_default_version_id(self) -> str:
         prompt = self._get_prompt()
         return prompt.get_default_version_id()
