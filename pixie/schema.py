@@ -605,8 +605,11 @@ class Mutation:
         self,
         model: str,
         prompt_template: str,
-        variables: JSON,
+        variables: Optional[JSON],
+        input_messages: list[JSON],
+        output_schema: Optional[JSON] = None,
         tools: Optional[JSON] = None,
+        model_parameters: Optional[JSON] = None,
     ) -> str:
         """Run an LLM with the given prompt template and variables.
 
@@ -614,6 +617,8 @@ class Mutation:
             model: The model name to use (e.g., "openai:gpt-4").
             prompt_template: The prompt template text.
             variables: Variables to use in the prompt.
+            model_parameters: Optional model parameters.
+            output_schema: Optional output schema.
             tools: Optional tools configuration (not yet implemented).
 
         Returns:
