@@ -15,8 +15,6 @@ import strawberry.experimental.pydantic
 from strawberry.scalars import JSON
 
 from langfuse import get_client
-from pixie.prompts.prompt import variables_definition_to_schema
-from pixie.prompts.prompt_management import get_prompt, list_prompts
 from pixie.registry import call_application, get_application, list_applications
 from pixie.utils import get_json_schema_for_type
 from pixie.types import (
@@ -42,6 +40,7 @@ from pixie.otel_types import (
 
 import pixie.execution_context as exec_ctx
 from importlib.metadata import PackageNotFoundError, version
+from pixie.prompts.graphql import Mutation as PromptsMutation, Query as PromptsQuery
 
 
 # Global registry for input queues per run
@@ -310,17 +309,6 @@ class AppInfo:
     output_schema: Optional[JSON] = None
 
 
-@strawberry.type
-class PromptMetadata:
-    """Metadata for a registered prompt via create_prompt."""
-
-    id: strawberry.ID
-    variables_schema: JSON
-    version_count: int
-    description: Optional[str] = None
-    module: Optional[str] = None
-
-
 @strawberry.input
 class IKeyValue:
     """Key-value attribute."""
@@ -338,20 +326,7 @@ class TKeyValue:
 
 
 @strawberry.type
-class Prompt:
-    """Full prompt information including versions."""
-
-    id: strawberry.ID
-    variables_schema: JSON
-    versions: list[TKeyValue]
-    default_version_id: str | None
-    """default version id can only be None if versions is empty"""
-    description: Optional[str] = None
-    module: Optional[str] = None
-
-
-@strawberry.type
-class Query:
+class _Query:
     """GraphQL queries."""
 
     @strawberry.field
@@ -408,135 +383,10 @@ class Query:
 
         return agent_schemas
 
-    @strawberry.field
-    def list_prompts(self) -> list[PromptMetadata]:
-        """List all registered prompt templates.
-
-        Returns:
-            A list of PromptMetadata objects containing id, variables_schema, version_count,
-            description, and module for each registered prompt.
-        """
-
-        return [
-            PromptMetadata(
-                id=strawberry.ID(p.prompt.id),
-                variables_schema=JSON(
-                    # NOTE: avoid p.get_variables_schema() to prevent potential fetching from storage
-                    # this in theory could be different from the stored schema but in practice should not be
-                    variables_definition_to_schema(p.prompt.variables_definition)
-                ),
-                version_count=p.prompt.get_version_count(),
-                description=p.description,
-                module=p.module,
-            )
-            for p in list_prompts()
-        ]
-
-    @strawberry.field
-    async def get_prompt(self, id: strawberry.ID) -> Prompt:
-        """Get full prompt information including versions.
-
-        Args:
-            id: The unique identifier of the prompt.
-        Returns:
-            Prompt object containing id, variables_schema, versions,
-            and default_version_id.
-        Raises:
-            GraphQLError: If prompt with given id is not found.
-        """
-        prompt_with_registration = get_prompt((str(id)))
-        if prompt_with_registration is None:
-            raise GraphQLError(f"Prompt with id '{id}' not found.")
-        prompt = prompt_with_registration.prompt
-        if not prompt.exists_in_storage():
-            return Prompt(
-                id=id,
-                variables_schema=JSON(
-                    # NOTE: avoid prompt.get_variables_schema() to prevent potential fetching from storage
-                    variables_definition_to_schema(prompt.variables_definition)
-                ),
-                versions=[],
-                default_version_id=None,
-                description=prompt_with_registration.description,
-                module=prompt_with_registration.module,
-            )
-        versions_dict = prompt.get_versions()
-        versions = [TKeyValue(key=k, value=v) for k, v in versions_dict.items()]
-        default_version_id: str = prompt.get_default_version_id()
-        variables_schema = prompt.get_variables_schema()
-        return Prompt(
-            id=id,
-            variables_schema=JSON(variables_schema),
-            versions=versions,
-            default_version_id=default_version_id,
-            description=prompt_with_registration.description,
-            module=prompt_with_registration.module,
-        )
-
 
 @strawberry.type
-class Mutation:
+class _Mutation:
     """GraphQL mutations."""
-
-    @strawberry.mutation
-    async def add_prompt_version(
-        self,
-        prompt_id: strawberry.ID,
-        version_id: str,
-        content: str,
-        set_as_default: bool = False,
-    ) -> str:
-        """Add a new version to an existing prompt.
-
-        Args:
-            prompt_id: The unique identifier of the prompt.
-            version_id: The identifier for the new version.
-            content: The content of the new prompt version.
-            set_as_default: Whether to set this version as the default.
-
-        Returns:
-            The updated BasePrompt object.
-        """
-        prompt_with_registration = get_prompt((str(prompt_id)))
-        if prompt_with_registration is None:
-            raise GraphQLError(f"Prompt with id '{prompt_id}' not found.")
-        prompt = prompt_with_registration.prompt
-        try:
-            prompt.append_version(
-                version_id=version_id,
-                content=content,
-                set_as_default=set_as_default,
-            )
-        except Exception as e:
-            raise GraphQLError(f"Failed to add prompt version: {str(e)}") from e
-        return "OK"
-
-    @strawberry.mutation
-    async def update_default_prompt_version(
-        self,
-        prompt_id: strawberry.ID,
-        default_version_id: str,
-    ) -> str:
-        """Update the default version of an existing prompt.
-
-        Args:
-            prompt_id: The unique identifier of the prompt.
-            default_version_id: The identifier of the version to set as default.
-
-        Returns:
-            True if the update was successful.
-        """
-        prompt_with_registration = get_prompt((str(prompt_id)))
-        if prompt_with_registration is None:
-            raise GraphQLError(f"Prompt with id '{prompt_id}' not found.")
-        prompt = prompt_with_registration.prompt
-        try:
-            prompt.update_default_version_id(default_version_id)
-        except Exception as e:
-            raise GraphQLError(
-                f"Failed to update default prompt version: {str(e)}"
-            ) from e
-        return "OK"
 
     @strawberry.mutation
     async def pause_run(
@@ -610,7 +460,7 @@ class Mutation:
         output_schema: Optional[JSON] = None,
         tools: Optional[JSON] = None,
         model_parameters: Optional[JSON] = None,
-    ) -> str:
+    ) -> JSON:
         """Run an LLM with the given prompt template and variables.
 
         Args:
@@ -640,7 +490,7 @@ class Mutation:
             # TODO: Support proper variable substitution in prompt template
             result = await agent.run()
 
-            return result.output
+            return JSON(result.output)
         except Exception as e:
             logger.error("Error running LLM: %s", str(e))
             raise GraphQLError(f"Failed to run LLM: {str(e)}") from e
@@ -845,6 +695,16 @@ class Subscription:
             # Clean up input queue
             if run_id in _input_queues:
                 del _input_queues[run_id]
+
+
+@strawberry.type
+class Query(_Query, PromptsQuery):
+    """Combined GraphQL query schema."""
+
+
+@strawberry.type
+class Mutation(_Mutation, PromptsMutation):
+    """Combined GraphQL mutation schema."""
 
 
 # Create the schema

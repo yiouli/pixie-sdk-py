@@ -53,13 +53,13 @@ def test_span_processor_in_pixie_only_mode(clean_env):
                 ]
                 assert langfuse_processors, "LangfuseSpanProcessor should be present"
                 lf_processor = langfuse_processors[0]
-                assert not lf_processor.server_export_enabled, (
-                    "Server export should be disabled in Pixie-only mode"
-                )
+                assert (
+                    not lf_processor.server_export_enabled
+                ), "Server export should be disabled in Pixie-only mode"
             elif isinstance(processor, LangfuseSpanProcessor):
-                assert not processor.server_export_enabled, (
-                    "Server export should be disabled in Pixie-only mode"
-                )
+                assert (
+                    not processor.server_export_enabled
+                ), "Server export should be disabled in Pixie-only mode"
 
 
 def test_pixie_execution_context_methods_available(clean_env):
@@ -75,9 +75,9 @@ def test_pixie_execution_context_methods_available(clean_env):
     ]
 
     for method in methods:
-        assert hasattr(execution_context, method), (
-            f"Method {method} should be available"
-        )
+        assert hasattr(
+            execution_context, method
+        ), f"Method {method} should be available"
 
 
 def test_span_creation_without_credentials(clean_env):
@@ -98,6 +98,6 @@ def test_placeholder_key_used(clean_env):
 
     # The client should use the placeholder key
     if client._resources and hasattr(client._resources, "public_key"):
-        assert client._resources.public_key == PIXIE_ONLY_MODE_PLACEHOLDER, (
-            "Should use PIXIE_ONLY_MODE_PLACEHOLDER constant"
-        )
+        assert (
+            client._resources.public_key == PIXIE_ONLY_MODE_PLACEHOLDER
+        ), "Should use PIXIE_ONLY_MODE_PLACEHOLDER constant"

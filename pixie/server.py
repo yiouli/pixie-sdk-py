@@ -4,10 +4,6 @@ import argparse
 import os
 import colorlog
 import logging
-import re
-import sys
-import importlib.util
-from pathlib import Path
 from urllib.parse import quote
 import dotenv
 import uvicorn
@@ -15,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from strawberry.fastapi import GraphQLRouter
 
-from pixie.prompts.storage import initialize_prompt_storage
+from pixie.prompts.file_watcher import discover_and_load_modules, init_prompt_storage
 from pixie.schema import schema
 
 
@@ -23,53 +19,6 @@ logger = logging.getLogger(__name__)
 
 # Global logging mode
 _logging_mode: str = "default"
-
-
-def discover_and_load_applications():
-    """Discover and load all Python files that use register_application.
-
-    This function recursively searches the current working directory for Python files
-    that import app and loads them to register applications.
-    """
-    from pixie.registry import clear_registry
-
-    # Clear registry before reloading to avoid duplicate registration errors
-    clear_registry()
-
-    cwd = Path.cwd()
-    # Recursively find all Python files
-    python_files = list(cwd.rglob("*.py"))
-
-    if not python_files:
-        return
-
-    # Add current directory to Python path if not already there
-    if str(cwd) not in sys.path:
-        sys.path.insert(0, str(cwd))
-
-    loaded_count = 0
-    for py_file in python_files:
-        # Skip __init__.py, private files, and anything in site-packages/venv
-        if py_file.name.startswith("_") or any(
-            part in py_file.parts
-            for part in ["site-packages", ".venv", "venv", "__pycache__"]
-        ):
-            continue
-
-        # Quick check if file imports register_application
-        content = py_file.read_text()
-        if not re.search(r"\b(?:@|)\bapp\b", content):
-            continue
-
-        # Load the module with a unique name based on path
-        relative_path = py_file.relative_to(cwd)
-        module_name = str(relative_path.with_suffix("")).replace("/", ".")
-        spec = importlib.util.spec_from_file_location(module_name, py_file)
-        if spec and spec.loader:
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[module_name] = module
-            spec.loader.exec_module(module)
-            loaded_count += 1
 
 
 def setup_logging(mode: str = "default"):
@@ -192,19 +141,18 @@ def create_app() -> FastAPI:
     # Setup logging first (use global logging mode)
     setup_logging(_logging_mode)
 
-    # Discover and load applications on every app creation (including reloads)
-    discover_and_load_applications()
+    discover_and_load_modules()
 
     enable_instrumentations()
 
     dotenv.load_dotenv(os.getcwd() + "/.env")
-    storage_directory = os.getenv("PIXIE_PROMPT_STORAGE_DIR", ".pixie/prompts")
-    initialize_prompt_storage(storage_directory)
+    lifespan = init_prompt_storage()
 
     app = FastAPI(
         title="Pixie SDK Server",
         description="Server for running AI applications and agents",
         version="0.1.0",
+        lifespan=lifespan,
     )
 
     # Add CORS middleware

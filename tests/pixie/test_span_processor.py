@@ -9,11 +9,11 @@ from unittest.mock import Mock, patch
 from opentelemetry.trace import format_span_id, format_trace_id
 
 import pixie.execution_context as exec_ctx
-from pixie.prompts.prompt import BasePrompt, PromptVariables
+from pixie.prompts.prompt import BasePrompt, Variables
 from pixie.types import PromptForSpan
 
 
-class PromptTestVars(PromptVariables):
+class PromptTestVars(Variables):
     """Test variables class for prompt testing."""
 
     name: str

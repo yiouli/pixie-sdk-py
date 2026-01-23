@@ -10,7 +10,7 @@ Use an `asyncio.Queue` to emit outputs from inside tools:
 import asyncio
 from dataclasses import dataclass
 from pydantic_ai import Agent, RunContext
-from pixie import app, PixieGenerator
+from pixie.sdk import app, PixieGenerator
 
 @dataclass
 class Deps:

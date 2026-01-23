@@ -7,7 +7,7 @@ Learn how to register your AI application with Pixie using the `@app` decorator 
 All Pixie applications must be decorated with `@app`. This decorator enables automatic discovery, observability, and interactivity:
 
 ```python
-from pixie import app
+from pixie.sdk import app
 
 @app
 async def my_application(input_data: str) -> str:
@@ -59,7 +59,7 @@ Pixie supports two handler patterns depending on your application's needs:
 For simple, single-turn applications that return a result:
 
 ```python
-from pixie import app
+from pixie.sdk import app
 
 @app
 async def weather_lookup(city: str) -> str:
@@ -79,7 +79,7 @@ async def weather_lookup(city: str) -> str:
 For multi-turn, interactive, or streaming applications:
 
 ```python
-from pixie import app, PixieGenerator
+from pixie.sdk import app, PixieGenerator
 
 @app
 async def chat() -> PixieGenerator[str, None]:

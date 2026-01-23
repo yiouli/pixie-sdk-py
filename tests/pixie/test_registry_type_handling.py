@@ -55,7 +55,7 @@ def test_extract_input_hint_with_pydantic_model():
 
 def test_register_callable_with_none_type():
     """Test that callable with None type gets correct schema."""
-    from pixie import app
+    from pixie.sdk import app
 
     @app
     async def test_app(_: None) -> str:
@@ -67,14 +67,14 @@ def test_register_callable_with_none_type():
 
     item = _registry[registry_key]
     # Input schema should be {"type": "null"}
-    assert item.input_type == {"type": "null"}, (
-        f"Expected null schema, got {item.input_type}"
-    )
+    assert item.input_type == {
+        "type": "null"
+    }, f"Expected null schema, got {item.input_type}"
 
 
 def test_register_callable_with_no_type():
     """Test that callable with no type hint gets None schema."""
-    from pixie import app
+    from pixie.sdk import app
 
     @app
     async def test_app_no_hint(x):
@@ -91,7 +91,7 @@ def test_register_callable_with_no_type():
 
 def test_register_callable_with_string():
     """Test that callable with str type gets correct schema."""
-    from pixie import app
+    from pixie.sdk import app
 
     @app
     async def test_app_str(query: str) -> str:
@@ -103,14 +103,14 @@ def test_register_callable_with_string():
 
     item = _registry[registry_key]
     # Input schema should be {"type": "string"}
-    assert item.input_type == {"type": "string"}, (
-        f"Expected string schema, got {item.input_type}"
-    )
+    assert item.input_type == {
+        "type": "string"
+    }, f"Expected string schema, got {item.input_type}"
 
 
 def test_register_callable_with_pydantic_model():
     """Test that callable with Pydantic model returns model class."""
-    from pixie import app
+    from pixie.sdk import app
 
     @app
     async def test_app_model(data: TestModel) -> str:
@@ -122,14 +122,14 @@ def test_register_callable_with_pydantic_model():
 
     item = _registry[registry_key]
     # Input type should be the model class itself
-    assert item.input_type is TestModel, (
-        f"Expected TestModel class, got {item.input_type}"
-    )
+    assert (
+        item.input_type is TestModel
+    ), f"Expected TestModel class, got {item.input_type}"
 
 
 def test_register_generator_with_none_type():
     """Test that generator with None type gets correct schema."""
-    from pixie import app
+    from pixie.sdk import app
 
     @app
     async def test_gen(_: None) -> PixieGenerator[str, str]:
@@ -143,9 +143,9 @@ def test_register_generator_with_none_type():
 
     item = _registry[registry_key]
     # Input schema should be {"type": "null"}
-    assert item.input_type == {"type": "null"}, (
-        f"Expected null schema, got {item.input_type}"
-    )
+    assert item.input_type == {
+        "type": "null"
+    }, f"Expected null schema, got {item.input_type}"
 
 
 def test_register_generator_output_types():
@@ -155,7 +155,7 @@ def test_register_generator_output_types():
     don't map 1:1 to what gets extracted from AsyncGenerator.
     We're testing the actual behavior here.
     """
-    from pixie import app
+    from pixie.sdk import app
 
     @app
     async def test_gen_typed(query: str) -> PixieGenerator[str, int]:
@@ -169,20 +169,20 @@ def test_register_generator_output_types():
 
     item = _registry[registry_key]
     # Input schema should be string
-    assert item.input_type == {"type": "string"}, (
-        f"Expected string schema, got {item.input_type}"
-    )
+    assert item.input_type == {
+        "type": "string"
+    }, f"Expected string schema, got {item.input_type}"
     # Output (yield type) is a complex Union and not extracted
     assert item.output_type is None, f"Expected None output, got {item.output_type}"
     # User input (send type) is extracted from the AsyncGenerator send type
-    assert item.user_input_type == {"type": "integer"}, (
-        f"Expected integer user_input (send type), got {item.user_input_type}"
-    )
+    assert item.user_input_type == {
+        "type": "integer"
+    }, f"Expected integer user_input (send type), got {item.user_input_type}"
 
 
 def test_return_type_none():
     """Test that return type of None is handled correctly."""
-    from pixie import app
+    from pixie.sdk import app
 
     @app
     async def test_returns_none(x: str) -> None:
@@ -194,14 +194,14 @@ def test_return_type_none():
 
     item = _registry[registry_key]
     # Output schema should be {"type": "null"}
-    assert item.output_type == {"type": "null"}, (
-        f"Expected null output schema, got {item.output_type}"
-    )
+    assert item.output_type == {
+        "type": "null"
+    }, f"Expected null output schema, got {item.output_type}"
 
 
 def test_optional_input_type():
     """Test that Optional[str] is handled correctly."""
-    from pixie import app
+    from pixie.sdk import app
 
     @app
     async def test_optional(query: Optional[str]) -> str:
@@ -232,7 +232,7 @@ def test_extract_input_hint_no_params():
 
 def test_register_no_arg_callable():
     """Test that no-arg callable gets correct null schema."""
-    from pixie import app
+    from pixie.sdk import app
 
     @app
     async def test_no_args() -> str:
@@ -244,14 +244,14 @@ def test_register_no_arg_callable():
 
     item = _registry[registry_key]
     # Input schema should be {"type": "null"} for no-arg functions
-    assert item.input_type == {"type": "null"}, (
-        f"Expected null schema for no-arg function, got {item.input_type}"
-    )
+    assert item.input_type == {
+        "type": "null"
+    }, f"Expected null schema for no-arg function, got {item.input_type}"
 
 
 def test_register_no_arg_generator():
     """Test that no-arg generator gets correct null schema."""
-    from pixie import app
+    from pixie.sdk import app
 
     @app
     async def test_no_args_gen() -> PixieGenerator[str, None]:
@@ -263,6 +263,6 @@ def test_register_no_arg_generator():
 
     item = _registry[registry_key]
     # Input schema should be {"type": "null"} for no-arg generators
-    assert item.input_type == {"type": "null"}, (
-        f"Expected null schema for no-arg generator, got {item.input_type}"
-    )
+    assert item.input_type == {
+        "type": "null"
+    }, f"Expected null schema for no-arg generator, got {item.input_type}"

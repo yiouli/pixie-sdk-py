@@ -7,7 +7,7 @@ Learn how to build multi-turn, interactive applications that can request user in
 Use `yield InputRequired(type)` to pause execution and request user input:
 
 ```python
-from pixie import app, PixieGenerator, InputRequired
+from pixie.sdk import app, PixieGenerator, InputRequired
 
 @app
 async def my_interactive_app(_: None) -> PixieGenerator[str, str]:

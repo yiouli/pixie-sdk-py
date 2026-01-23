@@ -16,7 +16,7 @@ Using Pydantic models instead of plain types provides:
 
 ```python
 from pydantic import BaseModel, Field
-from pixie import app
+from pixie.sdk import app
 
 class SearchQuery(BaseModel):
     """Search configuration."""
@@ -253,7 +253,7 @@ _(Placeholder for screenshot)_
 You can use Pydantic models with generators too:
 
 ```python
-from pixie import PixieGenerator
+from pixie.sdk import PixieGenerator
 
 class Progress(BaseModel):
     """Progress update."""
