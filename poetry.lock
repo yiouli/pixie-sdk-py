@@ -756,7 +756,6 @@ files = [
     {file = "colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"},
     {file = "colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44"},
 ]
-markers = {main = "platform_system == \"Windows\" or sys_platform == \"win32\""}
 
 [[package]]
 name = "colorlog"
@@ -1412,7 +1411,7 @@ version = "0.0.51"
 description = "Calculate prices for calling LLM inference APIs."
 optional = false
 python-versions = ">=3.9"
-groups = ["dev"]
+groups = ["main", "dev"]
 files = [
     {file = "genai_prices-0.0.51-py3-none-any.whl", hash = "sha256:4e0f5892a7ec757d59f343c5dbf9675b0f9e8ed65f4fe26ac7df600e34788ca0"},
     {file = "genai_prices-0.0.51.tar.gz", hash = "sha256:003da98172641c94d7516b0fd8cec5ecf2dbab64a884996c26cc194c5e0b592e"},
@@ -1526,7 +1525,7 @@ version = "1.15.0"
 description = "Signatures for entire Python programs. Extract the structure, the frame, the skeleton of your project, to generate API documentation or find breaking changes in your API."
 optional = false
 python-versions = ">=3.10"
-groups = ["dev"]
+groups = ["main", "dev"]
 files = [
     {file = "griffe-1.15.0-py3-none-any.whl", hash = "sha256:6f6762661949411031f5fcda9593f586e6ce8340f0ba88921a0f2ef7a81eb9a3"},
     {file = "griffe-1.15.0.tar.gz", hash = "sha256:7726e3afd6f298fbc3696e67958803e7ac843c1cfe59734b6251a40cdbfb5eea"},
@@ -2541,7 +2540,7 @@ version = "4.19.0"
 description = "Shim for the Logfire SDK which does nothing unless Logfire is installed"
 optional = false
 python-versions = ">=3.8"
-groups = ["dev"]
+groups = ["main", "dev"]
 files = [
     {file = "logfire_api-4.19.0-py3-none-any.whl", hash = "sha256:98c47e4995ab735791070529263f7cc19d07807204552be1f449bf1045f23ebc"},
     {file = "logfire_api-4.19.0.tar.gz", hash = "sha256:a38b3b42160df8c02d3cb722cf2d6a43d3a633e7b8ee832d01ac9a9a41fc0c76"},
@@ -3564,14 +3563,14 @@ pygments = ">=2.12.0"
 
 [[package]]
 name = "pixie-prompts"
-version = "0.1.1"
+version = "0.1.2"
 description = "Code-first, type-safe prompt management"
 optional = false
 python-versions = "<4.0,>=3.10"
 groups = ["main"]
 files = [
-    {file = "pixie_prompts-0.1.1-py3-none-any.whl", hash = "sha256:c94d807b8c9514e29ee92ad23cd5e48f4d2130fae784fa6ef6a5c242013833c6"},
-    {file = "pixie_prompts-0.1.1.tar.gz", hash = "sha256:966ea25a6308fa110c86a402bab9d2f4d0b47a4181e1a596ef98c20964f62513"},
+    {file = "pixie_prompts-0.1.2-py3-none-any.whl", hash = "sha256:e502bb6d1a4f5beadcd44de7a7e4c0bd623886d9319db26c2960170af4876355"},
+    {file = "pixie_prompts-0.1.2.tar.gz", hash = "sha256:1337c3b26a69389cee2ad9705407827511befcb0df7401b2831719f501690467"},
 ]
 
 [package.dependencies]
@@ -3581,12 +3580,13 @@ fastapi = {version = ">=0.128.0", optional = true, markers = "extra == \"server\
 jinja2 = ">=3.1.6,<4.0.0"
 jsonsubschema = ">=0.0.7,<0.0.8"
 pydantic = ">=2.12.5,<3.0.0"
+pydantic-ai-slim = {version = ">=1.39.0", optional = true, markers = "extra == \"server\""}
 strawberry-graphql = {version = ">=0.288.1", optional = true, markers = "extra == \"server\""}
 uvicorn = {version = ">=0.40.0", optional = true, markers = "extra == \"server\""}
 watchdog = {version = ">=6.0.0", optional = true, markers = "extra == \"server\""}
 
 [package.extras]
-server = ["colorlog (>=6.10.1)", "dotenv (>=0.9.9)", "fastapi (>=0.128.0)", "strawberry-graphql (>=0.288.1)", "uvicorn (>=0.40.0)", "watchdog (>=6.0.0)"]
+server = ["colorlog (>=6.10.1)", "dotenv (>=0.9.9)", "fastapi (>=0.128.0)", "pydantic-ai-slim (>=1.39.0)", "strawberry-graphql (>=0.288.1)", "uvicorn (>=0.40.0)", "watchdog (>=6.0.0)"]
 
 [[package]]
 name = "platformdirs"
@@ -4037,7 +4037,7 @@ version = "1.46.0"
 description = "Agent Framework / shim to use Pydantic with LLMs, slim package"
 optional = false
 python-versions = ">=3.10"
-groups = ["dev"]
+groups = ["main", "dev"]
 files = [
     {file = "pydantic_ai_slim-1.46.0-py3-none-any.whl", hash = "sha256:2494ca9be6009a5e27db09fecb1ab49f0b569a6e7fcd2eda067262bcbd497856"},
     {file = "pydantic_ai_slim-1.46.0.tar.gz", hash = "sha256:8925bc2c54b6c1f5168142d703ecfdba65162d08dae9908bf583932fdf631d09"},
@@ -4276,7 +4276,7 @@ version = "1.46.0"
 description = "Graph and state machine library"
 optional = false
 python-versions = ">=3.10"
-groups = ["dev"]
+groups = ["main", "dev"]
 files = [
     {file = "pydantic_graph-1.46.0-py3-none-any.whl", hash = "sha256:cdbc609df49e2eeb9d0d4e43f87288b79ed9d021157ba639e71d862da4b71443"},
     {file = "pydantic_graph-1.46.0.tar.gz", hash = "sha256:ef0d316c95bdc37af20bdf3c343fb1caee2c8b536245d712c3ed46af0734319e"},
@@ -6333,4 +6333,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<4.0"
-content-hash = "233b8b80cdcf58469d1e2c77ee72186ea77960a41f0e47565506168845cb7ee8"
+content-hash = "fc6d16c9eb1b4db2ebb8416c98564afd95c72ae7ce0b10bebe55e94335523dc7"
