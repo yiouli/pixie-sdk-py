@@ -41,3 +41,5 @@ docs/build/
 docs/.docusaurus/
 docs/.cache-loader/
 docs/yarn.lock
+
+poetry.lock

@@ -3,28 +3,74 @@ name: Daily Release and Publish
 on:
   schedule:
     # Run at 4am PST (12pm UTC) every day
-    - cron: '0 12 * * *'
-  workflow_dispatch:  # Allow manual triggering
+    - cron: "0 12 * * *"
+  workflow_dispatch: # Allow manual triggering
 
 jobs:
   release-and-publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # Required for creating tags
-      id-token: write  # Required for trusted publishing
+      contents: write # Required for creating tags
+      id-token: write # Required for trusted publishing
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Required for setuptools-scm to work properly
+          fetch-depth: 0 # Required for setuptools-scm to work properly
+
+      - name: Check for commits since last successful daily release
+        id: release_guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          WORKFLOW_FILE="daily-release.yml"
+          BRANCH="${{ github.ref_name || 'main' }}"
+          LAST_SUCCESS_SHA=$(gh api \
+            repos/$GITHUB_REPOSITORY/actions/workflows/$WORKFLOW_FILE/runs \
+            -f status=success \
+            -f branch="$BRANCH" \
+            -f per_page=1 \
+            --jq '.workflow_runs[0].head_sha // ""')
+
+          echo "Last successful run commit: ${LAST_SUCCESS_SHA:-none found}"
+
+          if [[ -z "$LAST_SUCCESS_SHA" ]]; then
+            echo "No prior successful runs detected; continuing with release."
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git cat-file -e "$LAST_SUCCESS_SHA^{commit}" 2>/dev/null; then
+            echo "Last successful run commit not present locally; continuing with release."
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "last_success_sha=$LAST_SUCCESS_SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          COMMITS_SINCE=$(git rev-list --count "$LAST_SUCCESS_SHA"..HEAD)
+          echo "Commits since last successful run: $COMMITS_SINCE"
+
+          if [[ "$COMMITS_SINCE" -gt 0 ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "last_success_sha=$LAST_SUCCESS_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Skip release when no new commits
+        if: steps.release_guard.outputs.should_release != 'true'
+        run: echo "No new commits since last successful daily release. Skipping build and publish."
 
       - name: Set up Python
+        if: steps.release_guard.outputs.should_release == 'true'
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install Poetry
+        if: steps.release_guard.outputs.should_release == 'true'
         uses: snok/install-poetry@v1
         with:
           version: latest
@@ -32,11 +78,13 @@ jobs:
           virtualenvs-in-project: true
 
       - name: Install dependencies
+        if: steps.release_guard.outputs.should_release == 'true'
         run: |
           poetry install --only main --no-interaction
 
       - name: Generate version with setuptools-scm
         id: version
+        if: steps.release_guard.outputs.should_release == 'true'
         run: |
           pip install setuptools-scm
           VERSION=$(python -m setuptools_scm)
@@ -46,17 +94,20 @@ jobs:
           echo "Clean version for PyPI: $CLEAN_VERSION"
           echo "version=$CLEAN_VERSION" >> $GITHUB_OUTPUT
           echo "full_version=$VERSION" >> $GITHUB_OUTPUT
-      
+
       - name: Update Poetry version
+        if: steps.release_guard.outputs.should_release == 'true'
         run: |
           poetry version ${{ steps.version.outputs.version }}
           echo "Updated pyproject.toml version to: ${{ steps.version.outputs.version }}"
-      
+
       - name: Build package
+        if: steps.release_guard.outputs.should_release == 'true'
         run: |
           poetry build
 
       - name: Publish to TestPyPI
+        if: steps.release_guard.outputs.should_release == 'true'
         env:
           POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_API_TOKEN }}
         run: |

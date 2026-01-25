@@ -3,8 +3,6 @@ name: Publish on Version Change
 on:
   push:
     branches: ["main"]
-    paths:
-      - "pyproject.toml"
   workflow_dispatch:
 
 jobs:
