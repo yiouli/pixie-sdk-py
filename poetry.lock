@@ -3563,14 +3563,14 @@ pygments = ">=2.12.0"
 
 [[package]]
 name = "pixie-prompts"
-version = "0.1.2"
+version = "0.1.4"
 description = "Code-first, type-safe prompt management"
 optional = false
 python-versions = "<4.0,>=3.10"
 groups = ["main"]
 files = [
-    {file = "pixie_prompts-0.1.2-py3-none-any.whl", hash = "sha256:e502bb6d1a4f5beadcd44de7a7e4c0bd623886d9319db26c2960170af4876355"},
-    {file = "pixie_prompts-0.1.2.tar.gz", hash = "sha256:1337c3b26a69389cee2ad9705407827511befcb0df7401b2831719f501690467"},
+    {file = "pixie_prompts-0.1.4-py3-none-any.whl", hash = "sha256:92fbee15b0168bd0c7ef33a9e72f3f6b98d101a53857a10b4f7a0c087ac9420d"},
+    {file = "pixie_prompts-0.1.4.tar.gz", hash = "sha256:a08a4bb7d55ab6e7c473e62f95c3f62fd192d1a8347da21db0f404e2e79abdda"},
 ]
 
 [package.dependencies]
@@ -6333,4 +6333,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<4.0"
-content-hash = "fc6d16c9eb1b4db2ebb8416c98564afd95c72ae7ce0b10bebe55e94335523dc7"
+content-hash = "94ce5779638ce5dc21a39ff0a1a95548da03c0397f60a024c042d9515eb81fb9"
