@@ -1,4 +1,4 @@
-name: Publish on Version Bump
+name: Publish on Version Change
 
 on:
   push:
@@ -8,71 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  detect-version-bump:
-    runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.detect.outputs.changed }}
-      version: ${{ steps.detect.outputs.version }}
-      previous: ${{ steps.detect.outputs.previous }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - id: detect
-        name: Detect version bump
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import os
-          import subprocess
-          import tomllib
-          from pathlib import Path
-
-          out = Path(os.environ["GITHUB_OUTPUT"])
-
-          def file_changed() -> bool:
-              try:
-                  subprocess.run(
-                      ["git", "diff", "--quiet", "HEAD^", "HEAD", "--", "pyproject.toml"],
-                      check=True,
-                      stdout=subprocess.DEVNULL,
-                      stderr=subprocess.DEVNULL,
-                  )
-                  return False
-              except subprocess.CalledProcessError:
-                  return True
-              except Exception:
-                  return True
-
-          current = tomllib.loads(Path("pyproject.toml").read_text())
-          current_version = current["tool"]["poetry"]["version"]
-
-          try:
-              prev_text = subprocess.check_output(
-                  ["git", "show", "HEAD^:pyproject.toml"], text=True
-              )
-              previous = tomllib.loads(prev_text)["tool"]["poetry"]["version"]
-          except subprocess.CalledProcessError:
-              previous = None
-
-          changed = previous is not None and current_version != previous and file_changed()
-
-          with out.open("a") as fh:
-              fh.write(f"version={current_version}\n")
-              fh.write(f"previous={previous or ''}\n")
-              fh.write(f"changed={'true' if changed else 'false'}\n")
-          PY
-
   publish-and-release:
-    needs: detect-version-bump
-    if: needs.detect-version-bump.outputs.changed == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -94,12 +30,27 @@ jobs:
           virtualenvs-create: true
           virtualenvs-in-project: true
 
+      - id: version
+        name: Read version
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          current = tomllib.loads(Path("pyproject.toml").read_text())
+          version = current["tool"]["poetry"]["version"]
+          print(f"version: {version}")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a") as fh:
+              fh.write(f"version={version}\n")
+          PY
+
       - id: release_check
         name: Skip if release already exists
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v${{ needs.detect-version-bump.outputs.version }}"
+          TAG="v${{ steps.version.outputs.version }}"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
@@ -123,5 +74,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v${{ needs.detect-version-bump.outputs.version }}"
+          TAG="v${{ steps.version.outputs.version }}"
           gh release create "$TAG" --title "$TAG" --notes "Automated release for $TAG"
