@@ -26,13 +26,16 @@ jobs:
         run: |
           set -euo pipefail
           WORKFLOW_FILE="daily-release.yml"
-          BRANCH="${{ github.ref_name || 'main' }}"
-          LAST_SUCCESS_SHA=$(gh api \
+          BRANCH="${{ github.ref_name }}"
+          : "${BRANCH:=main}"
+
+          RESPONSE=$(gh api \
             repos/$GITHUB_REPOSITORY/actions/workflows/$WORKFLOW_FILE/runs \
             -f status=success \
             -f branch="$BRANCH" \
-            -f per_page=1 \
-            --jq '.workflow_runs[0].head_sha // ""')
+            -f per_page=1 2>/dev/null || true)
+
+          LAST_SUCCESS_SHA=$(echo "$RESPONSE" | jq -r '.workflow_runs[0].head_sha // ""')
 
           echo "Last successful run commit: ${LAST_SUCCESS_SHA:-none found}"
 
