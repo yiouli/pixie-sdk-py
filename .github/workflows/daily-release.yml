@@ -98,14 +98,14 @@ jobs:
         if: steps.release_guard.outputs.should_release == 'true'
         id: dependency_changes
         run: |
-          if git diff --quiet pyproject.toml poetry.lock; then
+          if git diff --quiet pyproject.toml; then
             echo "No dependency updates needed"
             echo "has_changes=false" >> $GITHUB_OUTPUT
           else
             echo "Dependency updates found"
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add pyproject.toml poetry.lock
+            git add pyproject.toml
             git commit -m "chore: update pixie-prompts to ${{ steps.pixie-prompts-version.outputs.latest }}"
             git push
             echo "has_changes=true" >> $GITHUB_OUTPUT
