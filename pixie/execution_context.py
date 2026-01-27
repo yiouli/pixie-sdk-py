@@ -11,7 +11,7 @@ from pydantic import JsonValue
 
 from pixie.types import (
     AppRunCancelled,
-    AppRunStatus,
+    RunStatus,
     BreakpointDetail,
     BreakpointTiming,
     BreakpointType,
@@ -31,7 +31,7 @@ _execution_context: ContextVar[Optional[ExecutionContext]] = ContextVar(
 _active_runs: Dict[str, ExecutionContext] = {}
 
 # Logger
-logger = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)
 
 
 def init_run(run_id: str) -> ExecutionContext:
@@ -56,7 +56,7 @@ def init_run(run_id: str) -> ExecutionContext:
     )
     _execution_context.set(ctx)
     _active_runs[run_id] = ctx
-    logger.info("Initialized execution context for run_id=%s", run_id)
+    _logger.info("Initialized execution context for run_id=%s", run_id)
     return ctx
 
 
@@ -108,7 +108,7 @@ def unregister_run(run_id: str) -> None:
     """
     if run_id in _active_runs:
         del _active_runs[run_id]
-        logger.info("Unregistered run: %s", run_id)
+        _logger.info("Unregistered run: %s", run_id)
 
 
 def get_run_context(run_id: str) -> Optional[ExecutionContext]:
@@ -124,7 +124,7 @@ def get_run_context(run_id: str) -> Optional[ExecutionContext]:
 
 
 def emit_status_update(
-    status: AppRunStatus | None,
+    status: RunStatus | None,
     user_input_requirement: InputRequired | None = None,
     user_input: Optional[JsonValue] = None,
     data: Optional[JsonValue] = None,
@@ -150,7 +150,7 @@ def emit_status_update(
     if ctx:
         if status is None:
             update = None
-            logger.debug("Emitted terminal status update for run %s", ctx.run_id)
+            _logger.debug("Emitted terminal status update for run %s", ctx.run_id)
         else:
             update = AppRunUpdate(
                 run_id=ctx.run_id,
@@ -162,7 +162,7 @@ def emit_status_update(
                 prompt_for_span=prompt_for_span,
             )
             update.set_user_input_requirement(user_input_requirement)
-            logger.debug(
+            _logger.debug(
                 "Emitted status update: %s for run %s", update.status, ctx.run_id
             )
         ctx.status_queue.sync_q.put(update)
@@ -196,7 +196,7 @@ def set_breakpoint(
         breakpoint_types=list(types),
     )
     ctx.breakpoint_config = breakpt_config
-    logger.info(
+    _logger.info(
         "Breakpoint set for run_id=%s, timing=%s, types=%s",
         run_id,
         breakpt_config.timing,
@@ -216,22 +216,22 @@ def wait_for_resume() -> None:
     """
     ctx = _execution_context.get()
     if ctx is None:
-        logger.warning(
+        _logger.warning(
             "No execution context found in current context, cannot wait for resume"
         )
         return
 
-    logger.debug("Waiting for resume for run_id=%s, waiting for resume...", ctx.run_id)
+    _logger.debug("Waiting for resume for run_id=%s, waiting for resume...", ctx.run_id)
     ctx.resume_event.wait()
     # Check one more time after waking up
     if ctx.cancelled:
-        logger.info("Run cancelled during pause for run_id=%s", ctx.run_id)
+        _logger.info("Run cancelled during pause for run_id=%s", ctx.run_id)
         raise AppRunCancelled(f"Run {ctx.run_id} was cancelled")
 
     ctx.breakpoint_config = None
-    logger.debug("Cleared pause config for run %s", ctx.run_id)
+    _logger.debug("Cleared pause config for run %s", ctx.run_id)
     ctx.resume_event.clear()
-    logger.info("Resumed for run_id=%s", ctx.run_id)
+    _logger.info("Resumed for run_id=%s", ctx.run_id)
 
 
 def resume_run(run_id: str) -> bool:
@@ -252,14 +252,14 @@ def resume_run(run_id: str) -> bool:
 
     if ctx.resume_event.is_set():
         # Already resumed or not paused
-        logger.info(
+        _logger.info(
             "Run_id=%s is not paused or already resumed",
             run_id,
         )
         return False
 
     ctx.resume_event.set()
-    logger.debug("Trigger resume for run_id=%s", run_id)
+    _logger.debug("Trigger resume for run_id=%s", run_id)
     return True
 
 
@@ -277,17 +277,17 @@ def cancel_run() -> bool:
     """
     ctx = _execution_context.get()
     if not ctx:
-        logger.warning(
+        _logger.warning(
             "No execution context found in current context, cannot cancel run"
         )
         return False
 
     if ctx.cancelled:
-        logger.info("Run_id=%s is already cancelled", ctx.run_id)
+        _logger.info("Run_id=%s is already cancelled", ctx.run_id)
         return False
 
     ctx.cancelled = True
     ctx.resume_event.set()
-    logger.info("Resume run and set cancellation flag for run_id=%s", ctx.run_id)
+    _logger.info("Resume run and set cancellation flag for run_id=%s", ctx.run_id)
 
     return True

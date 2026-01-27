@@ -416,7 +416,8 @@ def _register_callable(
         output_schema = (
             extract_schema_from_type(output_hint) if output_hint is not None else None
         )
-    except (TypeError, ValueError, AttributeError):
+    except (TypeError, ValueError, AttributeError) as e:
+        logger.error("Failed to register application %s: %s", registry_key, e)
         pass
 
     stream_handler = _wrap_callable_handler(func, input_model_type)
@@ -475,7 +476,8 @@ def _register_generator(
         )
         # Extract any type hints (for schema generation)
         output_hint, user_input_hint = _get_async_generator_hints(return_hint)
-    except (TypeError, ValueError, AttributeError):
+    except (TypeError, ValueError, AttributeError) as e:
+        logger.error("Failed to register application %s: %s", registry_key, e)
         pass
 
     # For schema: prefer type hints, fall back to model types

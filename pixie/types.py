@@ -105,7 +105,7 @@ class BreakpointDetail(BaseModel):
     span_attributes: Optional[dict] = None
 
 
-AppRunStatus = Literal[
+RunStatus = Literal[
     "running",
     "paused",
     "completed",
@@ -115,15 +115,15 @@ AppRunStatus = Literal[
 ]
 
 # TypeVars for decorator overloads
-_UserInputType = TypeVar(
-    "_UserInputType", bound=BaseModel | JsonValue
+InputType = TypeVar(
+    "InputType", bound=BaseModel | JsonValue
 )  # Input parameter type (covariant-like)
 _OutputType = TypeVar(
     "_OutputType", bound=BaseModel | JsonValue
 )  # Return type (covariant)
 
 
-class InputRequired(Generic[_UserInputType]):
+class InputRequired(Generic[InputType]):
     """Represents a requirement for user input during application execution.
 
     This is yielded by a generator application to request input from the user.
@@ -132,7 +132,7 @@ class InputRequired(Generic[_UserInputType]):
         expected_type: The type of input expected from the user.
     """
 
-    def __init__(self, expected_type: type[_UserInputType]) -> None:
+    def __init__(self, expected_type: type[InputType]) -> None:
         """Initialize a user input requirement.
 
         Args:
@@ -157,25 +157,8 @@ class PromptForSpan(BaseModel):
     variables: Optional[dict[str, JsonValue]] = None
 
 
-class AppRunUpdate(BaseModel):
-    """Status update from running an application.
-
-    Attributes:
-        run_id: Unique identifier of the application run.
-        status: Current status of the run.
-        user_input: Optional user input that was received.
-        data: Optional output data from the application.
-        breakpoint: Optional details about a breakpoint if execution paused.
-        trace: Optional trace data for observability.
-    """
-
-    run_id: str
-    status: AppRunStatus
+class InputMixin(BaseModel):
     user_input: Optional[JsonValue] = None
-    data: Optional[JsonValue] = None
-    breakpoint: Optional[BreakpointDetail] = None
-    trace: Optional[TraceDataType] = None
-    prompt_for_span: Optional[PromptForSpan] = None
     _user_input_requirement: InputRequired | None = PrivateAttr(default=None)
 
     def set_user_input_requirement(
@@ -197,6 +180,30 @@ class AppRunUpdate(BaseModel):
             The user input requirement or None.
         """
         return self._user_input_requirement
+
+
+class OutputMixin(BaseModel):
+    data: Optional[JsonValue] = None
+    trace: Optional[TraceDataType] = None
+    prompt_for_span: Optional[PromptForSpan] = None
+
+
+class AppRunUpdate(OutputMixin, InputMixin):
+    """Status update from running an application.
+
+    Attributes:
+        run_id: Unique identifier of the application run.
+        status: Current status of the run.
+        user_input: Optional user input that was received.
+        data: Optional output data from the application.
+        breakpoint: Optional[BreakpointDetail] = None
+        trace: Optional[TraceDataType] = None
+        prompt_for_span: Optional[PromptForSpan] = None
+    """
+
+    run_id: str
+    status: RunStatus
+    breakpoint: Optional[BreakpointDetail] = None
 
 
 @dataclass
@@ -227,7 +234,5 @@ class AppRunCancelled(Exception):
     """
 
 
-PixieGenerator = AsyncGenerator[
-    str | _OutputType | InputRequired[_UserInputType], _UserInputType
-]
+PixieGenerator = AsyncGenerator[str | _OutputType | InputRequired[InputType], InputType]
 """Async generator that yields streaming token, output or input requirements and receives user input."""

@@ -541,8 +541,8 @@ class Subscription:
 
         task: Optional[asyncio.Task[None]] = None
         cancel: Optional[Callable[[], bool]] = None
+        ctx = exec_ctx.init_run(run_id)
         try:
-            ctx = exec_ctx.init_run(run_id)
             status_queue = ctx.status_queue
 
             # Send initial running status
