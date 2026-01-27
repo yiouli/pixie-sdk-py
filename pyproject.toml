@@ -38,7 +38,7 @@ dotenv = ">=0.9.9"
 janus = ">=2.0.0"
 websockets = ">=15.0.1"
 docstring-parser = "^0.17.0"
-pixie-prompts = {version = ">=0.1.7", extras = ["server"]}
+pixie-prompts = {version = "^0.1.7", extras = ["server"]}
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=7.4,<9.0"
