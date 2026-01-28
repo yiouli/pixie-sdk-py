@@ -4,7 +4,7 @@ import threading
 from dataclasses import dataclass
 from typing import AsyncGenerator, Generic, Literal, Optional, Any, TypeVar
 import janus
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel, JsonValue, TypeAdapter
 
 
 # Forward import to avoid circular dependency
@@ -130,45 +130,33 @@ class InputRequired(Generic[InputType]):
     Can be initialized with either a type hint or a JSON schema dict directly.
 
     Attributes:
-        expected_type: The type of input expected from the user (None if schema provided).
-        json_schema: The JSON schema for the expected input (None if type provided).
+        expected_type: The type of input expected from the user.
+        json_schema: The JSON schema for the expected input, if provided directly when expected_type is an dict.
     """
 
     def __init__(
         self,
-        expected_type_or_schema: type[InputType] | dict[str, Any],
+        expected_type: type[InputType],
+        *,
+        expected_schema: dict[str, Any] | None = None,
     ) -> None:
-        """Initialize a user input requirement.
+        """Initialize a user input requirement."""
+        self.expected_type = expected_type
+        self.json_schema = expected_schema
 
-        Args:
-            expected_type_or_schema: Either a type hint (e.g., str, int, BaseModel)
-                or a JSON schema dict directly.
-        """
-        if isinstance(expected_type_or_schema, dict):
-            # Direct JSON schema provided
-            self.expected_type: type[InputType] | None = None
-            self.json_schema: dict[str, Any] | None = expected_type_or_schema
-        else:
-            # Type hint provided
-            self.expected_type = expected_type_or_schema
-            self.json_schema = None
-
-    def get_json_schema(self) -> dict[str, Any] | None:
+    def get_json_schema(self) -> dict[str, Any]:
         """Get the JSON schema for this input requirement.
 
         Returns:
             The JSON schema dict, either directly provided or derived from the type.
         """
-        if self.json_schema is not None:
+
+        if self.json_schema is not None and not issubclass(
+            self.expected_type, BaseModel
+        ):
             return self.json_schema
 
-        if self.expected_type is None:
-            return None
-
-        # Import here to avoid circular dependency
-        from pixie.utils import get_json_schema_for_type
-
-        return get_json_schema_for_type(self.expected_type)
+        return TypeAdapter(self.expected_type).json_schema()
 
 
 class PromptForSpan(BaseModel):

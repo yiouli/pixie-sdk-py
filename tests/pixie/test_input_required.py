@@ -53,11 +53,11 @@ class TestInputRequiredWithJsonSchema:
     def test_input_required_with_json_schema_dict(self):
         """Test InputRequired accepts a JSON schema dict directly."""
         schema = {"type": "string", "minLength": 1}
-        req = InputRequired(schema)
+        req = InputRequired(str, expected_schema=schema)
         # When given a schema directly, expected_type should be None
         # and json_schema should be the schema
-        assert req.json_schema == schema
-        assert req.expected_type is None
+        assert req.get_json_schema() == schema
+        assert req.expected_type is str
 
     def test_input_required_with_complex_json_schema(self):
         """Test InputRequired accepts complex JSON schema."""
@@ -69,9 +69,9 @@ class TestInputRequiredWithJsonSchema:
             },
             "required": ["name", "age"],
         }
-        req = InputRequired(schema)
-        assert req.json_schema == schema
-        assert req.expected_type is None
+        req = InputRequired(dict, expected_schema=schema)
+        assert req.get_json_schema() == schema
+        assert req.expected_type is dict
 
     def test_input_required_get_schema_from_type(self):
         """Test InputRequired.get_json_schema() returns schema from type."""
@@ -92,7 +92,7 @@ class TestInputRequiredWithJsonSchema:
     def test_input_required_get_schema_from_direct_schema(self):
         """Test InputRequired.get_json_schema() returns direct schema."""
         direct_schema = {"type": "string", "format": "email"}
-        req = InputRequired(direct_schema)
+        req = InputRequired(str, expected_schema=direct_schema)
         schema = req.get_json_schema()
         assert schema == direct_schema
 
@@ -346,7 +346,9 @@ class TestEmitStatusUpdateConversion:
             direct_schema = {"type": "string", "format": "email"}
             exec_ctx.emit_status_update(
                 status="waiting",
-                user_input_requirement=InputRequired(direct_schema),
+                user_input_requirement=InputRequired(
+                    str, expected_schema=direct_schema
+                ),
             )
 
             update = queue.sync_q.get_nowait()

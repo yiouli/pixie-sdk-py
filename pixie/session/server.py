@@ -1,8 +1,7 @@
 import asyncio
 from collections.abc import Callable, Coroutine
-from typing import Any, cast
 import janus
-from pydantic import BaseModel
+from pydantic import JsonValue
 from pixie.registry import app
 from pixie.session.constants import SESSION_RPC_PORT
 from pixie.session.rpc import (
@@ -48,13 +47,8 @@ def _run_in_thread(run: Coroutine) -> tuple[Coroutine, Callable[[], None]]:
     return asyncio.to_thread(run_loop), cancel
 
 
-# emptry wrapper to avoid error on BaseModel.model_json_schema
-class SessionInput(BaseModel):
-    pass
-
-
 @app
-async def run_session_server() -> PixieGenerator[SessionUpdate, SessionInput]:
+async def run_session_server() -> PixieGenerator[SessionUpdate, dict[str, JsonValue]]:
     update_queue = janus.Queue[SessionUpdate]()
     run, cancel = _run_in_thread(
         listen_to_client_connections(SESSION_RPC_PORT, update_queue)
@@ -72,8 +66,14 @@ async def run_session_server() -> PixieGenerator[SessionUpdate, SessionInput]:
             update.user_input_schema = None
             yield update
             if input_schema is not None:
-                i = yield InputRequired(cast(dict[str, Any], input_schema))
-                await send_input_to_client(update.session_id, i)
+                i = yield InputRequired(
+                    dict,
+                    expected_schema={
+                        "type": "object",
+                        "properties": {"value": input_schema},
+                    },
+                )
+                await send_input_to_client(update.session_id, i["value"])
     finally:
         cancel()
         task.cancel()
