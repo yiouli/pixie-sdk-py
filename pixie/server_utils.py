@@ -68,6 +68,7 @@ def enable_instrumentations():
     Attempts to enable instrumentation for pydantic-ai, OpenAI Agents, Google ADK,
     CrewAI, and DSpy. Only logs in verbose/debug modes.
     """
+    print("enabling instrumentations")
     try:
         from pydantic_ai import Agent  # type: ignore
 

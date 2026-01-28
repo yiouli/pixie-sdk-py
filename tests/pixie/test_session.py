@@ -898,3 +898,65 @@ class TestSessionDecorator:
                             c for c in calls if c[0][0].status == "completed"
                         ]
                         assert len(completed_calls) >= 1
+
+    @pytest.mark.asyncio
+    async def test_session_decorator_calls_enable_instrumentations(self):
+        """Test that @session calls enable_instrumentations."""
+        with patch("pixie.session.client.execution_context") as mock_ctx:
+            with patch("pixie.session.client.connect_to_server") as mock_connect:
+                with patch("pixie.session.client.notify_server") as mock_notify:
+                    with patch("pixie.session.client.disconnect_from_server"):
+                        with patch(
+                            "pixie.session.client.enable_instrumentations"
+                        ) as mock_enable:
+                            mock_connect.return_value = 11111
+                            mock_notify.return_value = None
+
+                            mock_queue = MagicMock()
+                            mock_queue.async_q = MagicMock()
+                            mock_queue.async_q.get = AsyncMock(return_value=None)
+
+                            mock_exec_ctx = MagicMock()
+                            mock_exec_ctx.status_queue = mock_queue
+                            mock_ctx.init_run.return_value = mock_exec_ctx
+
+                            @session
+                            async def my_func():
+                                pass
+
+                            await my_func()
+
+                            mock_enable.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_session_decorator_calls_get_client(self):
+        """Test that @session calls get_client."""
+        with patch("pixie.session.client.execution_context") as mock_ctx:
+            with patch("pixie.session.client.connect_to_server") as mock_connect:
+                with patch("pixie.session.client.notify_server") as mock_notify:
+                    with patch("pixie.session.client.disconnect_from_server"):
+                        with patch("pixie.session.client.enable_instrumentations"):
+                            with patch(
+                                "pixie.session.client.get_client"
+                            ) as mock_get_client:
+                                mock_connect.return_value = 11111
+                                mock_notify.return_value = None
+                                mock_langfuse = MagicMock()
+                                mock_langfuse.auth_check.return_value = True
+                                mock_get_client.return_value = mock_langfuse
+
+                                mock_queue = MagicMock()
+                                mock_queue.async_q = MagicMock()
+                                mock_queue.async_q.get = AsyncMock(return_value=None)
+
+                                mock_exec_ctx = MagicMock()
+                                mock_exec_ctx.status_queue = mock_queue
+                                mock_ctx.init_run.return_value = mock_exec_ctx
+
+                                @session
+                                async def my_func():
+                                    pass
+
+                                await my_func()
+
+                                mock_get_client.assert_called_once()

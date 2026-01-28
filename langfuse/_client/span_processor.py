@@ -189,6 +189,7 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
         # Check for pause before span starts (BEFORE_NEXT mode)
         self._check_breakpoint(span, is_before=True)
 
+        print("emitting partial trace to execution context")
         # Emit partial trace at span start
         self._emit_trace_to_execution_context(span, is_start=True)
 

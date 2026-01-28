@@ -1,10 +1,14 @@
 import asyncio
 from functools import wraps
+import logging
 from typing import Any, Awaitable, Callable, TypeVar, overload
 from uuid import uuid4
+
+from langfuse import get_client
 from pydantic import BaseModel, JsonValue
 
 from pixie import execution_context
+from pixie.server_utils import enable_instrumentations
 from pixie.session.constants import SESSION_RPC_PORT, SESSION_RPC_SERVER_HOST
 from pixie.session.rpc import (
     connect_to_server,
@@ -14,6 +18,9 @@ from pixie.session.rpc import (
 )
 from pixie.session.types import SessionUpdate
 from pixie.types import InputRequired, InputType
+
+
+logger = logging.getLogger(__name__)
 
 
 async def print(data: str | JsonValue) -> None:
@@ -107,7 +114,17 @@ def session(func: Callable[..., Awaitable[Any]]):
                 )
 
         task = asyncio.create_task(notify_on_update())
+        langfuse = None
         try:
+            enable_instrumentations()
+            langfuse = get_client()
+
+            if langfuse.auth_check():
+                logger.debug("Langfuse client authenticated")
+            else:
+                logger.debug(
+                    "Langfuse authentication failed, continuing in Pixie-only mode"
+                )
             await notify_server(
                 SessionUpdate(
                     session_id=session_id,
@@ -116,6 +133,9 @@ def session(func: Callable[..., Awaitable[Any]]):
             )
             return await func(*args, **kwargs)
         finally:
+            if langfuse:
+                langfuse.flush()  # Ensure all spans are sent before disconnecting
+
             if not completed:
                 await notify_server(
                     SessionUpdate(

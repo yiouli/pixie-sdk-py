@@ -1,7 +1,9 @@
 import asyncio
+import dotenv
 from pydantic import BaseModel
+from pydantic_ai import Agent, ModelMessage
 import pixie.sdk as pixie
-from pixie.server import setup_logging
+from pixie.server_utils import setup_logging
 from pixie.session import client
 
 
@@ -23,22 +25,19 @@ class Feedback(BaseModel):
 
 @client.session
 async def my_program():
-    setup_logging("debug")
-    await client.print("Starting my program...")
-    stopped = False
-    while not stopped:
-        name = await client.input("Please enter your name:")
-        feedback = await client.input(
-            "Please provide your feedback:",
-            expected_type=Feedback,
-        )
-        await client.print(
-            f"Feedback received: Rating={feedback.rating}, Comments={feedback.comments}"
-        )
-        await client.print(f"Thank you for your input, {name}!")
-        stopped = feedback.comments == "stop"
-    await client.print("Program ended.")
+    agent = Agent(model="gpt-4o-mini", system_prompt="You're a helpful assistant.")
+    await client.print("How can I assist you today? Type exit to end the conversation.")
+    messages: list[ModelMessage] = []
+    while True:
+        user_input = await client.input(expected_type=str)
+        if user_input == "exit":
+            break
+        response = await agent.run(user_input, message_history=messages)
+        await client.print(response.output)
+        messages = response.all_messages()
 
 
 if __name__ == "__main__":
+    setup_logging("debug")
+    dotenv.load_dotenv()
     asyncio.run(my_program())
