@@ -1,7 +1,10 @@
 import asyncio
+
 import dotenv
 from pydantic import BaseModel
 from pydantic_ai import Agent, ModelMessage
+
+from pixie.prompts.storage import initialize_prompt_storage
 import pixie.sdk as pixie
 from pixie.server_utils import setup_logging
 from pixie.session import client
@@ -15,7 +18,7 @@ def hello():
     return "hello"
 
 
-pixie.create_prompt("my_first_prompt", description="My first prompt")
+prompt = pixie.create_prompt("my_first_prompt", description="My first prompt")
 
 
 class Feedback(BaseModel):
@@ -25,7 +28,7 @@ class Feedback(BaseModel):
 
 @client.session
 async def my_program():
-    agent = Agent(model="gpt-4o-mini", system_prompt="You're a helpful assistant.")
+    agent = Agent(model="gpt-4o-mini", system_prompt=prompt.compile())
     await client.print("How can I assist you today? Type exit to end the conversation.")
     messages: list[ModelMessage] = []
     while True:
@@ -40,4 +43,5 @@ async def my_program():
 if __name__ == "__main__":
     setup_logging("debug")
     dotenv.load_dotenv()
+    initialize_prompt_storage(".pixie/prompts")
     asyncio.run(my_program())
