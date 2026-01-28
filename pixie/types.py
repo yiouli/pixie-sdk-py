@@ -4,7 +4,7 @@ import threading
 from dataclasses import dataclass
 from typing import AsyncGenerator, Generic, Literal, Optional, Any, TypeVar
 import janus
-from pydantic import BaseModel, JsonValue, PrivateAttr
+from pydantic import BaseModel, JsonValue
 
 
 # Forward import to avoid circular dependency
@@ -127,18 +127,48 @@ class InputRequired(Generic[InputType]):
     """Represents a requirement for user input during application execution.
 
     This is yielded by a generator application to request input from the user.
+    Can be initialized with either a type hint or a JSON schema dict directly.
 
     Attributes:
-        expected_type: The type of input expected from the user.
+        expected_type: The type of input expected from the user (None if schema provided).
+        json_schema: The JSON schema for the expected input (None if type provided).
     """
 
-    def __init__(self, expected_type: type[InputType]) -> None:
+    def __init__(
+        self,
+        expected_type_or_schema: type[InputType] | dict[str, Any],
+    ) -> None:
         """Initialize a user input requirement.
 
         Args:
-            expected_type: The type of input expected from the user.
+            expected_type_or_schema: Either a type hint (e.g., str, int, BaseModel)
+                or a JSON schema dict directly.
         """
-        self.expected_type = expected_type
+        if isinstance(expected_type_or_schema, dict):
+            # Direct JSON schema provided
+            self.expected_type: type[InputType] | None = None
+            self.json_schema: dict[str, Any] | None = expected_type_or_schema
+        else:
+            # Type hint provided
+            self.expected_type = expected_type_or_schema
+            self.json_schema = None
+
+    def get_json_schema(self) -> dict[str, Any] | None:
+        """Get the JSON schema for this input requirement.
+
+        Returns:
+            The JSON schema dict, either directly provided or derived from the type.
+        """
+        if self.json_schema is not None:
+            return self.json_schema
+
+        if self.expected_type is None:
+            return None
+
+        # Import here to avoid circular dependency
+        from pixie.utils import get_json_schema_for_type
+
+        return get_json_schema_for_type(self.expected_type)
 
 
 class PromptForSpan(BaseModel):
@@ -158,28 +188,15 @@ class PromptForSpan(BaseModel):
 
 
 class InputMixin(BaseModel):
+    """Mixin providing user input handling fields.
+
+    Attributes:
+        user_input: Optional user input data received.
+        user_input_schema: Optional JSON schema describing expected input format.
+    """
+
     user_input: Optional[JsonValue] = None
-    _user_input_requirement: InputRequired | None = PrivateAttr(default=None)
-
-    def set_user_input_requirement(
-        self,
-        requirement: InputRequired | None,
-    ) -> None:
-        """Set the user input requirement for this update.
-
-        Args:
-            requirement: The user input requirement or None.
-        """
-        self._user_input_requirement = requirement
-
-    @property
-    def user_input_requirement(self) -> InputRequired | None:
-        """Get the user input requirement for this update.
-
-        Returns:
-            The user input requirement or None.
-        """
-        return self._user_input_requirement
+    user_input_schema: Optional[JsonValue] = None
 
 
 class OutputMixin(BaseModel):

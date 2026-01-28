@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Callable, Coroutine
+from typing import Any, cast
 import janus
 from pydantic import BaseModel
 from pixie.registry import app
@@ -41,17 +42,19 @@ async def run_session_server() -> PixieGenerator[SessionUpdate, SessionInput]:
     run, cancel = _run_in_thread(
         listen_to_client_connections(SESSION_RPC_PORTS, update_queue)
     )
-    asyncio.create_task(run)
+    task = asyncio.create_task(run)
     # Initial wait to allow server listening to start
     await asyncio.sleep(0.5)
     try:
         while True:
             update = await wait_for_client_update()
+            input_schema = update.user_input_schema
+            # Clear the schema to avoid bloating the data sent to the client
+            update.user_input_schema = None
             yield update
-            if update.user_input_requirement:
-                i = yield InputRequired(
-                    expected_type=update.user_input_requirement.expected_type
-                )
+            if input_schema is not None:
+                i = yield InputRequired(cast(dict[str, Any], input_schema))
                 await send_input_to_client(update.session_id, i)
     finally:
         cancel()
+        task.cancel()

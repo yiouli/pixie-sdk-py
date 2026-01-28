@@ -16,7 +16,6 @@ from strawberry.scalars import JSON
 
 from langfuse import get_client
 from pixie.registry import call_application, get_application, list_applications
-from pixie.utils import get_json_schema_for_type
 from pixie.types import (
     AppRunCancelled,
     BreakpointDetail as PydanticBreakpointDetail,
@@ -257,17 +256,10 @@ class AppRunUpdate:
         Returns:
             A Strawberry AppRunUpdate instance.
         """
-        """Convert from Pydantic AppRunUpdate to Strawberry AppRunUpdate."""
-        if instance.user_input_requirement:
-            user_input_schema = JSON(
-                get_json_schema_for_type(instance.user_input_requirement.expected_type)
-            )
-        else:
-            user_input_schema = None
         return cls(
             run_id=strawberry.ID(instance.run_id),
             status=AppRunStatus(instance.status),
-            user_input_schema=user_input_schema,
+            user_input_schema=JSON(instance.user_input_schema),
             user_input=JSON(instance.user_input),
             data=JSON(instance.data),
             breakpoint=(

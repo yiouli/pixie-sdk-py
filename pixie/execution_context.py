@@ -140,11 +140,12 @@ def emit_status_update(
 
     Args:
         status: The status to emit, or None to end the stream
-        user_input: Optional user input requirement
+        user_input_requirement: Optional input requirement (converted to schema)
+        user_input: Optional user input data
         data: Optional data string
         breakpt: Optional breakpoint details
         trace: Optional trace data dict
-        prompt_info: Optional prompt information
+        prompt_for_span: Optional prompt information
     """
     ctx = _execution_context.get()
     if ctx:
@@ -152,16 +153,21 @@ def emit_status_update(
             update = None
             _logger.debug("Emitted terminal status update for run %s", ctx.run_id)
         else:
+            # Convert InputRequired to JSON schema
+            user_input_schema = None
+            if user_input_requirement is not None:
+                user_input_schema = user_input_requirement.get_json_schema()
+
             update = AppRunUpdate(
                 run_id=ctx.run_id,
                 status=status,
                 user_input=user_input,
+                user_input_schema=user_input_schema,
                 data=data,
                 breakpoint=breakpt,
                 trace=trace,
                 prompt_for_span=prompt_for_span,
             )
-            update.set_user_input_requirement(user_input_requirement)
             _logger.debug(
                 "Emitted status update: %s for run %s", update.status, ctx.run_id
             )

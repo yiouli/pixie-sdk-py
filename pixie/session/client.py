@@ -58,14 +58,14 @@ async def input(
     if not exec_ctx:
         raise RuntimeError("No execution context found.")
 
+    req = InputRequired(expected_type or str)
     update = SessionUpdate(
         session_id=exec_ctx.run_id,
         data=prompt,
         status="waiting",
+        user_input_schema=req.get_json_schema(),
     )
 
-    req = InputRequired(expected_type or str)
-    update.set_user_input_requirement(req)
     await notify_server(update)
 
     return await wait_for_input(req)
