@@ -5,7 +5,7 @@ from uuid import uuid4
 from pydantic import BaseModel, JsonValue
 
 from pixie import execution_context
-from pixie.session.constants import SESSION_RPC_PORTS, SESSION_RPC_SERVER_HOST
+from pixie.session.constants import SESSION_RPC_PORT, SESSION_RPC_SERVER_HOST
 from pixie.session.rpc import (
     connect_to_server,
     disconnect_from_server,
@@ -76,7 +76,7 @@ def session(func: Callable[..., Awaitable[Any]]):
     async def wrapper(*args, **kwargs):
         session_id = uuid4().hex
         ctx = execution_context.init_run(session_id)
-        await connect_to_server(SESSION_RPC_SERVER_HOST, SESSION_RPC_PORTS, session_id)
+        await connect_to_server(SESSION_RPC_SERVER_HOST, SESSION_RPC_PORT, session_id)
 
         update_queue = ctx.status_queue
         completed = False

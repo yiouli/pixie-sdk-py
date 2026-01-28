@@ -471,7 +471,7 @@ def _convert_trace_to_union(trace_dict: dict | None) -> Optional[TraceDataUnion]
     )
 
 
-def _create_app_run_in_thread(run: Coroutine) -> tuple[Coroutine, Callable[[], bool]]:
+def _create_app_run_in_thread(run: Coroutine) -> tuple[Coroutine, Callable[[], None]]:
     """Create a new event loop in a thread to run the application.
 
     Args:
@@ -479,13 +479,27 @@ def _create_app_run_in_thread(run: Coroutine) -> tuple[Coroutine, Callable[[], b
 
     Returns:
         A tuple of (thread_coroutine, cancel_function) where thread_coroutine
-        is a coroutine that runs the loop and cancel_function can cancel the task.
+        is a coroutine that runs the loop and cancel_function can cancel the task
+        in a thread-safe manner.
     """
     loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    task = loop.create_task(run)
+    task: asyncio.Task | None = None
 
-    return asyncio.to_thread(lambda: loop.run_until_complete(task)), task.cancel
+    def run_loop():
+        nonlocal task
+        asyncio.set_event_loop(loop)
+        task = loop.create_task(run)
+        try:
+            loop.run_until_complete(task)
+        except asyncio.CancelledError:
+            pass
+
+    def cancel():
+        """Thread-safe cancellation of the task."""
+        if task is not None and loop.is_running():
+            loop.call_soon_threadsafe(task.cancel)
+
+    return asyncio.to_thread(run_loop), cancel
 
 
 @strawberry.type

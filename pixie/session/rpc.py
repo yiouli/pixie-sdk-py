@@ -5,14 +5,13 @@ and the session server using asyncio TCP streams for proper connection managemen
 
 Server-side:
 - listen_to_client_connections() runs as an async task, accepting connections
-  on multiple ports and queuing all received SessionUpdates into a single asyncio queue.
-- Each port can serve one client at a time.
+  on a single port and queuing all received SessionUpdates into an asyncio queue.
 - After accepting a connection, server waits for session_id within 2 seconds.
 - Once registered, a worker task handles messages from that client.
 
 Client-side:
 - connect_to_server() creates a singleton connection for the entire process.
-- Tries ports one by one until finding an available server port.
+- Connects to the server port and registers with session_id.
 - notify_server() sends SessionUpdate messages.
 - wait_for_input() blocks waiting for input data from server.
 """
@@ -146,6 +145,10 @@ def _get_server_state() -> _ServerState:
     return _server_state
 
 
+# Timeout for polling server running status in worker loop
+WORKER_POLL_TIMEOUT = 0.5  # seconds
+
+
 async def _handle_client_messages(
     connection: _ClientConnection,
     update_queue: janus.Queue[SessionUpdate],
@@ -163,10 +166,13 @@ async def _handle_client_messages(
 
     try:
         while state.running:
-            data = await _recv_message(connection.reader)
+            # Use timeout so we can check state.running periodically
+            data = await _recv_message(connection.reader, timeout=WORKER_POLL_TIMEOUT)
             if data is None:
-                # Connection lost
-                break
+                # Connection lost or timeout - check if we should continue
+                if connection.reader.at_eof():
+                    break  # Connection actually closed
+                continue  # Just timeout, try again
 
             try:
                 update = SessionUpdate.model_validate_json(data.decode())
@@ -198,7 +204,16 @@ async def _handle_new_connection(
         reader: The stream reader for this connection.
         writer: The stream writer for this connection.
     """
-    state = _get_server_state()
+    # Check if server is still running - may have been shut down during accept
+    if _server_state is None:
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except Exception:
+            pass
+        return
+
+    state = _server_state
 
     try:
         logger.info("New client connection received, waiting for registration")
@@ -260,23 +275,23 @@ async def _handle_new_connection(
 
 
 async def listen_to_client_connections(
-    ports: list[int],
+    port: int,
     update_queue: janus.Queue[SessionUpdate],
 ) -> None:
-    """Listen for client connections on multiple ports and queue received SessionUpdates.
+    """Listen for client connections on a port and queue received SessionUpdates.
 
-    This is a long-running async function. It starts a TCP server on each port
-    to accept connections from clients. Each port serves one client at a time.
-    All received SessionUpdate messages are placed into a single shared asyncio queue.
+    This is a long-running async function. It starts a TCP server on the specified
+    port to accept connections from clients. All received SessionUpdate messages
+    are placed into a shared asyncio queue.
 
     Protocol:
-    - Client connects to one of the ports
+    - Client connects to the port
     - Client must send session_id within 2 seconds
     - Server sends ACK on successful registration
     - Subsequent messages are SessionUpdate JSON data (length-prefixed)
 
     Args:
-        ports: List of ports to listen on.
+        port: Port to listen on.
         update_queue: The Janus queue to place received SessionUpdates into.
 
     Raises:
@@ -293,31 +308,75 @@ async def listen_to_client_connections(
     state = _server_state
 
     try:
-        # Start a server on each port
-        for port in ports:
-            try:
-                server = await asyncio.start_server(
-                    _handle_new_connection,
-                    host=SESSION_RPC_SERVER_HOST,
-                    port=port,
-                )
-                state.servers.append(server)
-            except OSError as e:
-                logger.warning(f"Failed to bind to port {port}: {e}")
-
-        if not state.servers:
-            raise RuntimeError(f"Failed to bind to any ports: {ports}")
+        # Start server on the port
+        try:
+            server = await asyncio.start_server(
+                _handle_new_connection,
+                host=SESSION_RPC_SERVER_HOST,
+                port=port,
+            )
+            state.servers.append(server)
+        except OSError as e:
+            raise RuntimeError(f"Failed to bind to port {port}: {e}") from e
 
         # Wait until shutdown is signaled
         while state.running:
             await asyncio.sleep(0.1)
 
     finally:
-        _shutdown_server()
+        await _async_shutdown_server()
+
+
+async def _async_shutdown_server() -> None:
+    """Clean up server resources asynchronously."""
+    global _server_state
+
+    with _server_lock:
+        if _server_state is None:
+            return
+        state = _server_state
+        state.running = False
+        # Clear state immediately to prevent "server already running" errors
+        _server_state = None
+
+    # Close all servers and wait for them to close
+    for server in state.servers:
+        try:
+            server.close()
+            await server.wait_closed()
+        except Exception:
+            logger.error("Error closing server", exc_info=True)
+
+    # Cancel all client worker tasks
+    # First feed EOF to readers to unblock any pending reads, then cancel tasks
+    tasks_to_wait = []
+    for conn in state.client_connections.values():
+        # Feed EOF to reader to unblock pending reads
+        try:
+            conn.reader.feed_eof()
+        except Exception:
+            pass  # Reader may already be closed
+        if conn.task:
+            conn.task.cancel()
+            tasks_to_wait.append(conn.task)
+        try:
+            conn.writer.close()
+        except Exception:
+            pass  # Writer may already be closed
+
+    # Wait for all tasks to complete with a timeout
+    if tasks_to_wait:
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*tasks_to_wait, return_exceptions=True),
+                timeout=2.0,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Timeout waiting for client tasks to cancel")
 
 
 def _shutdown_server() -> None:
-    """Clean up server resources."""
+    """Clean up server resources synchronously (for use in non-async contexts)."""
     global _server_state
 
     with _server_lock:
@@ -338,7 +397,7 @@ def _shutdown_server() -> None:
                 try:
                     conn.writer.close()
                 except Exception:
-                    logger.error("Error closing client connection", exc_info=True)
+                    pass  # Writer may already be closed
 
             _server_state = None
 
@@ -439,27 +498,27 @@ def _get_client_state() -> _ClientState:
 
 async def connect_to_server(
     host: str,
-    ports: list[int],
+    port: int,
     session_id: str,
     connection_timeout: float = 5.0,
 ) -> int:
     """Connect to the session server and register this client.
 
     Creates a singleton connection for the entire client process.
-    Tries ports one by one until finding one that accepts the connection.
-    Sends the session_id as a registration message and waits for ACK.
+    Connects to the specified port, sends the session_id as a registration
+    message and waits for ACK.
 
     Args:
         host: The server hostname or IP address.
-        ports: List of port numbers to try.
+        port: Port number to connect to.
         session_id: The session ID for this client.
-        connection_timeout: Timeout for each connection attempt in seconds.
+        connection_timeout: Timeout for connection attempt in seconds.
 
     Returns:
         The port number that was successfully connected to.
 
     Raises:
-        RuntimeError: If already connected or if no port accepts the connection.
+        RuntimeError: If already connected or if connection fails.
     """
     global _client_state
 
@@ -469,84 +528,75 @@ async def connect_to_server(
                 "Already connected to server. Call disconnect_from_server first."
             )
 
-    last_error: Exception | None = None
+    try:
+        # Try to connect to the port
+        logger.info(f"Attempting to connect to server at {host}:{port}")
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port),
+            timeout=connection_timeout,
+        )
+        logger.info(f"Connected to server at {host}:{port}")
 
-    for port in ports:
         try:
-            # Try to connect to this port
-            logger.info(f"Attempting to connect to server at {host}:{port}")
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, port),
-                timeout=connection_timeout,
-            )
-            logger.info(f"Connected to server at {host}:{port}")
+            # Send registration message with session_id
+            await _send_message(writer, session_id.encode())
 
-            try:
-                # Send registration message with session_id
-                await _send_message(writer, session_id.encode())
+            # Wait for ACK from server
+            ack = await _recv_message(reader, timeout=REGISTRATION_TIMEOUT)
 
-                # Wait for ACK from server
-                ack = await _recv_message(reader, timeout=REGISTRATION_TIMEOUT)
-
-                if ack is None or ack != b"ACK":
-                    logger.warning(
-                        f"Server at {host}:{port} rejected registration or timed out"
-                    )
-                    # Server rejected or timeout
-                    writer.close()
-                    await writer.wait_closed()
-                    continue
-
-                # Connection successful
-                with _client_lock:
-                    if _client_state is not None:
-                        # Race condition - another connection succeeded
-                        writer.close()
-                        await writer.wait_closed()
-                        raise RuntimeError(
-                            "Already connected to server. "
-                            "Call disconnect_from_server first."
-                        )
-
-                    _client_state = _ClientState(
-                        reader=reader,
-                        writer=writer,
-                        session_id=session_id,
-                        connected_port=port,
-                    )
-
-                return port
-
-            except Exception as e:
-                logger.error(
-                    f"Error during registration with server at {host}:{port}: {e}"
+            if ack is None or ack != b"ACK":
+                writer.close()
+                await writer.wait_closed()
+                raise RuntimeError(
+                    f"Server at {host}:{port} rejected registration or timed out"
                 )
-                # Clean up on error
-                try:
+
+            # Connection successful
+            with _client_lock:
+                if _client_state is not None:
+                    # Race condition - another connection succeeded
                     writer.close()
                     await writer.wait_closed()
-                except Exception:
-                    logger.error("Error closing writer", exc_info=True)
-                last_error = e
+                    raise RuntimeError(
+                        "Already connected to server. "
+                        "Call disconnect_from_server first."
+                    )
 
-        except asyncio.TimeoutError:
-            logger.error(f"Connection to {host}:{port} timed out")
-            last_error = asyncio.TimeoutError(f"Connection to {host}:{port} timed out")
-        except OSError as e:
-            logger.error(f"OS error connecting to {host}:{port}: {e}")
-            last_error = e
+                _client_state = _ClientState(
+                    reader=reader,
+                    writer=writer,
+                    session_id=session_id,
+                    connected_port=port,
+                )
 
-    # No port worked
-    raise RuntimeError(
-        f"Failed to connect to server on any port. "
-        f"Tried ports {ports}. Last error: {last_error}"
-    )
+            return port
+
+        except Exception as e:
+            logger.error(
+                f"Error during registration with server at {host}:{port}: {e}"
+            )
+            # Clean up on error
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                logger.error("Error closing writer", exc_info=True)
+            raise
+
+    except asyncio.TimeoutError as e:
+        raise RuntimeError(
+            f"Connection to {host}:{port} timed out"
+        ) from e
+    except OSError as e:
+        raise RuntimeError(
+            f"Failed to connect to server at {host}:{port}: {e}"
+        ) from e
 
 
 def disconnect_from_server() -> None:
     """Disconnect from the server and clean up resources.
 
-    Safe to call even if not connected.
+    Safe to call even if not connected or if event loop is closed.
     """
     global _client_state
 
@@ -554,9 +604,13 @@ def disconnect_from_server() -> None:
         if _client_state is not None:
             try:
                 _client_state.writer.close()
-                logging.info(
+                logger.info(
                     f"Disconnected from server on port {_client_state.connected_port}"
                 )
+            except RuntimeError as e:
+                # Event loop may be closed during test teardown - this is expected
+                if "Event loop is closed" not in str(e):
+                    logger.error("Error closing client writer", exc_info=True)
             except Exception:
                 logger.error("Error closing client writer", exc_info=True)
             _client_state = None
