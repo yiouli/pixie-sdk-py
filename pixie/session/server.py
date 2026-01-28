@@ -8,7 +8,6 @@ from pixie.session.constants import SESSION_RPC_PORT
 from pixie.session.rpc import (
     listen_to_client_connections,
     send_input_to_client,
-    wait_for_client_update,
     stop_server,
 )
 from pixie.session.types import SessionUpdate
@@ -65,7 +64,9 @@ async def run_session_server() -> PixieGenerator[SessionUpdate, SessionInput]:
     await asyncio.sleep(0.5)
     try:
         while True:
-            update = await wait_for_client_update()
+            # Use our local queue reference directly, not via _server_state
+            # which is set in the child thread
+            update = await update_queue.async_q.get()
             input_schema = update.user_input_schema
             # Clear the schema to avoid bloating the data sent to the client
             update.user_input_schema = None
@@ -76,3 +77,6 @@ async def run_session_server() -> PixieGenerator[SessionUpdate, SessionInput]:
     finally:
         cancel()
         task.cancel()
+        # Properly close the janus queue
+        update_queue.close()
+        await update_queue.wait_closed()

@@ -546,7 +546,7 @@ class Subscription:
             return
 
         task: Optional[asyncio.Task[None]] = None
-        cancel: Optional[Callable[[], bool]] = None
+        cancel: Optional[Callable[[], None]] = None
         ctx = exec_ctx.init_run(run_id)
         try:
             status_queue = ctx.status_queue
@@ -562,6 +562,7 @@ class Subscription:
 
             # Create task for application execution
             async def run_application():
+                app_gen = None
                 try:
                     logger.debug("Executing app run_id=%s", run_id)
                     exec_ctx.reload_run_context(run_id)
@@ -612,6 +613,9 @@ class Subscription:
                     raise
                 finally:
                     logger.debug("Ending task run_id=%s", run_id)
+                    # Close the application generator to trigger its cleanup
+                    if app_gen is not None:
+                        await app_gen.aclose()
                     langfuse.flush()
                     exec_ctx.emit_status_update(status=None)
 

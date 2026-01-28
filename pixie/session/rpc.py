@@ -426,17 +426,17 @@ async def send_input_to_client(
     """
     state = _get_server_state()
 
-    # Serialize data
-    if isinstance(input_data, BaseModel):
-        data = input_data.model_dump_json().encode()
-    else:
-        data = json.dumps(input_data).encode()
-
     # Get client connection (lock needed for reading)
     async with state.lock:
         if session_id not in state.client_connections:
             raise KeyError(f"No client connected with session_id: {session_id}")
         connection = state.client_connections[session_id]
+
+    # Serialize data
+    if isinstance(input_data, BaseModel):
+        data = input_data.model_dump_json().encode()
+    else:
+        data = json.dumps(input_data).encode()
 
     # Send via length-prefixed protocol
     await _send_message(connection.writer, data)
@@ -572,9 +572,7 @@ async def connect_to_server(
             return port
 
         except Exception as e:
-            logger.error(
-                f"Error during registration with server at {host}:{port}: {e}"
-            )
+            logger.error(f"Error during registration with server at {host}:{port}: {e}")
             # Clean up on error
             try:
                 writer.close()
@@ -584,13 +582,9 @@ async def connect_to_server(
             raise
 
     except asyncio.TimeoutError as e:
-        raise RuntimeError(
-            f"Connection to {host}:{port} timed out"
-        ) from e
+        raise RuntimeError(f"Connection to {host}:{port} timed out") from e
     except OSError as e:
-        raise RuntimeError(
-            f"Failed to connect to server at {host}:{port}: {e}"
-        ) from e
+        raise RuntimeError(f"Failed to connect to server at {host}:{port}: {e}") from e
 
 
 def disconnect_from_server() -> None:

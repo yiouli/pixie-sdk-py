@@ -337,6 +337,10 @@ def _wrap_generator_handler(
                 user_input = _json_to_value(user_input_orig, user_input_type)
         except StopAsyncIteration:
             return
+        finally:
+            # Ensure the underlying generator is properly closed
+            # This is critical for cleanup (e.g., run_session_server's finally block)
+            await generator.aclose()
 
     return stream_handler
 
@@ -656,6 +660,9 @@ async def call_application(
             user_input = yield output
     except StopAsyncIteration:
         return
+    finally:
+        # Ensure the underlying generator is properly closed
+        await generator.aclose()
 
 
 def get_application(id: str) -> Optional[RegistryItem]:

@@ -512,3 +512,212 @@ class TestConnectionDuringShutdown:
                 await server_task
             except asyncio.CancelledError:
                 pass
+
+
+class TestClientWaitingForInputCleanup:
+    """Tests for cleanup when a client is connected and waiting for input from server.
+
+    This simulates the real-world scenario where:
+    1. Session server is running
+    2. Client connects and is waiting for input from server
+    3. GraphQL subscription disconnects
+    4. Server should clean up properly so new subscriptions can start
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(TIMEOUT)
+    async def test_cleanup_with_client_waiting_for_input(self, cleanup):
+        """Test server cleanup when client is connected and waiting for input.
+
+        This is the key bug scenario:
+        1. Server starts with a janus queue
+        2. Client connects and registers
+        3. Server is cancelled (GraphQL disconnect)
+        4. Server should clean up, releasing the janus queue
+        5. New server should be able to start with a fresh queue
+        """
+        import pixie.session.rpc as rpc_module
+        from pixie.session.rpc import connect_to_server, disconnect_from_server
+
+        port = get_test_port(40)
+        update_queue1: janus.Queue[SessionUpdate] = janus.Queue()
+
+        # Start first server
+        server_task1 = asyncio.create_task(
+            listen_to_client_connections(port, update_queue1)
+        )
+        await asyncio.sleep(0.3)
+
+        # Connect a client
+        await connect_to_server("localhost", port, "test-session-waiting")
+        await asyncio.sleep(0.1)
+
+        # Verify client is registered
+        state = _get_server_state()
+        assert "test-session-waiting" in state.client_connections
+
+        # Now simulate GraphQL subscription disconnect by cancelling the server task
+        # This is what happens when the GraphQL subscription ends
+        stop_server()
+        server_task1.cancel()
+        try:
+            await server_task1
+        except asyncio.CancelledError:
+            pass
+
+        # Clean up the client
+        disconnect_from_server()
+
+        # Close the first queue
+        update_queue1.close()
+        await update_queue1.wait_closed()
+
+        # Wait for cleanup
+        await asyncio.sleep(0.5)
+
+        # Server state should be cleared
+        assert rpc_module._server_state is None
+
+        # Now try to start a NEW server with a NEW queue
+        # This should NOT fail with "bound to a different event loop"
+        update_queue2: janus.Queue[SessionUpdate] = janus.Queue()
+
+        server_task2 = asyncio.create_task(
+            listen_to_client_connections(port, update_queue2)
+        )
+        await asyncio.sleep(0.3)
+
+        # New server should be running
+        assert rpc_module._server_state is not None
+        state2 = _get_server_state()
+        assert state2.running is True
+
+        # Clean up second server
+        stop_server()
+        try:
+            await asyncio.wait_for(server_task2, timeout=2.0)
+        except asyncio.TimeoutError:
+            server_task2.cancel()
+            try:
+                await server_task2
+            except asyncio.CancelledError:
+                pass
+
+        update_queue2.close()
+        await update_queue2.wait_closed()
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(TIMEOUT)
+    async def test_sequential_server_restarts_different_event_loops(self, cleanup):
+        """Test that server can be restarted in different threads/event loops.
+
+        This simulates what happens when multiple GraphQL subscriptions run sequentially,
+        each in their own event loop (via _run_in_thread).
+        """
+        import pixie.session.rpc as rpc_module
+        from pixie.session.server import _run_in_thread
+
+        port = get_test_port(41)
+
+        # First iteration - create server in a thread with its own event loop
+        async def run_server_iteration_1():
+            update_queue = janus.Queue[SessionUpdate]()
+            try:
+                await listen_to_client_connections(port, update_queue)
+            finally:
+                update_queue.close()
+                await update_queue.wait_closed()
+
+        run1, cancel1 = _run_in_thread(run_server_iteration_1())
+        task1 = asyncio.create_task(run1)
+        await asyncio.sleep(0.5)
+
+        # Cancel first iteration
+        cancel1()
+        try:
+            await asyncio.wait_for(task1, timeout=2.0)
+        except asyncio.TimeoutError:
+            task1.cancel()
+            try:
+                await task1
+            except asyncio.CancelledError:
+                pass
+
+        await asyncio.sleep(0.3)  # Wait for cleanup
+
+        # Verify server state is cleared
+        assert rpc_module._server_state is None
+
+        # Second iteration - should work without "bound to different event loop" error
+        async def run_server_iteration_2():
+            update_queue = janus.Queue[SessionUpdate]()
+            try:
+                await listen_to_client_connections(port, update_queue)
+            finally:
+                update_queue.close()
+                await update_queue.wait_closed()
+
+        run2, cancel2 = _run_in_thread(run_server_iteration_2())
+        task2 = asyncio.create_task(run2)
+        await asyncio.sleep(0.5)
+
+        # Second server should be running
+        # Note: _server_state is in the child thread's context, so we can't check it
+        # directly, but the fact that we got here without error means it worked
+
+        # Clean up second iteration
+        cancel2()
+        try:
+            await asyncio.wait_for(task2, timeout=2.0)
+        except asyncio.TimeoutError:
+            task2.cancel()
+            try:
+                await task2
+            except asyncio.CancelledError:
+                pass
+
+
+class TestGeneratorCleanupPropagation:
+    """Tests for generator cleanup propagation through call_application chain.
+
+    When a GraphQL subscription disconnects, the generator chain should propagate
+    cleanup properly so the underlying server's finally block runs.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(TIMEOUT)
+    async def test_generator_aclose_triggers_cleanup(self, cleanup):
+        """Test that calling aclose() on outer generator triggers inner cleanup."""
+        from pixie.registry import app, call_application, list_applications
+        from pixie.types import PixieGenerator
+
+        cleanup_executed = False
+
+        @app
+        async def test_cleanup_gen_func() -> PixieGenerator[str, None]:
+            nonlocal cleanup_executed
+            try:
+                yield "first"
+                # Block forever waiting
+                await asyncio.sleep(1000)
+                yield "second"
+            finally:
+                cleanup_executed = True
+
+        # Find the app ID - it includes the module path
+        app_ids = [a for a in list_applications() if "test_cleanup_gen_func" in a]
+        assert len(app_ids) == 1, f"Expected one app, found: {app_ids}"
+        app_id = app_ids[0]
+
+        # Start the generator via call_application
+        gen = call_application(app_id, None)
+
+        # Consume first value
+        val = await gen.asend(None)
+        assert val == "first"
+
+        # Now close the generator (simulating GraphQL disconnect)
+        await gen.aclose()
+
+        # Cleanup should have run
+        assert cleanup_executed, "Generator cleanup should have been triggered"
