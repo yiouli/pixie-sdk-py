@@ -7,11 +7,10 @@ from pixie.registry import app
 from pixie.session.constants import SESSION_RPC_PORT
 from pixie.session.rpc import (
     listen_to_client_connections,
-    send_input_to_client,
     stop_server,
 )
 from pixie.session.types import SessionUpdate
-from pixie.types import InputRequired, PixieGenerator
+from pixie.types import PixieGenerator
 
 
 logger = logging.getLogger(__name__)
@@ -65,28 +64,30 @@ async def run_session_server() -> PixieGenerator[SessionUpdate, dict[str, JsonVa
             # Use our local queue reference directly, not via _server_state
             # which is set in the child thread
             update = await update_queue.async_q.get()
-            input_schema = update.user_input_schema
-            # Clear the schema to avoid bloating the data sent to the client
-            update.user_input_schema = None
             yield update
-            if input_schema is not None:
-                i = yield InputRequired(
-                    dict,
-                    expected_schema={
-                        "type": "object",
-                        "properties": {"value": input_schema},
-                    },
-                )
-                try:
-                    await send_input_to_client(update.session_id, i["value"])
-                except KeyError:
-                    # Client disconnected while we were waiting for UI input.
-                    # This is expected when user presses Ctrl+C.
-                    # Log and continue processing other clients.
-                    logger.warning(
-                        f"Client {update.session_id} disconnected before input "
-                        "could be sent. Continuing to serve other clients."
-                    )
+            # NOTE: below code have to be removed for background running app in web UX to work properly
+            # this is only useful for testing when running the session server app in web UX
+            # eanbling this would block all updates to web subscription after the InputRequired
+            # until input is sent back from web UX
+            # input_schema = update.user_input_schema
+            # if input_schema is not None:
+            #     i = yield InputRequired(
+            #         dict,
+            #         expected_schema={
+            #             "type": "object",
+            #             "properties": {"value": input_schema},
+            #         },
+            #     )
+            #     try:
+            #         await send_input_to_client(update.session_id, i["value"])
+            #     except KeyError:
+            #         # Client disconnected while we were waiting for UI input.
+            #         # This is expected when user presses Ctrl+C.
+            #         # Log and continue processing other clients.
+            #         logger.warning(
+            #             f"Client {update.session_id} disconnected before input "
+            #             "could be sent. Continuing to serve other clients."
+            #         )
     finally:
         cancel()
         task.cancel()
