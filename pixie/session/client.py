@@ -137,12 +137,23 @@ def session(func: Callable[..., Awaitable[Any]]):
                 langfuse.flush()  # Ensure all spans are sent before disconnecting
 
             if not completed:
-                await notify_server(
-                    SessionUpdate(
-                        session_id=session_id,
-                        status="completed",
+                # Shield from cancellation to ensure "completed" is sent
+                # even when the task is cancelled (e.g., Ctrl+C)
+                try:
+                    await asyncio.shield(
+                        notify_server(
+                            SessionUpdate(
+                                session_id=session_id,
+                                status="completed",
+                            )
+                        )
                     )
-                )
+                except asyncio.CancelledError:
+                    # Re-raise to propagate cancellation after cleanup
+                    pass
+                except Exception as e:
+                    # Log but don't fail on notification errors during cleanup
+                    logger.warning(f"Failed to send 'completed' status: {e}")
 
             task.cancel()
             disconnect_from_server()

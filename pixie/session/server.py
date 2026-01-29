@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Callable, Coroutine
+import logging
 import janus
 from pydantic import JsonValue
 from pixie.registry import app
@@ -11,6 +12,9 @@ from pixie.session.rpc import (
 )
 from pixie.session.types import SessionUpdate
 from pixie.types import InputRequired, PixieGenerator
+
+
+logger = logging.getLogger(__name__)
 
 
 def _run_in_thread(run: Coroutine) -> tuple[Coroutine, Callable[[], None]]:
@@ -73,7 +77,16 @@ async def run_session_server() -> PixieGenerator[SessionUpdate, dict[str, JsonVa
                         "properties": {"value": input_schema},
                     },
                 )
-                await send_input_to_client(update.session_id, i["value"])
+                try:
+                    await send_input_to_client(update.session_id, i["value"])
+                except KeyError:
+                    # Client disconnected while we were waiting for UI input.
+                    # This is expected when user presses Ctrl+C.
+                    # Log and continue processing other clients.
+                    logger.warning(
+                        f"Client {update.session_id} disconnected before input "
+                        "could be sent. Continuing to serve other clients."
+                    )
     finally:
         cancel()
         task.cancel()
