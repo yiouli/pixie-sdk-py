@@ -16,6 +16,7 @@ from strawberry.scalars import JSON
 
 from langfuse import get_client
 from pixie.registry import call_application, get_application, list_applications
+from pixie.session.rpc import send_input_to_client
 from pixie.types import (
     AppRunCancelled,
     BreakpointDetail as PydanticBreakpointDetail,
@@ -441,6 +442,28 @@ class _Mutation:
             return True
         except Exception as e:
             raise GraphQLError(f"Failed to send input: {str(e)}") from e
+
+    @strawberry.mutation
+    async def send_session_input(self, session_id: str, input_data: JSON) -> bool:
+        """Send user input to a running session.
+
+        Args:
+            session_id: The unique identifier of the session to send input to.
+            input_data: The input data to send to the session.
+
+        Returns:
+            True if the input was successfully sent.
+
+        Raises:
+            GraphQLError: If sending input fails.
+        """
+
+        try:
+            await send_input_to_client(session_id, cast(JsonValue, input_data))
+            logger.info("User input sent to session_id=%s", session_id)
+            return True
+        except Exception as e:
+            raise GraphQLError(f"Failed to send session input: {str(e)}") from e
 
 
 def _convert_trace_to_union(trace_dict: dict | None) -> Optional[TraceDataUnion]:
