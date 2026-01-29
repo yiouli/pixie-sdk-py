@@ -112,6 +112,7 @@ RunStatus = Literal[
     "error",
     "cancelled",
     "waiting",
+    "unchanged",
 ]
 
 # TypeVars for decorator overloads

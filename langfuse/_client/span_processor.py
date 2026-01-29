@@ -446,7 +446,7 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
 
             # Emit using sync helper
             exec_ctx.emit_status_update(
-                status="running",
+                status="unchanged",
                 trace=trace_data,
             )
 
@@ -552,7 +552,7 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
             ctx = exec_ctx.get_current_context()
             if ctx is not None:
                 exec_ctx.emit_status_update(
-                    status="running",
+                    status="unchanged",
                     trace=pause_event,
                 )
 
@@ -614,4 +614,4 @@ class LangfuseSpanProcessor(BatchSpanProcessor):
                         else None
                     ),
                 )
-                exec_ctx.emit_status_update(status="running", prompt_for_span=update)
+                exec_ctx.emit_status_update(status="unchanged", prompt_for_span=update)

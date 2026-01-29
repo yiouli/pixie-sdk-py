@@ -1,5 +1,5 @@
 # type: ignore
-"""Test span processor prompt emission functionality."""
+"""Test span processor prompt and trace emission functionality."""
 
 import asyncio
 import pytest
@@ -61,7 +61,7 @@ async def test_emit_prompt_attributes_with_compiled_prompt():
         update = await asyncio.wait_for(ctx.status_queue.async_q.get(), timeout=1.0)
 
         assert update is not None
-        assert update.status == "running"
+        assert update.status == "unchanged"
         assert update.prompt_for_span is not None
         assert isinstance(update.prompt_for_span, PromptForSpan)
         assert update.prompt_for_span.prompt_id == prompt.id
@@ -230,5 +230,174 @@ async def test_emit_prompt_attributes_json_embedded():
 
         assert update.prompt_for_span is not None
         assert update.prompt_for_span.prompt_id == prompt.id
+
+    exec_ctx.unregister_run(run_id)
+
+
+@pytest.mark.asyncio
+async def test_on_start_emits_partial_trace():
+    """Test that on_start emits partial trace data to execution context."""
+
+    run_id = "test-run-start"
+    exec_ctx.init_run(run_id)
+
+    # Mock span for on_start (Span type)
+    mock_span = Mock()
+    mock_span.name = "test-span"
+    mock_span.start_time = 1234567890000000000  # nanoseconds
+    mock_span.context = Mock()
+    mock_span.context.trace_id = 12345
+    mock_span.context.span_id = 67890
+    mock_span.parent = Mock()
+    mock_span.parent.span_id = 11111
+    mock_span.attributes = {"key": "value"}
+    mock_span.kind = Mock()
+    mock_span.kind.name = "INTERNAL"
+
+    from langfuse._client.span_processor import LangfuseSpanProcessor
+
+    with patch("langfuse._client.span_processor.OTLPSpanExporter"):
+        processor = LangfuseSpanProcessor(
+            public_key="test",
+            secret_key="test",
+            base_url="http://test.com",
+            server_export_enabled=False,
+        )
+
+        # Call on_start
+        processor.on_start(mock_span)
+
+        # Check that trace was emitted
+        ctx = exec_ctx.get_current_context()
+        update = await asyncio.wait_for(ctx.status_queue.async_q.get(), timeout=1.0)
+
+        assert update is not None
+        assert update.status == "unchanged"
+        assert update.trace is not None
+        assert update.trace["event"] == "span_start"
+        assert update.trace["span_name"] == "test-span"
+        assert update.trace["start_time_unix_nano"] == "1234567890000000000"
+        assert update.trace["trace_id"] == format_trace_id(12345)
+        assert update.trace["span_id"] == format_span_id(67890)
+        assert update.trace["parent_span_id"] == format_span_id(11111)
+        assert update.trace["attributes"] == {"key": "value"}
+        assert update.trace["kind"] == "INTERNAL"
+
+    exec_ctx.unregister_run(run_id)
+
+
+@pytest.mark.asyncio
+async def test_on_end_emits_full_trace():
+    """Test that on_end emits full trace data to execution context."""
+
+    run_id = "test-run-end"
+    exec_ctx.init_run(run_id)
+
+    # Mock ReadableSpan for on_end
+    mock_span = Mock()
+    mock_span.name = "test-span"
+    mock_span.instrumentation_scope = None  # To pass _is_langfuse_project_span check
+    mock_span.parent = None  # Explicitly set parent to None
+    mock_span.attributes = {}  # Empty attributes
+    mock_span.context = None  # No context for prompt emission
+
+    from langfuse._client.span_processor import LangfuseSpanProcessor
+
+    # Mock the encode_spans and MessageToDict
+    mock_proto = Mock()
+    expected_trace_data = {"resourceSpans": []}
+
+    with patch("langfuse._client.span_processor.OTLPSpanExporter"), patch(
+        "langfuse._client.span_processor.encode_spans", return_value=mock_proto
+    ), patch(
+        "langfuse._client.span_processor.MessageToDict",
+        return_value=expected_trace_data,
+    ), patch(
+        "langfuse._client.span_processor.span_formatter", return_value="mocked"
+    ):
+
+        processor = LangfuseSpanProcessor(
+            public_key="test",
+            secret_key="test",
+            base_url="http://test.com",
+            server_export_enabled=False,
+        )
+
+        # Call on_end
+        processor.on_end(mock_span)
+
+        # Check that trace was emitted
+        ctx = exec_ctx.get_current_context()
+        update = await asyncio.wait_for(ctx.status_queue.async_q.get(), timeout=1.0)
+
+        assert update is not None
+        assert update.status == "unchanged"
+        assert update.trace == expected_trace_data
+
+    exec_ctx.unregister_run(run_id)
+
+
+@pytest.mark.asyncio
+async def test_on_start_and_on_end_emissions():
+    """Test that both on_start and on_end emit trace data."""
+
+    run_id = "test-run-both"
+    exec_ctx.init_run(run_id)
+
+    # Mock span for on_start
+    mock_span_start = Mock()
+    mock_span_start.name = "test-span"
+    mock_span_start.start_time = 1234567890000000000
+    mock_span_start.context = Mock()
+    mock_span_start.context.trace_id = 12345
+    mock_span_start.context.span_id = 67890
+    mock_span_start.parent = None
+    mock_span_start.attributes = {}
+    mock_span_start.kind = Mock()
+    mock_span_start.kind.name = "INTERNAL"
+
+    # Mock ReadableSpan for on_end (same span conceptually)
+    mock_span_end = Mock()
+    mock_span_end.name = "test-span"
+    mock_span_end.instrumentation_scope = None
+    mock_span_end.attributes = {}
+    mock_span_end.context = None
+
+    from langfuse._client.span_processor import LangfuseSpanProcessor
+
+    expected_trace_data = {"resourceSpans": []}
+
+    with patch("langfuse._client.span_processor.OTLPSpanExporter"), patch(
+        "langfuse._client.span_processor.encode_spans", return_value=Mock()
+    ), patch(
+        "langfuse._client.span_processor.MessageToDict",
+        return_value=expected_trace_data,
+    ), patch(
+        "langfuse._client.span_processor.span_formatter", return_value="mocked"
+    ):
+
+        processor = LangfuseSpanProcessor(
+            public_key="test",
+            secret_key="test",
+            base_url="http://test.com",
+            server_export_enabled=False,
+        )
+
+        # Call on_start
+        processor.on_start(mock_span_start)
+
+        # Call on_end
+        processor.on_end(mock_span_end)
+
+        # Check both emissions
+        ctx = exec_ctx.get_current_context()
+
+        # First update should be from on_start
+        update1 = await asyncio.wait_for(ctx.status_queue.async_q.get(), timeout=1.0)
+        assert update1.trace["event"] == "span_start"
+
+        # Second update should be from on_end
+        update2 = await asyncio.wait_for(ctx.status_queue.async_q.get(), timeout=1.0)
+        assert update2.trace == expected_trace_data
 
     exec_ctx.unregister_run(run_id)

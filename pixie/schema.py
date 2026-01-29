@@ -91,6 +91,7 @@ class AppRunStatus(Enum):
     PAUSED = "paused"
     WAITING = "waiting"
     CANCELLED = "cancelled"
+    UNCHANGED = "unchanged"
 
 
 @strawberry.enum
