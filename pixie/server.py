@@ -1,6 +1,7 @@
 """FastAPI server for SDK."""
 
 import argparse
+from contextlib import asynccontextmanager
 import os
 import logging
 from urllib.parse import quote
@@ -13,6 +14,7 @@ from strawberry.fastapi import GraphQLRouter
 from pixie.prompts.file_watcher import discover_and_load_modules, init_prompt_storage
 from pixie.schema import schema
 from pixie.server_utils import enable_instrumentations, setup_logging
+from pixie.session.server import start_session_server
 
 
 logger = logging.getLogger(__name__)
@@ -32,7 +34,21 @@ def create_app() -> FastAPI:
     enable_instrumentations()
 
     dotenv.load_dotenv(os.getcwd() + "/.env")
-    lifespan = init_prompt_storage()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        """Lifespan context manager for FastAPI app.
+
+        Initializes prompt storage on startup.
+        """
+        storage_lifespan = init_prompt_storage()
+        async with storage_lifespan(app):
+            session_server = await start_session_server()
+            try:
+                yield
+            finally:
+                session_server.task.cancel()
+                session_server.cancel()
 
     app = FastAPI(
         title="Pixie SDK Server",

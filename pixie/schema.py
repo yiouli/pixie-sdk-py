@@ -16,7 +16,7 @@ from strawberry.scalars import JSON
 
 from langfuse import get_client
 from pixie.registry import call_application, get_application, list_applications
-from pixie.session.rpc import send_input_to_client
+from pixie.session.rpc import send_input_to_client, wait_for_client_update
 from pixie.types import (
     AppRunCancelled,
     BreakpointDetail as PydanticBreakpointDetail,
@@ -529,6 +529,42 @@ def _create_app_run_in_thread(run: Coroutine) -> tuple[Coroutine, Callable[[], N
 @strawberry.type
 class Subscription:
     """GraphQL subscriptions."""
+
+    @strawberry.subscription
+    async def run_session(self, session_id: str) -> AsyncGenerator[AppRunUpdate, None]:
+        """Subscribe to application run updates for a session.
+
+        Args:
+            session_id: The unique identifier of the session.
+        Yields:
+            AppRunUpdate: Status updates including run status, data, breakpoints, and traces.
+        """
+        try:
+            while True:
+                session_update = await wait_for_client_update(session_id)
+                app_update = PydanticAppRunUpdate(
+                    run_id=session_update.session_id,
+                    status=session_update.status,
+                    user_input_schema=session_update.user_input_schema,
+                    user_input=session_update.user_input,
+                    data=session_update.data,
+                    trace=session_update.trace,
+                    prompt_for_span=session_update.prompt_for_span,
+                )
+                yield AppRunUpdate.from_pydantic(app_update)
+                if app_update.status in (
+                    "completed",
+                    "error",
+                    "cancelled",
+                ):
+                    break
+        except Exception as e:
+            logger.error(
+                "Error in run_session subscription for session_id=%s: %s",
+                session_id,
+                str(e),
+            )
+            raise GraphQLError(f"Subscription error: {str(e)}") from e
 
     @strawberry.subscription
     async def run(

@@ -8,16 +8,13 @@ These tests verify that the socket server is properly cleaned up when:
 import asyncio
 import threading
 import pytest
-import janus
 import socket
 from pixie.session.rpc import (
     listen_to_client_connections,
     stop_server,
     _get_server_state,
-    _shutdown_server,
 )
 from pixie.session.server import _run_in_thread
-from pixie.session.types import SessionUpdate
 
 
 # Test timeout for socket operations
@@ -60,12 +57,13 @@ def cleanup():
     """Cleanup fixture to ensure server state is reset after each test."""
     yield
     stop_server()
-    # Force shutdown server if still running
-    _shutdown_server()
-    # Give sockets time to clean up
-    import time
 
-    time.sleep(0.2)
+
+async def start_session_server(port: int) -> asyncio.Task:
+    """Start the session server and wait briefly for it to listen."""
+    task = asyncio.create_task(listen_to_client_connections(port))
+    await asyncio.sleep(0.05)  # Minimal delay for server to start listening
+    return task
 
 
 class TestServerCleanupOnTaskCancel:
@@ -82,12 +80,7 @@ class TestServerCleanupOnTaskCancel:
         import pixie.session.rpc as rpc_module
 
         port = get_test_port(1)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.3)  # Let server start
+        server_task = await start_session_server(port)
 
         # Verify server is running
         assert rpc_module._server_state is not None
@@ -113,12 +106,7 @@ class TestServerCleanupOnTaskCancel:
     async def test_port_released_on_task_cancel(self, cleanup):
         """Test that ports are released when server task is cancelled."""
         port = get_test_port(2)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.3)  # Let server start
+        server_task = await start_session_server(port)
 
         # Verify port is in use
         assert is_port_in_use(port), f"Port {port} should be in use"
@@ -143,13 +131,8 @@ class TestServerCleanupOnTaskCancel:
         import pixie.session.rpc as rpc_module
 
         port = get_test_port(3)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
         # Start server first time
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.3)
+        server_task = await start_session_server(port)
 
         # Cancel first server
         server_task.cancel()
@@ -160,11 +143,7 @@ class TestServerCleanupOnTaskCancel:
         await asyncio.sleep(0.3)
 
         # Should be able to start server again
-        update_queue2: janus.Queue[SessionUpdate] = janus.Queue()
-        server_task2 = asyncio.create_task(
-            listen_to_client_connections(port, update_queue2)
-        )
-        await asyncio.sleep(0.3)
+        server_task2 = await start_session_server(port)
 
         # Verify second server is running
         assert rpc_module._server_state is not None
@@ -193,10 +172,8 @@ class TestServerCleanupInThread:
         import pixie.session.rpc as rpc_module
 
         port = get_test_port(10)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
         # Run server in thread like run_session_server does
-        run, cancel = _run_in_thread(listen_to_client_connections(port, update_queue))
+        run, cancel = _run_in_thread(listen_to_client_connections(port))
         task = asyncio.create_task(run)
         await asyncio.sleep(0.5)  # Let server start
 
@@ -224,10 +201,8 @@ class TestServerCleanupInThread:
     async def test_port_released_via_thread_cancel(self, cleanup):
         """Test that port is released when thread task is cancelled."""
         port = get_test_port(11)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
         # Run server in thread
-        run, cancel = _run_in_thread(listen_to_client_connections(port, update_queue))
+        run, cancel = _run_in_thread(listen_to_client_connections(port))
         task = asyncio.create_task(run)
         await asyncio.sleep(0.5)
 
@@ -253,10 +228,8 @@ class TestServerCleanupInThread:
         import pixie.session.rpc as rpc_module
 
         port = get_test_port(12)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
         # Start and cancel server first time
-        run, cancel = _run_in_thread(listen_to_client_connections(port, update_queue))
+        run, cancel = _run_in_thread(listen_to_client_connections(port))
         task = asyncio.create_task(run)
         await asyncio.sleep(0.5)
 
@@ -269,10 +242,7 @@ class TestServerCleanupInThread:
         await asyncio.sleep(0.5)
 
         # Start server second time
-        update_queue2: janus.Queue[SessionUpdate] = janus.Queue()
-        run2, cancel2 = _run_in_thread(
-            listen_to_client_connections(port, update_queue2)
-        )
+        run2, cancel2 = _run_in_thread(listen_to_client_connections(port))
         task2 = asyncio.create_task(run2)
         await asyncio.sleep(0.5)
 
@@ -309,11 +279,9 @@ class TestServerCleanupCrossThread:
         import pixie.session.rpc as rpc_module
 
         port = get_test_port(20)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
         # Create server in a separate event loop (like _run_in_thread does)
         child_loop = asyncio.new_event_loop()
-        server_coro = listen_to_client_connections(port, update_queue)
+        server_coro = listen_to_client_connections(port)
         child_task = child_loop.create_task(server_coro)
 
         # Run the child loop in a thread
@@ -355,10 +323,8 @@ class TestServerCleanupCrossThread:
         import pixie.session.rpc as rpc_module
 
         port = get_test_port(21)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
         # Use _run_in_thread like run_session_server does
-        run, cancel = _run_in_thread(listen_to_client_connections(port, update_queue))
+        run, cancel = _run_in_thread(listen_to_client_connections(port))
         task = asyncio.create_task(run)
 
         await asyncio.sleep(0.5)  # Let server start
@@ -389,10 +355,8 @@ class TestServerCleanupCrossThread:
         import pixie.session.rpc as rpc_module
 
         port = get_test_port(22)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
         # First run
-        run, cancel = _run_in_thread(listen_to_client_connections(port, update_queue))
+        run, cancel = _run_in_thread(listen_to_client_connections(port))
         task = asyncio.create_task(run)
         await asyncio.sleep(0.5)
 
@@ -406,10 +370,7 @@ class TestServerCleanupCrossThread:
         await asyncio.sleep(0.5)
 
         # Should be able to restart
-        update_queue2: janus.Queue[SessionUpdate] = janus.Queue()
-        run2, cancel2 = _run_in_thread(
-            listen_to_client_connections(port, update_queue2)
-        )
+        run2, cancel2 = _run_in_thread(listen_to_client_connections(port))
         task2 = asyncio.create_task(run2)
         await asyncio.sleep(0.5)
 
@@ -438,12 +399,7 @@ class TestConnectionDuringShutdown:
         after _server_state has been set to None.
         """
         port = get_test_port(30)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.3)  # Let server start
+        server_task = await start_session_server(port)
 
         # Start shutdown
         stop_server()
@@ -477,12 +433,7 @@ class TestConnectionDuringShutdown:
     async def test_multiple_connections_during_shutdown(self, cleanup):
         """Test that multiple connections during shutdown are handled gracefully."""
         port = get_test_port(31)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.3)  # Let server start
+        server_task = await start_session_server(port)
 
         # Start shutdown
         stop_server()
@@ -530,23 +481,18 @@ class TestClientWaitingForInputCleanup:
         """Test server cleanup when client is connected and waiting for input.
 
         This is the key bug scenario:
-        1. Server starts with a janus queue
+        1. Server starts and registers a client
         2. Client connects and registers
         3. Server is cancelled (GraphQL disconnect)
-        4. Server should clean up, releasing the janus queue
-        5. New server should be able to start with a fresh queue
+        4. Server should clean up its queues and sockets
+        5. New server should be able to start cleanly
         """
         import pixie.session.rpc as rpc_module
         from pixie.session.rpc import connect_to_server, disconnect_from_server
 
         port = get_test_port(40)
-        update_queue1: janus.Queue[SessionUpdate] = janus.Queue()
-
         # Start first server
-        server_task1 = asyncio.create_task(
-            listen_to_client_connections(port, update_queue1)
-        )
-        await asyncio.sleep(0.3)
+        server_task1 = await start_session_server(port)
 
         # Connect a client
         await connect_to_server("localhost", port, "test-session-waiting")
@@ -568,10 +514,6 @@ class TestClientWaitingForInputCleanup:
         # Clean up the client
         disconnect_from_server()
 
-        # Close the first queue
-        update_queue1.close()
-        await update_queue1.wait_closed()
-
         # Wait for cleanup
         await asyncio.sleep(0.5)
 
@@ -580,12 +522,7 @@ class TestClientWaitingForInputCleanup:
 
         # Now try to start a NEW server with a NEW queue
         # This should NOT fail with "bound to a different event loop"
-        update_queue2: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task2 = asyncio.create_task(
-            listen_to_client_connections(port, update_queue2)
-        )
-        await asyncio.sleep(0.3)
+        server_task2 = await start_session_server(port)
 
         # New server should be running
         assert rpc_module._server_state is not None
@@ -603,9 +540,6 @@ class TestClientWaitingForInputCleanup:
             except asyncio.CancelledError:
                 pass
 
-        update_queue2.close()
-        await update_queue2.wait_closed()
-
     @pytest.mark.asyncio
     @pytest.mark.timeout(TIMEOUT)
     async def test_sequential_server_restarts_different_event_loops(self, cleanup):
@@ -621,12 +555,7 @@ class TestClientWaitingForInputCleanup:
 
         # First iteration - create server in a thread with its own event loop
         async def run_server_iteration_1():
-            update_queue = janus.Queue[SessionUpdate]()
-            try:
-                await listen_to_client_connections(port, update_queue)
-            finally:
-                update_queue.close()
-                await update_queue.wait_closed()
+            await listen_to_client_connections(port)
 
         run1, cancel1 = _run_in_thread(run_server_iteration_1())
         task1 = asyncio.create_task(run1)
@@ -650,12 +579,7 @@ class TestClientWaitingForInputCleanup:
 
         # Second iteration - should work without "bound to different event loop" error
         async def run_server_iteration_2():
-            update_queue = janus.Queue[SessionUpdate]()
-            try:
-                await listen_to_client_connections(port, update_queue)
-            finally:
-                update_queue.close()
-                await update_queue.wait_closed()
+            await listen_to_client_connections(port)
 
         run2, cancel2 = _run_in_thread(run_server_iteration_2())
         task2 = asyncio.create_task(run2)

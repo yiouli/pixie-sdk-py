@@ -9,7 +9,6 @@ These tests verify that:
 import asyncio
 import pytest
 import janus
-import time
 from unittest.mock import patch
 
 from pixie.session.rpc import (
@@ -19,6 +18,7 @@ from pixie.session.rpc import (
     listen_to_client_connections,
     stop_server,
     send_input_to_client,
+    wait_for_client_update,
     _get_server_state,
 )
 from pixie.session.types import SessionUpdate
@@ -43,7 +43,18 @@ def cleanup():
     yield
     disconnect_from_server()
     stop_server()
-    time.sleep(0.1)
+
+
+async def start_session_server(port: int) -> asyncio.Task:
+    """Start the session server and wait briefly for it to listen."""
+    task = asyncio.create_task(listen_to_client_connections(port))
+    await asyncio.sleep(0.05)  # Minimal delay for server to start listening
+    return task
+
+
+async def expect_update(session_id: str, timeout: float = 2.0) -> SessionUpdate:
+    """Fetch the next update for a session with a timeout."""
+    return await asyncio.wait_for(wait_for_client_update(session_id), timeout)
 
 
 class TestClientDisconnectDuringInputRequired:
@@ -62,13 +73,8 @@ class TestClientDisconnectDuringInputRequired:
         5. Server should NOT crash, should continue working for new clients
         """
         port = get_test_port(1)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
         # Start server
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         # Connect first client
         await connect_to_server("localhost", port, "client1")
@@ -85,7 +91,7 @@ class TestClientDisconnectDuringInputRequired:
         )
 
         # Verify server received the update
-        update = await asyncio.wait_for(update_queue.async_q.get(), timeout=2.0)
+        update = await expect_update("client1")
         assert update.session_id == "client1"
         assert update.status == "waiting"
         assert update.user_input_schema == {"type": "string"}
@@ -119,7 +125,7 @@ class TestClientDisconnectDuringInputRequired:
         )
 
         # Server should receive the new client's update
-        update2 = await asyncio.wait_for(update_queue.async_q.get(), timeout=2.0)
+        update2 = await expect_update("client2")
         assert update2.session_id == "client2"
         assert update2.status == "running"
 
@@ -144,12 +150,7 @@ class TestClientDisconnectDuringInputRequired:
 
         # For this test, we'll directly test the error handling in send_input_to_client
         port = get_test_port(2)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         # Connect client
         await connect_to_server("localhost", port, "test-client")
@@ -159,7 +160,7 @@ class TestClientDisconnectDuringInputRequired:
         await notify_server(SessionUpdate(session_id="test-client", status="running"))
 
         # Get update
-        update = await asyncio.wait_for(update_queue.async_q.get(), timeout=2.0)
+        update = await expect_update("test-client")
         assert update.status == "running"
 
         # Disconnect
@@ -174,7 +175,7 @@ class TestClientDisconnectDuringInputRequired:
         await connect_to_server("localhost", port, "new-client")
         await notify_server(SessionUpdate(session_id="new-client", status="running"))
 
-        update2 = await asyncio.wait_for(update_queue.async_q.get(), timeout=2.0)
+        update2 = await expect_update("new-client")
         assert update2.session_id == "new-client"
 
         server_task.cancel()
@@ -303,12 +304,7 @@ class TestServerLoopRecovery:
         7. Server should catch the error and continue processing
         """
         port = get_test_port(10)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         # First client connects
         await connect_to_server("localhost", port, "client-a")
@@ -319,7 +315,7 @@ class TestServerLoopRecovery:
             SessionUpdate(session_id="client-a", status="running", data="hello")
         )
 
-        update1 = await asyncio.wait_for(update_queue.async_q.get(), timeout=2.0)
+        update1 = await expect_update("client-a")
         assert update1.session_id == "client-a"
 
         # Client sends waiting with schema
@@ -331,7 +327,7 @@ class TestServerLoopRecovery:
             )
         )
 
-        update2 = await asyncio.wait_for(update_queue.async_q.get(), timeout=2.0)
+        update2 = await expect_update("client-a")
         assert update2.status == "waiting"
 
         # Now client disconnects WITHOUT sending completed
@@ -351,14 +347,14 @@ class TestServerLoopRecovery:
         )
 
         # Server should receive this update
-        update3 = await asyncio.wait_for(update_queue.async_q.get(), timeout=2.0)
+        update3 = await expect_update("client-b")
         assert update3.session_id == "client-b"
         assert update3.data == "new client"
 
         # Send completed
         await notify_server(SessionUpdate(session_id="client-b", status="completed"))
 
-        update4 = await asyncio.wait_for(update_queue.async_q.get(), timeout=2.0)
+        update4 = await expect_update("client-b")
         assert update4.status == "completed"
 
         server_task.cancel()
@@ -391,12 +387,7 @@ class TestRunSessionServerGenerator:
         # but simulating the exact sequence of events
 
         port = get_test_port(20)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         # Client 1 connects
         await connect_to_server("localhost", port, "gen-client-1")
@@ -412,7 +403,7 @@ class TestRunSessionServerGenerator:
             )
         )
 
-        update = await asyncio.wait_for(update_queue.async_q.get(), timeout=2.0)
+        update = await expect_update("gen-client-1")
         assert update.session_id == "gen-client-1"
         assert update.status == "waiting"
 
@@ -437,7 +428,7 @@ class TestRunSessionServerGenerator:
         )
 
         # Server should process this
-        update2 = await asyncio.wait_for(update_queue.async_q.get(), timeout=2.0)
+        update2 = await expect_update("gen-client-2")
         assert update2.session_id == "gen-client-2"
         assert update2.data == "I am client 2"
 

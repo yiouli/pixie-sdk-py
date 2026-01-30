@@ -1,9 +1,7 @@
 """Tests for pixie.session module - TCP-based RPC client/server communication."""
 
 import asyncio
-import time
 import pytest
-import janus
 from unittest.mock import AsyncMock, MagicMock, patch
 from pydantic import BaseModel
 
@@ -12,6 +10,7 @@ from pixie.session.rpc import (
     disconnect_from_server,
     notify_server,
     wait_for_input,
+    wait_for_client_update,
     listen_to_client_connections,
     stop_server,
     send_input_to_client,
@@ -56,8 +55,18 @@ def cleanup():
     yield
     disconnect_from_server()
     stop_server()
-    # Give sockets time to clean up
-    time.sleep(0.1)
+
+
+async def start_session_server(port: int) -> asyncio.Task:
+    """Start the session server and wait briefly for it to listen."""
+    task = asyncio.create_task(listen_to_client_connections(port))
+    await asyncio.sleep(0.05)  # Minimal delay for server to start listening
+    return task
+
+
+async def expect_update(session_id: str, timeout: float = 2.0) -> SessionUpdate:
+    """Fetch the next update for a session with a timeout."""
+    return await asyncio.wait_for(wait_for_client_update(session_id), timeout)
 
 
 class TestServerStartup:
@@ -67,12 +76,7 @@ class TestServerStartup:
     async def test_server_binds_to_port(self, cleanup):
         """Test that server successfully binds to specified port."""
         port = get_test_port(1)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)  # Let server start
+        server_task = await start_session_server(port)
 
         state = _get_server_state()
         assert state is not None
@@ -88,15 +92,10 @@ class TestServerStartup:
     async def test_server_already_running_raises(self, cleanup):
         """Test that starting server twice raises error."""
         port = get_test_port(2)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         with pytest.raises(RuntimeError, match="Server already running"):
-            await listen_to_client_connections(port, update_queue)
+            await listen_to_client_connections(port)
 
         server_task.cancel()
         try:
@@ -113,12 +112,7 @@ class TestServerStartup:
     async def test_stop_server_signals_shutdown(self, cleanup):
         """Test that stop_server signals the server to stop."""
         port = get_test_port(3)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         stop_server()
         # Give server time to stop
@@ -136,12 +130,7 @@ class TestClientConnection:
     async def test_client_connects_and_receives_ack(self, cleanup):
         """Test that client connects to server and receives ACK."""
         port = get_test_port(10)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         # Connect should succeed and return the port used
         connected_port = await connect_to_server("localhost", port, "test-session")
@@ -152,6 +141,7 @@ class TestClientConnection:
         assert state.session_id == "test-session"
         assert state.connected_port == connected_port
 
+        stop_server()
         server_task.cancel()
         try:
             await server_task
@@ -163,12 +153,7 @@ class TestClientConnection:
     async def test_client_registered_on_server(self, cleanup):
         """Test that client is properly registered on server after connect."""
         port = get_test_port(11)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         await connect_to_server("localhost", port, "registered-session")
         await asyncio.sleep(0.1)  # Give server time to process registration
@@ -187,12 +172,7 @@ class TestClientConnection:
     async def test_connect_twice_raises(self, cleanup):
         """Test that connecting twice raises error."""
         port = get_test_port(12)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         await connect_to_server("localhost", port, "test-session")
 
@@ -214,12 +194,7 @@ class TestClientConnection:
     async def test_disconnect_cleans_up(self, cleanup):
         """Test that disconnect_from_server cleans up properly."""
         port = get_test_port(13)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         await connect_to_server("localhost", port, "test-session")
         disconnect_from_server()
@@ -256,12 +231,7 @@ class TestRegistrationTimeout:
     async def test_server_disconnects_slow_client(self, cleanup):
         """Test that server disconnects client that doesn't send session_id in time."""
         port = get_test_port(20)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         # Connect directly without using our client (to simulate slow registration)
         reader, writer = await asyncio.open_connection("localhost", port)
@@ -294,12 +264,7 @@ class TestRegistrationTimeout:
     async def test_server_rejects_duplicate_session_id(self, cleanup):
         """Test that server rejects a second client with same session_id."""
         port = get_test_port(21)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         # First client connects successfully
         await connect_to_server("localhost", port, "duplicate-session")
@@ -345,12 +310,7 @@ class TestClientServerCommunication:
     async def test_notify_server_sends_update(self, cleanup):
         """Test that notify_server sends SessionUpdate to server queue."""
         port = get_test_port(30)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         await connect_to_server("localhost", port, "test-session-1")
         await asyncio.sleep(0.1)  # Give server time to register client
@@ -363,7 +323,7 @@ class TestClientServerCommunication:
         await notify_server(update)
 
         # Check queue received the update
-        received = await asyncio.wait_for(update_queue.async_q.get(), timeout=2.0)
+        received = await expect_update("test-session-1")
         assert received.session_id == "test-session-1"
         assert received.status == "running"
         assert received.data == "hello server"
@@ -379,12 +339,7 @@ class TestClientServerCommunication:
     async def test_multiple_updates_queued(self, cleanup):
         """Test that multiple updates are queued in order."""
         port = get_test_port(31)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         await connect_to_server("localhost", port, "session-multi")
         await asyncio.sleep(0.1)
@@ -399,7 +354,7 @@ class TestClientServerCommunication:
             )
 
         for i in range(3):
-            received = await asyncio.wait_for(update_queue.async_q.get(), timeout=2.0)
+            received = await expect_update("session-multi")
             assert received.session_id == "session-multi"
             assert received.data == f"message {i}"
 
@@ -429,12 +384,7 @@ class TestInputFlow:
     async def test_wait_for_input_receives_string(self, cleanup):
         """Test that client receives string input from server."""
         port = get_test_port(40)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         await connect_to_server("localhost", port, "input-test")
         await asyncio.sleep(0.1)
@@ -470,12 +420,7 @@ class TestInputFlow:
     async def test_wait_for_input_receives_pydantic_model(self, cleanup):
         """Test that client receives and deserializes Pydantic model."""
         port = get_test_port(41)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         await connect_to_server("localhost", port, "model-test")
         await asyncio.sleep(0.1)
@@ -504,12 +449,7 @@ class TestInputFlow:
     async def test_send_input_to_unknown_client_raises(self, cleanup):
         """Test that sending to unknown client raises KeyError."""
         port = get_test_port(42)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         with pytest.raises(KeyError, match="No client connected"):
             await send_input_to_client("unknown-session", "data")
@@ -541,12 +481,7 @@ class TestConnectionCleanup:
     async def test_client_disconnect_removes_from_server_registry(self, cleanup):
         """Test that disconnecting client removes it from server registry."""
         port = get_test_port(50)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         await connect_to_server("localhost", port, "cleanup-test")
         await asyncio.sleep(0.1)
@@ -573,12 +508,7 @@ class TestConnectionCleanup:
     async def test_sequential_client_connections(self, cleanup):
         """Test that clients can connect sequentially on the same port."""
         port = get_test_port(51)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         # Connect first client
         await connect_to_server("localhost", port, "client-1")
@@ -614,13 +544,8 @@ class TestFullRoundTrip:
     async def test_full_client_server_roundtrip(self, cleanup):
         """Test complete client-server communication cycle."""
         port = get_test_port(60)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
         # Start server
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         # Connect client
         connected_port = await connect_to_server("localhost", port, "roundtrip")
@@ -646,11 +571,11 @@ class TestFullRoundTrip:
         )
 
         # Verify server received both updates
-        update1 = await asyncio.wait_for(update_queue.async_q.get(), timeout=2.0)
+        update1 = await expect_update("roundtrip")
         assert update1.session_id == "roundtrip"
         assert update1.status == "running"
 
-        update2 = await asyncio.wait_for(update_queue.async_q.get(), timeout=2.0)
+        update2 = await expect_update("roundtrip")
         assert update2.session_id == "roundtrip"
         assert update2.status == "waiting"
 
@@ -676,12 +601,7 @@ class TestFullRoundTrip:
     async def test_large_message_handling(self, cleanup):
         """Test handling of large messages."""
         port = get_test_port(61)
-        update_queue: janus.Queue[SessionUpdate] = janus.Queue()
-
-        server_task = asyncio.create_task(
-            listen_to_client_connections(port, update_queue)
-        )
-        await asyncio.sleep(0.2)
+        server_task = await start_session_server(port)
 
         await connect_to_server("localhost", port, "large-msg-test")
         await asyncio.sleep(0.1)
@@ -696,7 +616,7 @@ class TestFullRoundTrip:
             )
         )
 
-        received = await asyncio.wait_for(update_queue.async_q.get(), timeout=5.0)
+        received = await expect_update("large-msg-test", timeout=5.0)
         assert received.data == large_data
 
         server_task.cancel()

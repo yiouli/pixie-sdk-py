@@ -115,17 +115,17 @@ class _ServerState:
 
     Attributes:
         servers: List of asyncio.Server instances (one per port).
-        update_queue: Janus queue where all client SessionUpdates are placed.
+        update_queues: Map of session_id to janus.Queue where all client SessionUpdates are placed.
         client_connections: Map of session_id to client connection info.
         running: Flag to control the server lifecycle.
         lock: Lock for client_connections access.
     """
 
-    update_queue: janus.Queue[SessionUpdate]
     servers: list[asyncio.Server] = field(default_factory=list)
     client_connections: dict[str, _ClientConnection] = field(default_factory=dict)
     running: bool = True
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    update_queues: dict[str, janus.Queue[SessionUpdate]] = field(default_factory=dict)
 
 
 _server_state: _ServerState | None = None
@@ -184,10 +184,13 @@ async def _handle_client_messages(
         async with state.lock:
             if connection.session_id in state.client_connections:
                 del state.client_connections[connection.session_id]
+                # Note: queue cleanup is handled by _async_shutdown_server
 
         try:
             connection.writer.close()
             await connection.writer.wait_closed()
+            logger.info(f"Closed connection for session_id: {connection.session_id}")
+
         except Exception:
             logger.error("Error closing client connection", exc_info=True)
 
@@ -254,15 +257,14 @@ async def _handle_new_connection(
                 writer=writer,
             )
             state.client_connections[session_id] = connection
+            queue = state.update_queues[session_id] = janus.Queue[SessionUpdate]()
             logger.info(f"Client registered with session_id: {session_id}")
 
         # Send ACK to client (empty message means success)
         await _send_message(writer, b"ACK")
 
         # Spawn worker task to handle messages
-        task = asyncio.create_task(
-            _handle_client_messages(connection, state.update_queue)
-        )
+        task = asyncio.create_task(_handle_client_messages(connection, queue))
         connection.task = task
 
     except Exception as e:
@@ -274,10 +276,7 @@ async def _handle_new_connection(
             logger.error("Error closing writer", exc_info=True)
 
 
-async def listen_to_client_connections(
-    port: int,
-    update_queue: janus.Queue[SessionUpdate],
-) -> None:
+async def listen_to_client_connections(port: int) -> None:
     """Listen for client connections on a port and queue received SessionUpdates.
 
     This is a long-running async function. It starts a TCP server on the specified
@@ -303,7 +302,7 @@ async def listen_to_client_connections(
         if _server_state is not None:
             raise RuntimeError("Server already running.")
 
-        _server_state = _ServerState(update_queue=update_queue)
+        _server_state = _ServerState()
 
     state = _server_state
 
@@ -316,6 +315,7 @@ async def listen_to_client_connections(
                 port=port,
             )
             state.servers.append(server)
+            logger.info(f"Session RPC server listening on port {port}")
         except OSError as e:
             raise RuntimeError(f"Failed to bind to port {port}: {e}") from e
 
@@ -324,6 +324,7 @@ async def listen_to_client_connections(
             await asyncio.sleep(0.1)
 
     finally:
+        logger.info("Shutting down session RPC server")
         await _async_shutdown_server()
 
 
@@ -339,67 +340,69 @@ async def _async_shutdown_server() -> None:
         # Clear state immediately to prevent "server already running" errors
         _server_state = None
 
-    # Close all servers and wait for them to close
-    for server in state.servers:
-        try:
-            server.close()
-            await server.wait_closed()
-        except Exception:
-            logger.error("Error closing server", exc_info=True)
-
-    # Cancel all client worker tasks
-    # First feed EOF to readers to unblock any pending reads, then cancel tasks
     tasks_to_wait = []
-    for conn in state.client_connections.values():
-        # Feed EOF to reader to unblock pending reads
-        try:
-            conn.reader.feed_eof()
-        except Exception:
-            pass  # Reader may already be closed
-        if conn.task:
-            conn.task.cancel()
-            tasks_to_wait.append(conn.task)
-        try:
-            conn.writer.close()
-        except Exception:
-            pass  # Writer may already be closed
+    async with state.lock:
+        # First, close all queues and wait for them
+        for session_id, queue in list(state.update_queues.items()):
+            try:
+                queue.close()
+                await asyncio.wait_for(queue.wait_closed(), timeout=1.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout waiting for queue {session_id} to close")
+            except Exception:
+                logger.error(
+                    f"Error closing update queue for {session_id}", exc_info=True
+                )
+        state.update_queues.clear()
+
+        # Cancel all client worker tasks and close connections BEFORE waiting for server
+        # This ensures connections are dropped so server.wait_closed() doesn't block
+        for conn in state.client_connections.values():
+            # Feed EOF to reader to unblock pending reads
+            try:
+                conn.reader.feed_eof()
+            except Exception:
+                logger.error("Error feeding EOF to client reader", exc_info=True)
+            # Cancel the worker task
+            if conn.task and not conn.task.done():
+                conn.task.cancel()
+                tasks_to_wait.append(conn.task)
+            try:
+                conn.writer.close()
+                await conn.writer.wait_closed()
+            except Exception:
+                logger.error("Error closing client writer", exc_info=True)
+
+        # Now close servers - connections are already dropped so this should be fast
+        for server in state.servers:
+            try:
+                server.close()
+                await server.wait_closed()
+            except Exception:
+                logger.error("Error closing server", exc_info=True)
 
     # Wait for all tasks to complete with a timeout
     if tasks_to_wait:
         try:
-            await asyncio.wait_for(
+            results = await asyncio.wait_for(
                 asyncio.gather(*tasks_to_wait, return_exceptions=True),
                 timeout=2.0,
             )
+            # Log any exceptions from tasks
+            for i, result in enumerate(results):
+                if isinstance(result, Exception) and not isinstance(
+                    result, asyncio.CancelledError
+                ):
+                    logger.error(f"Task {i} raised exception during shutdown: {result}")
+            logger.info("Session RPC server shut down successfully")
         except asyncio.TimeoutError:
-            logger.warning("Timeout waiting for client tasks to cancel")
-
-
-def _shutdown_server() -> None:
-    """Clean up server resources synchronously (for use in non-async contexts)."""
-    global _server_state
-
-    with _server_lock:
-        if _server_state is not None:
-            _server_state.running = False
-
-            # Close all servers
-            for server in _server_state.servers:
-                try:
-                    server.close()
-                except Exception:
-                    logger.error("Error closing server", exc_info=True)
-
-            # Cancel all client worker tasks
-            for conn in _server_state.client_connections.values():
-                if conn.task:
-                    conn.task.cancel()
-                try:
-                    conn.writer.close()
-                except Exception:
-                    pass  # Writer may already be closed
-
-            _server_state = None
+            logger.warning(
+                f"Timeout waiting for {len(tasks_to_wait)} client tasks to cancel"
+            )
+            # Force cancel any remaining tasks
+            for task in tasks_to_wait:
+                if isinstance(task, asyncio.Task) and not task.done():
+                    task.cancel()
 
 
 def stop_server() -> None:
@@ -442,7 +445,25 @@ async def send_input_to_client(
     await _send_message(connection.writer, data)
 
 
-async def wait_for_client_update() -> SessionUpdate:
+def get_connected_session_ids() -> list[str]:
+    """Get a list of currently connected session IDs.
+
+    Returns:
+        List of connected session IDs.
+
+    Raises:
+        RuntimeError: If server is not initialized.
+    """
+    state = _get_server_state()
+
+    async def _get_ids():
+        async with state.lock:
+            return list(state.client_connections.keys())
+
+    return asyncio.run(_get_ids())
+
+
+async def wait_for_client_update(session_id: str) -> SessionUpdate:
     """Wait for the next SessionUpdate from any client.
 
     Returns:
@@ -452,10 +473,12 @@ async def wait_for_client_update() -> SessionUpdate:
     """
     state = _get_server_state()
 
-    if state.update_queue is None:
-        raise RuntimeError("Server update queue not initialized.")
+    queue = state.update_queues.get(session_id)
 
-    update = await state.update_queue.async_q.get()
+    if queue is None:
+        raise KeyError(f"No update queue for session_id: {session_id}")
+
+    update = await queue.async_q.get()
     return update
 
 
