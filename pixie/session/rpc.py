@@ -445,7 +445,7 @@ async def send_input_to_client(
     await _send_message(connection.writer, data)
 
 
-def get_connected_session_ids() -> list[str]:
+async def get_connected_session_ids() -> list[str]:
     """Get a list of currently connected session IDs.
 
     Returns:
@@ -455,12 +455,8 @@ def get_connected_session_ids() -> list[str]:
         RuntimeError: If server is not initialized.
     """
     state = _get_server_state()
-
-    async def _get_ids():
-        async with state.lock:
-            return list(state.client_connections.keys())
-
-    return asyncio.run(_get_ids())
+    async with state.lock:
+        return list(state.client_connections.keys())
 
 
 async def wait_for_client_update(session_id: str) -> SessionUpdate:

@@ -16,7 +16,11 @@ from strawberry.scalars import JSON
 
 from langfuse import get_client
 from pixie.registry import call_application, get_application, list_applications
-from pixie.session.rpc import send_input_to_client, wait_for_client_update
+from pixie.session.rpc import (
+    get_connected_session_ids,
+    send_input_to_client,
+    wait_for_client_update,
+)
 from pixie.types import (
     AppRunCancelled,
     BreakpointDetail as PydanticBreakpointDetail,
@@ -334,6 +338,15 @@ class _Query:
         except PackageNotFoundError as e:
             logger.warning("Failed to get Pixie SDK version: %s", str(e))
             return "0.0.0"
+
+    @strawberry.field
+    async def list_sessions(self) -> list[str]:
+        """List all active session IDs.
+
+        Returns:
+            A list of active session IDs.
+        """
+        return await get_connected_session_ids()
 
     @strawberry.field
     def list_apps(self) -> list[AppInfo]:
