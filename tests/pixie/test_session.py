@@ -773,9 +773,18 @@ class TestSessionClientFunctions:
 
                     assert result == "user input"
 
-                    call_args = mock_notify.call_args[0][0]
-                    assert call_args.status == "waiting"
-                    assert call_args.data == "Enter your name: "
+                    # Should have two notify_server calls: waiting and running with input
+                    assert mock_notify.call_count == 2
+
+                    # First call: waiting status
+                    first_call = mock_notify.call_args_list[0][0][0]
+                    assert first_call.status == "waiting"
+                    assert first_call.data == "Enter your name: "
+
+                    # Second call: running status with user input
+                    second_call = mock_notify.call_args_list[1][0][0]
+                    assert second_call.status == "running"
+                    assert second_call.user_input == "user input"
 
     @pytest.mark.asyncio
     async def test_session_input_typed(self):
@@ -784,7 +793,8 @@ class TestSessionClientFunctions:
             with patch("pixie.session.client.notify_server") as mock_notify:
                 with patch("pixie.session.client.wait_for_input") as mock_wait:
                     mock_notify.return_value = None
-                    mock_wait.return_value = UserModel(name="Test", age=20)
+                    user_model = UserModel(name="Test", age=20)
+                    mock_wait.return_value = user_model
 
                     mock_exec_ctx = MagicMock()
                     mock_exec_ctx.run_id = "test-run-123"
@@ -798,6 +808,19 @@ class TestSessionClientFunctions:
                     assert isinstance(result, UserModel)
                     assert result.name == "Test"
 
+                    # Should have two notify_server calls: waiting and running with input
+                    assert mock_notify.call_count == 2
+
+                    # First call: waiting status
+                    first_call = mock_notify.call_args_list[0][0][0]
+                    assert first_call.status == "waiting"
+                    assert first_call.data == "Enter user data: "
+
+                    # Second call: running status with user input (serialized)
+                    second_call = mock_notify.call_args_list[1][0][0]
+                    assert second_call.status == "running"
+                    assert second_call.user_input == user_model.model_dump(mode="json")
+
     @pytest.mark.asyncio
     async def test_session_input_no_context_raises(self):
         """Test that session.input raises without execution context."""
@@ -806,6 +829,35 @@ class TestSessionClientFunctions:
 
             with pytest.raises(RuntimeError, match="No execution context"):
                 await session_input("prompt")
+
+    @pytest.mark.asyncio
+    async def test_session_input_sends_user_input_notify(self):
+        """Test that session.input sends a second notify with the received user input."""
+        with patch("pixie.session.client.execution_context") as mock_ctx:
+            with patch("pixie.session.client.notify_server") as mock_notify:
+                with patch("pixie.session.client.wait_for_input") as mock_wait:
+                    mock_notify.return_value = None
+                    mock_wait.return_value = {"key": "value", "number": 42}
+
+                    mock_exec_ctx = MagicMock()
+                    mock_exec_ctx.run_id = "test-run-456"
+                    mock_ctx.get_current_context.return_value = mock_exec_ctx
+
+                    result = await session_input("Enter data: ")
+
+                    assert result == {"key": "value", "number": 42}
+
+                    # Verify two notifies: waiting and running with user_input
+                    assert mock_notify.call_count == 2
+
+                    waiting_call = mock_notify.call_args_list[0][0][0]
+                    assert waiting_call.status == "waiting"
+                    assert waiting_call.data == "Enter data: "
+
+                    running_call = mock_notify.call_args_list[1][0][0]
+                    assert running_call.status == "running"
+                    assert running_call.user_input == {"key": "value", "number": 42}
+                    assert running_call.session_id == "test-run-456"
 
 
 class TestSessionDecorator:

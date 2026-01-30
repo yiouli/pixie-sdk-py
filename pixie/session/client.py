@@ -75,7 +75,17 @@ async def input(
 
     await notify_server(update)
 
-    return await wait_for_input(req)
+    ret = await wait_for_input(req)
+    await notify_server(
+        SessionUpdate(
+            session_id=exec_ctx.run_id,
+            status="running",
+            user_input=(
+                ret.model_dump(mode="json") if isinstance(ret, BaseModel) else ret
+            ),
+        )
+    )
+    return ret
 
 
 def session(func: Callable[..., Awaitable[Any]]):
