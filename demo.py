@@ -10,11 +10,18 @@ from pixie.session import client
 
 
 @pixie.app
-def hello():
+async def hello() -> pixie.PixieGenerator[str, str]:
     """
     My first Pixie app.
     """
-    return "hello"
+    agent = Agent(model="gpt-4o-mini", system_prompt=prompt.compile())
+    yield "How can I assist you today? Type exit to end the conversation."
+    messages: list[ModelMessage] = []
+    while True:
+        i = yield pixie.InputRequired(str)
+        res = await agent.run(i, message_history=messages)
+        yield res.output
+        messages = res.all_messages()
 
 
 prompt = pixie.create_prompt("my_first_prompt", description="My first prompt")
@@ -34,7 +41,10 @@ async def my_program():
         user_input = await client.input(expected_type=str)
         if user_input == "exit":
             break
-        response = await agent.run(user_input, message_history=messages)
+        response = await agent.run(
+            user_input,
+            message_history=messages,
+        )
         await client.print(response.output)
         messages = response.all_messages()
 
