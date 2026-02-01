@@ -1,5 +1,6 @@
 """Application registry for managing registered AI applications."""
 
+from contextlib import nullcontext
 import logging
 from collections.abc import (
     AsyncGenerator as ABCAsyncGenerator,
@@ -25,9 +26,11 @@ import inspect
 from pydantic import BaseModel, JsonValue
 import docstring_parser
 
+from langfuse import Langfuse
 from pixie.types import PixieGenerator, InputRequired
 from pixie.utils import extract_schema_from_type
 
+_langfuse = Langfuse()
 
 logger = logging.getLogger(__name__)
 
@@ -259,13 +262,14 @@ def _json_to_value(
 def _wrap_callable_handler(
     func: Callable,
     input_type: Optional[type[BaseModel]],
+    name: str,
 ) -> Callable[[JsonValue], AsyncGenerator[InputRequired | JsonValue, JsonValue]]:
     """Wrap a callable application handler to work with the streaming interface.
 
     Args:
         func: The application function to wrap.
         input_type: Optional Pydantic model type for input conversion.
-
+        name: The name of the handler.
     Returns:
         An async generator function that wraps the callable.
     """
@@ -275,27 +279,45 @@ def _wrap_callable_handler(
     ) -> AsyncGenerator[InputRequired | JsonValue, JsonValue]:
         # Check if function accepts no parameters
         sig = inspect.signature(func)
-        if not sig.parameters:
-            # No-arg function: call without input
-            result_or_awaitable = func()
-        else:
-            # Standard path: convert and pass input
-            result_or_awaitable = func(_json_to_value(input_data, input_type))
+        span = _langfuse.start_as_current_observation(name=name, as_type="chain")
+        span.__enter__()
+        try:
+            if not sig.parameters:
+                # No-arg function: call without input
+                result_or_awaitable = func()
+            else:
+                # Standard path: convert and pass input
+                result_or_awaitable = func(_json_to_value(input_data, input_type))
 
-        if inspect.isawaitable(result_or_awaitable):
-            result = await result_or_awaitable
-        else:
-            result = result_or_awaitable
+            if inspect.isawaitable(result_or_awaitable):
+                result = await result_or_awaitable
+            else:
+                result = result_or_awaitable
 
-        yield _value_to_json(result)
+            yield _value_to_json(result)
+        except Exception as e:
+            span.__exit__(type(e), e, e.__traceback__)
+            raise
+        else:
+            span.__exit__(None, None, None)
 
     return stream_handler
+
+
+def _start_observation_for_waiting(result: Any):
+    if isinstance(result, InputRequired):
+        return _langfuse.start_as_current_observation(
+            name="wait_of_input",
+            as_type="tool",
+        )
+    return nullcontext()
 
 
 def _wrap_generator_handler(
     func: Callable,
     input_type: Optional[type[BaseModel]],
     user_input_type: Optional[type[BaseModel]],
+    name: str,
 ) -> Callable[[JsonValue], AsyncGenerator[InputRequired | JsonValue, JsonValue]]:
     """Wrap a generator application handler to work with the streaming interface.
 
@@ -329,14 +351,20 @@ def _wrap_generator_handler(
         else:
             generator = generator_or_awaitable
 
+        span = _langfuse.start_as_current_observation(name=name, as_type="chain")
         try:
+            span.__enter__()
             user_input: JsonValue | BaseModel | None = None
             while True:
                 result = await generator.asend(user_input)
-                user_input_orig = yield _value_to_json(result)
+                with _start_observation_for_waiting(result):
+                    user_input_orig = yield _value_to_json(result)
                 user_input = _json_to_value(user_input_orig, user_input_type)
         except StopAsyncIteration:
-            return
+            span.__exit__(None, None, None)
+        except Exception as e:
+            span.__exit__(type(e), e, e.__traceback__)
+            raise
         finally:
             # Ensure the underlying generator is properly closed
             # This is critical for cleanup (e.g., run_session_server's finally block)
@@ -424,7 +452,7 @@ def _register_callable(
         logger.error("Failed to register application %s: %s", registry_key, e)
         pass
 
-    stream_handler = _wrap_callable_handler(func, input_model_type)
+    stream_handler = _wrap_callable_handler(func, input_model_type, name=name)
     short_description, full_description, input_param = _get_description_from_docstring(
         func
     )
@@ -507,7 +535,10 @@ def _register_generator(
         user_input_schema = None
 
     stream_handler = _wrap_generator_handler(
-        func, input_model_type, user_input_model_type
+        func,
+        input_model_type,
+        user_input_model_type,
+        name,
     )
 
     short_description, full_description, input_param = _get_description_from_docstring(

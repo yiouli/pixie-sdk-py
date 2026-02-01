@@ -7,6 +7,7 @@ import asyncio
 import pytest
 from typing import AsyncGenerator
 from pydantic import BaseModel, JsonValue
+from unittest.mock import Mock, patch
 
 from pixie.registry import (
     app,
@@ -771,3 +772,286 @@ class TestNoArgHandlers:
         assert len(results) == 2
         assert results[0] == {"step": 1}
         assert results[1] == {"step": 2}
+
+
+class TestObservationLogic:
+    """Test the newly added observation enter/exit logic."""
+
+    @pytest.mark.asyncio
+    @patch("pixie.registry._langfuse")
+    async def test_callable_observation_started_and_ended(self, mock_langfuse):
+        """Test that observations are properly started and ended for callable applications."""
+        mock_span = Mock()
+        mock_span.__enter__ = Mock(return_value=None)
+        mock_span.__exit__ = Mock(return_value=None)
+        mock_langfuse.start_as_current_observation.return_value = mock_span
+
+        @app
+        def simple_callable(_input_data: JsonValue) -> JsonValue:
+            return {"result": "success"}
+
+        app_id = "tests.pixie.test_registry.TestObservationLogic.test_callable_observation_started_and_ended.<locals>.simple_callable"
+
+        # Call the application
+        result_stream = call_application(app_id, {})
+        results = [item async for item in result_stream]
+
+        # Verify results
+        assert len(results) == 1
+        assert results[0] == {"result": "success"}
+
+        # Verify observation was started with correct parameters
+        mock_langfuse.start_as_current_observation.assert_called_once_with(
+            name="simple_callable", as_type="chain"
+        )
+
+        # Verify span was entered and exited properly
+        mock_span.__enter__.assert_called_once()
+        mock_span.__exit__.assert_called_once_with(None, None, None)
+
+    @pytest.mark.asyncio
+    @patch("pixie.registry._langfuse")
+    async def test_callable_observation_exception_handling(self, mock_langfuse):
+        """Test that exceptions in callable applications properly exit observations."""
+        mock_span = Mock()
+        mock_span.__enter__ = Mock(return_value=None)
+        mock_span.__exit__ = Mock(return_value=None)
+        mock_langfuse.start_as_current_observation.return_value = mock_span
+
+        @app
+        def failing_callable(_input_data: JsonValue) -> JsonValue:
+            raise ValueError("Test error")
+
+        app_id = "tests.pixie.test_registry.TestObservationLogic.test_callable_observation_exception_handling.<locals>.failing_callable"
+
+        # Call the application and expect exception
+        result_stream = call_application(app_id, {})
+        with pytest.raises(ValueError, match="Test error"):
+            await result_stream.__anext__()
+
+        # Verify observation was started
+        mock_langfuse.start_as_current_observation.assert_called_once_with(
+            name="failing_callable", as_type="chain"
+        )
+
+        # Verify span was entered
+        mock_span.__enter__.assert_called_once()
+
+        # Verify span was exited with exception info
+        mock_span.__exit__.assert_called_once()
+        call_args = mock_span.__exit__.call_args
+        assert call_args[0][0] == ValueError  # exc_type
+        assert isinstance(call_args[0][1], ValueError)  # exc_value
+        assert call_args[0][2] is not None  # traceback
+
+    @pytest.mark.asyncio
+    @patch("pixie.registry._langfuse")
+    async def test_generator_observation_started_and_ended(self, mock_langfuse):
+        """Test that observations are properly started and ended for generator applications."""
+        mock_span = Mock()
+        mock_span.__enter__ = Mock(return_value=None)
+        mock_span.__exit__ = Mock(return_value=None)
+        mock_langfuse.start_as_current_observation.return_value = mock_span
+
+        @app
+        async def simple_generator(
+            _input_data: JsonValue,
+        ) -> AsyncGenerator[JsonValue, None]:
+            yield {"step": 1}
+            yield {"step": 2}
+
+        app_id = "tests.pixie.test_registry.TestObservationLogic.test_generator_observation_started_and_ended.<locals>.simple_generator"
+
+        # Call the application
+        result_stream = call_application(app_id, {})
+        results = [item async for item in result_stream]
+
+        # Verify results
+        assert len(results) == 2
+        assert results[0] == {"step": 1}
+        assert results[1] == {"step": 2}
+
+        # Verify observation was started with correct parameters
+        mock_langfuse.start_as_current_observation.assert_called_once_with(
+            name="simple_generator", as_type="chain"
+        )
+
+        # Verify span was entered and exited properly
+        mock_span.__enter__.assert_called_once()
+        mock_span.__exit__.assert_called_once_with(None, None, None)
+
+    @pytest.mark.asyncio
+    @patch("pixie.registry._langfuse")
+    async def test_generator_observation_exception_handling(self, mock_langfuse):
+        """Test that exceptions in generator applications properly exit observations."""
+        mock_span = Mock()
+        mock_span.__enter__ = Mock(return_value=None)
+        mock_span.__exit__ = Mock(return_value=None)
+        mock_langfuse.start_as_current_observation.return_value = mock_span
+
+        @app
+        async def failing_generator(
+            _input_data: JsonValue,
+        ) -> AsyncGenerator[JsonValue, None]:
+            yield {"step": 1}
+            raise RuntimeError("Generator error")
+
+        app_id = "tests.pixie.test_registry.TestObservationLogic.test_generator_observation_exception_handling.<locals>.failing_generator"
+
+        # Call the application and expect exception
+        result_stream = call_application(app_id, {})
+        # Get first result
+        result1 = await result_stream.__anext__()
+        assert result1 == {"step": 1}
+        # Second iteration should raise exception
+        with pytest.raises(RuntimeError, match="Generator error"):
+            await result_stream.__anext__()
+
+        # Verify observation was started
+        mock_langfuse.start_as_current_observation.assert_called_once_with(
+            name="failing_generator", as_type="chain"
+        )
+
+        # Verify span was entered
+        mock_span.__enter__.assert_called_once()
+
+        # Verify span was exited with exception info
+        mock_span.__exit__.assert_called_once()
+        call_args = mock_span.__exit__.call_args
+        assert call_args[0][0] == RuntimeError  # exc_type
+        assert isinstance(call_args[0][1], RuntimeError)  # exc_value
+        assert call_args[0][2] is not None  # traceback
+
+    @pytest.mark.asyncio
+    @patch("pixie.registry._langfuse")
+    async def test_input_required_creates_wait_observation(self, mock_langfuse):
+        """Test that yielding InputRequired creates a 'wait_of_input' observation."""
+        from pixie.types import InputRequired
+
+        mock_chain_span = Mock()
+        mock_chain_span.__enter__ = Mock(return_value=None)
+        mock_chain_span.__exit__ = Mock(return_value=None)
+        mock_tool_span = Mock()
+        mock_tool_span.__enter__ = Mock(return_value=None)
+        mock_tool_span.__exit__ = Mock(return_value=None)
+        mock_langfuse.start_as_current_observation.side_effect = [
+            mock_chain_span,
+            mock_tool_span,
+        ]
+
+        @app
+        async def interactive_generator(
+            _input_data: JsonValue,
+        ) -> AsyncGenerator[JsonValue | InputRequired, str]:
+            yield {"message": "Enter your name"}
+            user_input = yield InputRequired(str)
+            yield {"greeting": f"Hello, {user_input}!"}
+
+        app_id = "tests.pixie.test_registry.TestObservationLogic.test_input_required_creates_wait_observation.<locals>.interactive_generator"
+
+        # Call the application
+        result_stream = call_application(app_id, {})
+
+        # Get first result (should be the message)
+        result1 = await result_stream.__anext__()
+        assert result1 == {"message": "Enter your name"}
+
+        # Get second result (should be InputRequired)
+        result2 = await result_stream.__anext__()
+        assert isinstance(result2, InputRequired)
+
+        # Send user input and get greeting
+        result3 = await result_stream.asend("Alice")
+        assert result3 == {"greeting": "Hello, Alice!"}
+
+        # Exhaust the generator
+        with pytest.raises(StopAsyncIteration):
+            await result_stream.__anext__()
+
+        # Verify chain observation was started
+        assert mock_langfuse.start_as_current_observation.call_count >= 1
+        chain_call = mock_langfuse.start_as_current_observation.call_args_list[0]
+        assert chain_call[1] == {"name": "interactive_generator", "as_type": "chain"}
+
+        # Verify tool observations were started for InputRequired yields
+        tool_calls = [
+            call
+            for call in mock_langfuse.start_as_current_observation.call_args_list[1:]
+            if call[1]["as_type"] == "tool"
+        ]
+        assert len(tool_calls) >= 1  # At least one tool observation
+        assert all(
+            call[1] == {"name": "wait_of_input", "as_type": "tool"}
+            for call in tool_calls
+        )
+
+        # Verify spans were managed properly
+        mock_chain_span.__enter__.assert_called_once()
+        mock_chain_span.__exit__.assert_called_once_with(None, None, None)
+
+        # Verify tool spans were managed
+        assert mock_tool_span.__enter__.call_count >= 1
+        assert mock_tool_span.__exit__.call_count >= 1
+
+    @pytest.mark.asyncio
+    @patch("pixie.registry._langfuse")
+    async def test_no_input_required_does_not_create_wait_observation(
+        self, mock_langfuse
+    ):
+        """Test that yielding non-InputRequired values does not create wait observations."""
+        mock_chain_span = Mock()
+        mock_chain_span.__enter__ = Mock(return_value=None)
+        mock_chain_span.__exit__ = Mock(return_value=None)
+        mock_langfuse.start_as_current_observation.return_value = mock_chain_span
+
+        @app
+        async def simple_generator(
+            _input_data: JsonValue,
+        ) -> AsyncGenerator[JsonValue, None]:
+            yield {"step": 1}
+            yield {"step": 2}
+
+        app_id = "tests.pixie.test_registry.TestObservationLogic.test_no_input_required_does_not_create_wait_observation.<locals>.simple_generator"
+
+        # Call the application
+        result_stream = call_application(app_id, {})
+        results = [item async for item in result_stream]
+
+        # Verify results
+        assert len(results) == 2
+
+        # Verify only chain observation was started (no tool observations)
+        mock_langfuse.start_as_current_observation.assert_called_once_with(
+            name="simple_generator", as_type="chain"
+        )
+
+    @pytest.mark.asyncio
+    @patch("pixie.registry._langfuse")
+    async def test_async_callable_observation(self, mock_langfuse):
+        """Test observation logic for async callable applications."""
+        mock_span = Mock()
+        mock_span.__enter__ = Mock(return_value=None)
+        mock_span.__exit__ = Mock(return_value=None)
+        mock_langfuse.start_as_current_observation.return_value = mock_span
+
+        @app
+        async def async_callable(_input_data: JsonValue) -> JsonValue:
+            await asyncio.sleep(0.001)  # Simulate async work
+            return {"async_result": "done"}
+
+        app_id = "tests.pixie.test_registry.TestObservationLogic.test_async_callable_observation.<locals>.async_callable"
+
+        # Call the application
+        result_stream = call_application(app_id, {})
+        results = [item async for item in result_stream]
+
+        # Verify results
+        assert len(results) == 1
+        assert results[0] == {"async_result": "done"}
+
+        # Verify observation was managed
+        mock_langfuse.start_as_current_observation.assert_called_once_with(
+            name="async_callable", as_type="chain"
+        )
+        mock_span.__enter__.assert_called_once()
+        mock_span.__exit__.assert_called_once_with(None, None, None)

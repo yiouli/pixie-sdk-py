@@ -16,6 +16,8 @@ async def hello() -> pixie.PixieGenerator[str, str]:
     messages: list[ModelMessage] = []
     while True:
         i = yield pixie.InputRequired(str)
+        if i == "exit":
+            break
         res = await agent.run(i, message_history=messages)
         yield res.output
         messages = res.all_messages()
