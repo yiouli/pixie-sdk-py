@@ -5,7 +5,7 @@ import logging
 from typing import Any, AsyncGenerator, Awaitable, Callable, TypeVar, cast, overload
 from uuid import uuid4
 
-from langfuse import get_client
+from langfuse import Langfuse, get_client
 from pydantic import BaseModel, JsonValue
 
 from pixie import execution_context
@@ -22,6 +22,8 @@ from pixie.types import InputRequired, InputType
 
 
 logger = logging.getLogger(__name__)
+
+_langfuse = Langfuse()
 
 
 async def print(data: str | JsonValue) -> None:
@@ -76,7 +78,11 @@ async def input(
 
     await notify_server(update)
 
-    ret = await wait_for_input(req)
+    with _langfuse.start_as_current_observation(
+        name="wait_for_input",
+        as_type="tool",
+    ):
+        ret = await wait_for_input(req)
     await notify_server(
         SessionUpdate(
             session_id=exec_ctx.run_id,
@@ -201,10 +207,18 @@ def session(func: T_Func) -> T_Func:
             session_id = uuid4().hex
             task, langfuse = await _session_setup(session_id)
             gen = None
+            span = _langfuse.start_as_current_observation(
+                name=func.__name__, as_type="chain"
+            )
             try:
+                span.__enter__()
                 gen = func(*args, **kwargs)
                 async for value in gen:
                     yield value
+                span.__exit__(None, None, None)
+            except Exception as e:
+                span.__exit__(type(e), e, e.__traceback__)
+                raise
             finally:
                 await _session_cleanup(session_id, task, langfuse, gen)
 
@@ -215,8 +229,19 @@ def session(func: T_Func) -> T_Func:
         async def async_func_wrapper(*args, **kwargs):
             session_id = uuid4().hex
             task, langfuse = await _session_setup(session_id)
+            span = _langfuse.start_as_current_observation(
+                name=func.__name__, as_type="chain"
+            )
             try:
-                return await cast(Callable[..., Awaitable[Any]], func)(*args, **kwargs)
+                span.__enter__()
+                result = await cast(Callable[..., Awaitable[Any]], func)(
+                    *args, **kwargs
+                )
+                span.__exit__(None, None, None)
+                return result
+            except Exception as e:
+                span.__exit__(type(e), e, e.__traceback__)
+                raise
             finally:
                 await _session_cleanup(session_id, task, langfuse)
 

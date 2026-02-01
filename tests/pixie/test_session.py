@@ -1056,3 +1056,267 @@ class TestSessionDecorator:
 
                                 # Should disconnect after explicit close
                                 mock_disconnect.assert_called_once()
+
+
+class TestSessionObservationLogic:
+    """Test the newly added observation enter/exit logic for session."""
+
+    @pytest.mark.asyncio
+    @patch("pixie.session.client._langfuse")
+    async def test_session_observation_started_and_ended(self, mock_langfuse):
+        """Test that observations are properly started and ended for session functions."""
+        mock_span = MagicMock()
+        mock_span.__enter__ = MagicMock(return_value=None)
+        mock_span.__exit__ = MagicMock(return_value=None)
+        mock_langfuse.start_as_current_observation.return_value = mock_span
+
+        with patch("pixie.session.client.execution_context") as mock_ctx:
+            with patch("pixie.session.client.connect_to_server") as mock_connect:
+                with patch("pixie.session.client.notify_server") as mock_notify:
+                    with patch("pixie.session.client.disconnect_from_server"):
+                        with patch("pixie.session.client.enable_instrumentations"):
+                            with patch(
+                                "pixie.session.client.get_client"
+                            ) as mock_get_client:
+                                mock_connect.return_value = 11111
+                                mock_notify.return_value = None
+                                mock_langfuse_client = MagicMock()
+                                mock_langfuse_client.auth_check.return_value = True
+                                mock_langfuse_client.flush = MagicMock()
+                                mock_get_client.return_value = mock_langfuse_client
+
+                                mock_queue = MagicMock()
+                                mock_queue.async_q = MagicMock()
+                                mock_queue.async_q.get = AsyncMock(return_value=None)
+
+                                mock_exec_ctx = MagicMock()
+                                mock_exec_ctx.status_queue = mock_queue
+                                mock_ctx.init_run.return_value = mock_exec_ctx
+
+                                @session
+                                async def simple_session():
+                                    return {"result": "success"}
+
+                                result = await simple_session()
+
+                                # Verify results
+                                assert result == {"result": "success"}
+
+                                # Verify observation was started with correct parameters
+                                mock_langfuse.start_as_current_observation.assert_called_once_with(
+                                    name="simple_session", as_type="chain"
+                                )
+
+                                # Verify span was entered and exited properly
+                                mock_span.__enter__.assert_called_once()
+                                mock_span.__exit__.assert_called_once_with(
+                                    None, None, None
+                                )
+
+    @pytest.mark.asyncio
+    @patch("pixie.session.client._langfuse")
+    async def test_session_observation_exception_handling(self, mock_langfuse):
+        """Test that exceptions in session functions properly exit observations."""
+        mock_span = MagicMock()
+        mock_span.__enter__ = MagicMock(return_value=None)
+        mock_span.__exit__ = MagicMock(return_value=None)
+        mock_langfuse.start_as_current_observation.return_value = mock_span
+
+        with patch("pixie.session.client.execution_context") as mock_ctx:
+            with patch("pixie.session.client.connect_to_server") as mock_connect:
+                with patch("pixie.session.client.notify_server") as mock_notify:
+                    with patch("pixie.session.client.disconnect_from_server"):
+                        with patch("pixie.session.client.enable_instrumentations"):
+                            with patch(
+                                "pixie.session.client.get_client"
+                            ) as mock_get_client:
+                                mock_connect.return_value = 11111
+                                mock_notify.return_value = None
+                                mock_langfuse_client = MagicMock()
+                                mock_langfuse_client.auth_check.return_value = True
+                                mock_langfuse_client.flush = MagicMock()
+                                mock_get_client.return_value = mock_langfuse_client
+
+                                mock_queue = MagicMock()
+                                mock_queue.async_q = MagicMock()
+                                mock_queue.async_q.get = AsyncMock(return_value=None)
+
+                                mock_exec_ctx = MagicMock()
+                                mock_exec_ctx.status_queue = mock_queue
+                                mock_ctx.init_run.return_value = mock_exec_ctx
+
+                                @session
+                                async def failing_session():
+                                    raise ValueError("Test error")
+
+                                # Call the session and expect exception
+                                with pytest.raises(ValueError, match="Test error"):
+                                    await failing_session()
+
+                                # Verify observation was started
+                                mock_langfuse.start_as_current_observation.assert_called_once_with(
+                                    name="failing_session", as_type="chain"
+                                )
+
+                                # Verify span was entered
+                                mock_span.__enter__.assert_called_once()
+
+                                # Verify span was exited with exception info
+                                mock_span.__exit__.assert_called_once()
+                                call_args = mock_span.__exit__.call_args
+                                assert call_args[0][0] == ValueError  # exc_type
+                                assert isinstance(
+                                    call_args[0][1], ValueError
+                                )  # exc_value
+                                assert call_args[0][2] is not None  # traceback
+
+    @pytest.mark.asyncio
+    @patch("pixie.session.client._langfuse")
+    async def test_session_generator_observation_started_and_ended(self, mock_langfuse):
+        """Test that observations are properly started and ended for session generators."""
+        mock_span = MagicMock()
+        mock_span.__enter__ = MagicMock(return_value=None)
+        mock_span.__exit__ = MagicMock(return_value=None)
+        mock_langfuse.start_as_current_observation.return_value = mock_span
+
+        with patch("pixie.session.client.execution_context") as mock_ctx:
+            with patch("pixie.session.client.connect_to_server") as mock_connect:
+                with patch("pixie.session.client.notify_server") as mock_notify:
+                    with patch("pixie.session.client.disconnect_from_server"):
+                        with patch("pixie.session.client.enable_instrumentations"):
+                            with patch(
+                                "pixie.session.client.get_client"
+                            ) as mock_get_client:
+                                mock_connect.return_value = 11111
+                                mock_notify.return_value = None
+                                mock_langfuse_client = MagicMock()
+                                mock_langfuse_client.auth_check.return_value = True
+                                mock_langfuse_client.flush = MagicMock()
+                                mock_get_client.return_value = mock_langfuse_client
+
+                                mock_queue = MagicMock()
+                                mock_queue.async_q = MagicMock()
+                                mock_queue.async_q.get = AsyncMock(return_value=None)
+
+                                mock_exec_ctx = MagicMock()
+                                mock_exec_ctx.status_queue = mock_queue
+                                mock_ctx.init_run.return_value = mock_exec_ctx
+
+                                @session
+                                async def simple_generator():
+                                    yield {"step": 1}
+                                    yield {"step": 2}
+
+                                results = []
+                                async for item in simple_generator():
+                                    results.append(item)
+
+                                # Verify results
+                                assert len(results) == 2
+                                assert results[0] == {"step": 1}
+                                assert results[1] == {"step": 2}
+
+                                # Verify observation was started with correct parameters
+                                mock_langfuse.start_as_current_observation.assert_called_once_with(
+                                    name="simple_generator", as_type="chain"
+                                )
+
+                                # Verify span was entered and exited properly
+                                mock_span.__enter__.assert_called_once()
+                                mock_span.__exit__.assert_called_once_with(
+                                    None, None, None
+                                )
+
+    @pytest.mark.asyncio
+    @patch("pixie.session.client._langfuse")
+    async def test_session_generator_observation_exception_handling(
+        self, mock_langfuse
+    ):
+        """Test that exceptions in session generators properly exit observations."""
+        mock_span = MagicMock()
+        mock_span.__enter__ = MagicMock(return_value=None)
+        mock_span.__exit__ = MagicMock(return_value=None)
+        mock_langfuse.start_as_current_observation.return_value = mock_span
+
+        with patch("pixie.session.client.execution_context") as mock_ctx:
+            with patch("pixie.session.client.connect_to_server") as mock_connect:
+                with patch("pixie.session.client.notify_server") as mock_notify:
+                    with patch("pixie.session.client.disconnect_from_server"):
+                        with patch("pixie.session.client.enable_instrumentations"):
+                            with patch(
+                                "pixie.session.client.get_client"
+                            ) as mock_get_client:
+                                mock_connect.return_value = 11111
+                                mock_notify.return_value = None
+                                mock_langfuse_client = MagicMock()
+                                mock_langfuse_client.auth_check.return_value = True
+                                mock_langfuse_client.flush = MagicMock()
+                                mock_get_client.return_value = mock_langfuse_client
+
+                                mock_queue = MagicMock()
+                                mock_queue.async_q = MagicMock()
+                                mock_queue.async_q.get = AsyncMock(return_value=None)
+
+                                mock_exec_ctx = MagicMock()
+                                mock_exec_ctx.status_queue = mock_queue
+                                mock_ctx.init_run.return_value = mock_exec_ctx
+
+                                @session
+                                async def failing_generator():
+                                    yield {"step": 1}
+                                    raise ValueError("Generator error")
+
+                                # Call the generator and expect exception
+                                with pytest.raises(ValueError, match="Generator error"):
+                                    async for _ in failing_generator():
+                                        pass
+
+                                # Verify observation was started
+                                mock_langfuse.start_as_current_observation.assert_called_once_with(
+                                    name="failing_generator", as_type="chain"
+                                )
+
+                                # Verify span was entered
+                                mock_span.__enter__.assert_called_once()
+
+                                # Verify span was exited with exception info
+                                mock_span.__exit__.assert_called_once()
+                                call_args = mock_span.__exit__.call_args
+                                assert call_args[0][0] == ValueError  # exc_type
+                                assert isinstance(
+                                    call_args[0][1], ValueError
+                                )  # exc_value
+                                assert call_args[0][2] is not None  # traceback
+
+    @pytest.mark.asyncio
+    @patch("pixie.session.client._langfuse")
+    async def test_input_observation_for_waiting(self, mock_langfuse):
+        """Test that observations are created when waiting for input."""
+        mock_span = MagicMock()
+        mock_span.__enter__ = MagicMock(return_value=None)
+        mock_span.__exit__ = MagicMock(return_value=None)
+        mock_langfuse.start_as_current_observation.return_value = mock_span
+
+        with patch("pixie.session.client.execution_context") as mock_ctx:
+            with patch("pixie.session.client.notify_server") as mock_notify:
+                with patch("pixie.session.client.wait_for_input") as mock_wait:
+                    mock_notify.return_value = None
+                    mock_wait.return_value = "user response"
+
+                    mock_exec_ctx = MagicMock()
+                    mock_exec_ctx.run_id = "test-session"
+                    mock_ctx.get_current_context.return_value = mock_exec_ctx
+
+                    result = await session_input("Enter something:", expected_type=str)
+
+                    # Verify result
+                    assert result == "user response"
+
+                    # Verify observation was created for waiting
+                    mock_langfuse.start_as_current_observation.assert_called_once_with(
+                        name="wait_for_input", as_type="tool"
+                    )
+
+                    # Verify span was used as context manager
+                    mock_span.__enter__.assert_called_once()
+                    mock_span.__exit__.assert_called_once()
