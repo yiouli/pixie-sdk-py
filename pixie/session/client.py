@@ -1,7 +1,8 @@
 import asyncio
+import inspect
 from functools import wraps
 import logging
-from typing import Any, Awaitable, Callable, TypeVar, overload
+from typing import Any, AsyncGenerator, Awaitable, Callable, TypeVar, cast, overload
 from uuid import uuid4
 
 from langfuse import get_client
@@ -88,18 +89,34 @@ async def input(
     return ret
 
 
-def session(func: Callable[..., Awaitable[Any]]):
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        session_id = uuid4().hex
+T_Func = TypeVar(
+    "T_Func", bound=Callable[..., Awaitable[Any] | AsyncGenerator[Any, Any]]
+)
+
+
+def session(func: T_Func) -> T_Func:
+    """Decorator to wrap functions with session context and instrumentation.
+
+    Supports both async functions and async generators.
+
+    Args:
+        func: An async function or async generator function to wrap.
+
+    Returns:
+        A wrapped function that maintains the same signature and return type.
+    """
+    session_completed = False
+
+    async def _session_setup(session_id: str):
+        """Common setup logic for session."""
         ctx = execution_context.init_run(session_id)
         await connect_to_server(SESSION_RPC_SERVER_HOST, SESSION_RPC_PORT, session_id)
 
         update_queue = ctx.status_queue
-        completed = False
 
         # handle updates from OTel, or any sources that are not part of user code
         async def notify_on_update():
+            nonlocal session_completed
             while True:
                 update = await update_queue.async_q.get()
                 if not update:
@@ -109,8 +126,7 @@ def session(func: Callable[..., Awaitable[Any]]):
                             status="completed",
                         )
                     )
-                    nonlocal completed
-                    completed = True
+                    session_completed = True
                     break
                 await notify_server(
                     SessionUpdate(
@@ -124,48 +140,84 @@ def session(func: Callable[..., Awaitable[Any]]):
                 )
 
         task = asyncio.create_task(notify_on_update())
-        langfuse = None
-        try:
-            enable_instrumentations()
-            langfuse = get_client()
 
-            if langfuse.auth_check():
-                logger.debug("Langfuse client authenticated")
-            else:
-                logger.debug(
-                    "Langfuse authentication failed, continuing in Pixie-only mode"
-                )
-            await notify_server(
-                SessionUpdate(
-                    session_id=session_id,
-                    status="running",
-                )
+        enable_instrumentations()
+        langfuse = get_client()
+
+        if langfuse.auth_check():
+            logger.debug("Langfuse client authenticated")
+        else:
+            logger.debug(
+                "Langfuse authentication failed, continuing in Pixie-only mode"
             )
-            return await func(*args, **kwargs)
-        finally:
-            if langfuse:
-                langfuse.flush()  # Ensure all spans are sent before disconnecting
+        await notify_server(
+            SessionUpdate(
+                session_id=session_id,
+                status="running",
+            )
+        )
 
-            if not completed:
-                # Shield from cancellation to ensure "completed" is sent
-                # even when the task is cancelled (e.g., Ctrl+C)
-                try:
-                    await asyncio.shield(
-                        notify_server(
-                            SessionUpdate(
-                                session_id=session_id,
-                                status="completed",
-                            )
+        return task, langfuse
+
+    async def _session_cleanup(
+        session_id: str,
+        task: asyncio.Task,
+        langfuse,
+        gen=None,
+    ):
+        """Common cleanup logic for session."""
+        # Close generator if it was created
+        if gen is not None:
+            await gen.aclose()
+
+        if langfuse:
+            langfuse.flush()  # Ensure all spans are sent before disconnecting
+
+        nonlocal session_completed
+        if not session_completed:
+            # Shield from cancellation to ensure "completed" is sent
+            try:
+                await asyncio.shield(
+                    notify_server(
+                        SessionUpdate(
+                            session_id=session_id,
+                            status="completed",
                         )
                     )
-                except asyncio.CancelledError:
-                    # Re-raise to propagate cancellation after cleanup
-                    pass
-                except Exception as e:
-                    # Log but don't fail on notification errors during cleanup
-                    logger.warning(f"Failed to send 'completed' status: {e}")
+                )
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.warning(f"Failed to send 'completed' status: {e}")
 
-            task.cancel()
-            disconnect_from_server()
+        task.cancel()
+        disconnect_from_server()
 
-    return wrapper
+    is_async_gen = inspect.isasyncgenfunction(func)
+    if is_async_gen:
+
+        @wraps(func)
+        async def async_gen_wrapper(*args, **kwargs):
+            session_id = uuid4().hex
+            task, langfuse = await _session_setup(session_id)
+            gen = None
+            try:
+                gen = func(*args, **kwargs)
+                async for value in gen:
+                    yield value
+            finally:
+                await _session_cleanup(session_id, task, langfuse, gen)
+
+        return async_gen_wrapper  # type: ignore
+    else:
+
+        @wraps(func)
+        async def async_func_wrapper(*args, **kwargs):
+            session_id = uuid4().hex
+            task, langfuse = await _session_setup(session_id)
+            try:
+                return await cast(Callable[..., Awaitable[Any]], func)(*args, **kwargs)
+            finally:
+                await _session_cleanup(session_id, task, langfuse)
+
+        return async_func_wrapper  # type: ignore
