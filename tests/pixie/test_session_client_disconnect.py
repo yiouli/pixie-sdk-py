@@ -85,6 +85,7 @@ class TestClientDisconnectDuringInputRequired:
             SessionUpdate(
                 session_id="client1",
                 status="waiting",
+                time_unix_nano="1234567890000000000",
                 data="need input",
                 user_input_schema={"type": "string"},
             )
@@ -120,6 +121,7 @@ class TestClientDisconnectDuringInputRequired:
             SessionUpdate(
                 session_id="client2",
                 status="running",
+                time_unix_nano="1234567890000000000",
                 data="client2 says hello",
             )
         )
@@ -157,7 +159,13 @@ class TestClientDisconnectDuringInputRequired:
         await asyncio.sleep(0.1)
 
         # Send updates
-        await notify_server(SessionUpdate(session_id="test-client", status="running"))
+        await notify_server(
+            SessionUpdate(
+                session_id="test-client",
+                status="running",
+                time_unix_nano="1234567890000000000",
+            )
+        )
 
         # Get update
         update = await expect_update("test-client")
@@ -173,7 +181,13 @@ class TestClientDisconnectDuringInputRequired:
 
         # Server should still accept new connections
         await connect_to_server("localhost", port, "new-client")
-        await notify_server(SessionUpdate(session_id="new-client", status="running"))
+        await notify_server(
+            SessionUpdate(
+                session_id="new-client",
+                status="running",
+                time_unix_nano="1234567890000000000",
+            )
+        )
 
         update2 = await expect_update("new-client")
         assert update2.session_id == "new-client"
@@ -312,7 +326,12 @@ class TestServerLoopRecovery:
 
         # Client sends normal update
         await notify_server(
-            SessionUpdate(session_id="client-a", status="running", data="hello")
+            SessionUpdate(
+                session_id="client-a",
+                status="running",
+                time_unix_nano="1234567890000000000",
+                data="hello",
+            )
         )
 
         update1 = await expect_update("client-a")
@@ -323,6 +342,7 @@ class TestServerLoopRecovery:
             SessionUpdate(
                 session_id="client-a",
                 status="waiting",
+                time_unix_nano="1234567890000000000",
                 user_input_schema={"type": "string"},
             )
         )
@@ -343,7 +363,12 @@ class TestServerLoopRecovery:
         await asyncio.sleep(0.1)
 
         await notify_server(
-            SessionUpdate(session_id="client-b", status="running", data="new client")
+            SessionUpdate(
+                session_id="client-b",
+                status="running",
+                time_unix_nano="1234567890000000000",
+                data="new client",
+            )
         )
 
         # Server should receive this update
@@ -352,7 +377,13 @@ class TestServerLoopRecovery:
         assert update3.data == "new client"
 
         # Send completed
-        await notify_server(SessionUpdate(session_id="client-b", status="completed"))
+        await notify_server(
+            SessionUpdate(
+                session_id="client-b",
+                status="completed",
+                time_unix_nano="1234567890000000000",
+            )
+        )
 
         update4 = await expect_update("client-b")
         assert update4.status == "completed"
@@ -398,6 +429,7 @@ class TestRunSessionServerGenerator:
             SessionUpdate(
                 session_id="gen-client-1",
                 status="waiting",
+                time_unix_nano="1234567890000000000",
                 data="need input",
                 user_input_schema={"type": "string"},
             )
@@ -423,6 +455,7 @@ class TestRunSessionServerGenerator:
             SessionUpdate(
                 session_id="gen-client-2",
                 status="running",
+                time_unix_nano="1234567890000000000",
                 data="I am client 2",
             )
         )

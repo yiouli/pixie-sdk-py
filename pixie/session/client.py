@@ -2,6 +2,7 @@ import asyncio
 import inspect
 from functools import wraps
 import logging
+import time
 from typing import Any, AsyncGenerator, Awaitable, Callable, TypeVar, cast, overload
 from uuid import uuid4
 
@@ -35,6 +36,7 @@ async def print(data: str | JsonValue) -> None:
         SessionUpdate(
             session_id=exec_ctx.run_id,
             status="running",
+            time_unix_nano=str(time.time_ns()),
             data=data,
         )
     )
@@ -73,6 +75,7 @@ async def input(
         session_id=exec_ctx.run_id,
         data=prompt,
         status="waiting",
+        time_unix_nano=str(time.time_ns()),
         user_input_schema=req.get_json_schema(),
     )
 
@@ -87,6 +90,7 @@ async def input(
         SessionUpdate(
             session_id=exec_ctx.run_id,
             status="running",
+            time_unix_nano=str(time.time_ns()),
             user_input=(
                 ret.model_dump(mode="json") if isinstance(ret, BaseModel) else ret
             ),
@@ -130,6 +134,7 @@ def session(func: T_Func) -> T_Func:
                         SessionUpdate(
                             session_id=session_id,
                             status="completed",
+                            time_unix_nano=str(time.time_ns()),
                         )
                     )
                     session_completed = True
@@ -138,6 +143,7 @@ def session(func: T_Func) -> T_Func:
                     SessionUpdate(
                         session_id=session_id,
                         status=update.status,
+                        time_unix_nano=update.time_unix_nano,
                         user_input=update.user_input,
                         data=update.data,
                         trace=update.trace,
@@ -160,6 +166,7 @@ def session(func: T_Func) -> T_Func:
             SessionUpdate(
                 session_id=session_id,
                 status="running",
+                time_unix_nano=str(time.time_ns()),
             )
         )
 
@@ -188,6 +195,7 @@ def session(func: T_Func) -> T_Func:
                         SessionUpdate(
                             session_id=session_id,
                             status="completed",
+                            time_unix_nano=str(time.time_ns()),
                         )
                     )
                 )

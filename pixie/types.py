@@ -200,6 +200,7 @@ class AppRunUpdate(OutputMixin, InputMixin):
     Attributes:
         run_id: Unique identifier of the application run.
         status: Current status of the run.
+        time_unix_nano: Timestamp of the update in Unix nanoseconds.
         user_input: Optional user input that was received.
         data: Optional output data from the application.
         breakpoint: Optional[BreakpointDetail] = None
@@ -209,6 +210,7 @@ class AppRunUpdate(OutputMixin, InputMixin):
 
     run_id: str
     status: RunStatus
+    time_unix_nano: str
     breakpoint: Optional[BreakpointDetail] = None
 
 

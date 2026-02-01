@@ -105,6 +105,7 @@ class TestAppRunUpdateUserInputSchema:
         update = AppRunUpdate(
             run_id="test-run",
             status="running",
+            time_unix_nano="1234567890000000000",
             user_input_schema={"type": "string"},
         )
         assert update.user_input_schema == {"type": "string"}
@@ -114,6 +115,7 @@ class TestAppRunUpdateUserInputSchema:
         update = AppRunUpdate(
             run_id="test-run",
             status="running",
+            time_unix_nano="1234567890000000000",
         )
         assert update.user_input_schema is None
 
@@ -123,6 +125,7 @@ class TestAppRunUpdateUserInputSchema:
         update = AppRunUpdate(
             run_id="test-run",
             status="waiting",
+            time_unix_nano="1234567890000000000",
             user_input_schema=schema,
         )
         data = update.model_dump()
@@ -133,6 +136,7 @@ class TestAppRunUpdateUserInputSchema:
         data = {
             "run_id": "test-run",
             "status": "waiting",
+            "time_unix_nano": "1234567890000000000",
             "user_input_schema": {"type": "string"},
         }
         update = AppRunUpdate.model_validate(data)
@@ -148,6 +152,7 @@ class TestAppRunUpdateUserInputSchema:
         original = AppRunUpdate(
             run_id="test-run",
             status="waiting",
+            time_unix_nano="1234567890000000000",
             user_input_schema=schema,
             user_input=None,
             data={"result": 42},
@@ -208,6 +213,7 @@ class TestSessionUpdateSimplified:
         update = SessionUpdate(
             session_id="test-session",
             status="waiting",
+            time_unix_nano="1234567890000000000",
             user_input_schema={"type": "string"},
         )
         assert update.user_input_schema == {"type": "string"}
@@ -220,6 +226,7 @@ class TestSessionUpdateSimplified:
         original = SessionUpdate(
             session_id="test-session",
             status="waiting",
+            time_unix_nano="1234567890000000000",
             user_input_schema=schema,
         )
 
@@ -238,6 +245,7 @@ class TestSessionUpdateSimplified:
         update = SessionUpdate(
             session_id="test-session",
             status="running",
+            time_unix_nano="1234567890000000000",
             user_input_schema={"type": "string"},
         )
 
@@ -401,6 +409,7 @@ class TestStrawberryConversion:
         pydantic_update = AppRunUpdate(
             run_id="test-run",
             status="waiting",
+            time_unix_nano="1234567890000000000",
             user_input_schema={"type": "string"},
         )
 
@@ -418,6 +427,7 @@ class TestStrawberryConversion:
         pydantic_update = AppRunUpdate(
             run_id="test-run",
             status="running",
+            time_unix_nano="1234567890000000000",
         )
 
         strawberry_update = StrawberryAppRunUpdate.from_pydantic(pydantic_update)

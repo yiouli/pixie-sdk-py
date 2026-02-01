@@ -1,6 +1,7 @@
 """Execution context management for pause/resume functionality."""
 
 import logging
+import time
 from contextvars import ContextVar
 import threading
 from typing import Dict, Optional, Sequence
@@ -161,6 +162,7 @@ def emit_status_update(
             update = AppRunUpdate(
                 run_id=ctx.run_id,
                 status=status,
+                time_unix_nano=str(time.time_ns()),
                 user_input=user_input,
                 user_input_schema=user_input_schema,
                 data=data,

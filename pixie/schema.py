@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import time
 import uuid
 from enum import Enum
 from typing import AsyncGenerator, Callable, Coroutine, Optional, cast
@@ -245,6 +246,7 @@ class AppRunUpdate:
 
     run_id: strawberry.ID
     status: AppRunStatus
+    time_unix_nano: str
     user_input_schema: Optional[JSON] = None
     user_input: Optional[JSON] = None
     data: Optional[JSON] = None
@@ -265,6 +267,7 @@ class AppRunUpdate:
         return cls(
             run_id=strawberry.ID(instance.run_id),
             status=AppRunStatus(instance.status),
+            time_unix_nano=instance.time_unix_nano,
             user_input_schema=JSON(instance.user_input_schema),
             user_input=JSON(instance.user_input),
             data=JSON(instance.data),
@@ -558,6 +561,7 @@ class Subscription:
                 app_update = PydanticAppRunUpdate(
                     run_id=session_update.session_id,
                     status=session_update.status,
+                    time_unix_nano=session_update.time_unix_nano,
                     user_input_schema=session_update.user_input_schema,
                     user_input=session_update.user_input,
                     data=session_update.data,
@@ -613,6 +617,7 @@ class Subscription:
             pydantic_update = PydanticAppRunUpdate(
                 run_id=run_id,
                 status="error",
+                time_unix_nano=str(time.time_ns()),
                 data=json.dumps({"error": f"Application '{id}' not found"}),
             )
             yield AppRunUpdate.from_pydantic(pydantic_update)
@@ -628,6 +633,7 @@ class Subscription:
             pydantic_update = PydanticAppRunUpdate(
                 run_id=run_id,
                 status="running",
+                time_unix_nano=str(time.time_ns()),
             )
             yield AppRunUpdate.from_pydantic(pydantic_update)
             # set the context again after yield -- the fastapi/strawberry framework resets execution context

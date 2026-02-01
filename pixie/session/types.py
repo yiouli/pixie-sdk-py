@@ -12,7 +12,9 @@ class SessionUpdate(OutputMixin, InputMixin):
     Attributes:
         session_id: Unique identifier of the session.
         status: Current status of the session.
+        time_unix_nano: Timestamp of the update in Unix nanoseconds.
     """
 
     session_id: str
     status: RunStatus
+    time_unix_nano: str

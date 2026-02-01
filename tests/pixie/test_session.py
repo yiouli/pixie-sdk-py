@@ -318,6 +318,7 @@ class TestClientServerCommunication:
         update = SessionUpdate(
             session_id="test-session-1",
             status="running",
+            time_unix_nano="1234567890000000000",
             data="hello server",
         )
         await notify_server(update)
@@ -349,6 +350,7 @@ class TestClientServerCommunication:
                 SessionUpdate(
                     session_id="session-multi",
                     status="running",
+                    time_unix_nano="1234567890000000000",
                     data=f"message {i}",
                 )
             )
@@ -372,6 +374,7 @@ class TestClientServerCommunication:
                 SessionUpdate(
                     session_id="test",
                     status="running",
+                    time_unix_nano="1234567890000000000",
                 )
             )
 
@@ -394,6 +397,7 @@ class TestInputFlow:
             SessionUpdate(
                 session_id="input-test",
                 status="waiting",
+                time_unix_nano="1234567890000000000",
             )
         )
         await asyncio.sleep(0.1)
@@ -557,6 +561,7 @@ class TestFullRoundTrip:
             SessionUpdate(
                 session_id="roundtrip",
                 status="running",
+                time_unix_nano="1234567890000000000",
                 data="starting",
             )
         )
@@ -566,6 +571,7 @@ class TestFullRoundTrip:
             SessionUpdate(
                 session_id="roundtrip",
                 status="waiting",
+                time_unix_nano="1234567890000000000",
                 data="need input",
             )
         )
@@ -612,6 +618,7 @@ class TestFullRoundTrip:
             SessionUpdate(
                 session_id="large-msg-test",
                 status="running",
+                time_unix_nano="1234567890000000000",
                 data=large_data,
             )
         )
