@@ -18,10 +18,11 @@ from strawberry.scalars import JSON
 from langfuse import get_client
 from pixie.registry import call_application, get_application, list_applications
 from pixie.session.rpc import (
-    get_connected_session_ids,
+    get_connected_sessions,
     send_input_to_client,
     wait_for_client_update,
 )
+from pixie.session.types import SessionInfo as PydanticSessionInfo
 from pixie.types import (
     AppRunCancelled,
     BreakpointDetail as PydanticBreakpointDetail,
@@ -381,6 +382,11 @@ class TKeyValue:
     value: str
 
 
+@strawberry.experimental.pydantic.type(model=PydanticSessionInfo, all_fields=True)
+class SessionInfo:
+    pass
+
+
 @strawberry.type
 class _Query:
     """GraphQL queries."""
@@ -398,13 +404,14 @@ class _Query:
             return "0.0.0"
 
     @strawberry.field
-    async def list_sessions(self) -> list[str]:
+    async def list_sessions(self) -> list[SessionInfo]:
         """List all active session IDs.
 
         Returns:
             A list of active session IDs.
         """
-        return await get_connected_session_ids()
+        sessions = await get_connected_sessions()
+        return [SessionInfo.from_pydantic(s) for s in sessions]
 
     @strawberry.field
     def list_apps(self) -> list[AppInfo]:
