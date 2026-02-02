@@ -46,6 +46,14 @@ from pixie.otel_types import (
 import pixie.execution_context as exec_ctx
 from importlib.metadata import PackageNotFoundError, version
 from pixie.prompts.graphql import Mutation as PromptsMutation, Query as PromptsQuery
+from pixie.agents.rating_agent import (
+    Message as PydanticMessage,
+    RatingResult as PydanticRatingResult,
+    LlmCallRatingAgentInput as PydanticLlmCallRatingInput,
+    AppRunRatingAgentInput as PydanticAppRunRatingInput,
+    rate_llm_call as execute_rate_llm_call,
+    rate_app_run as execute_rate_app_run,
+)
 
 
 # Global registry for input queues per run
@@ -97,6 +105,25 @@ class AppRunStatus(Enum):
     WAITING = "waiting"
     CANCELLED = "cancelled"
     UNCHANGED = "unchanged"
+
+
+@strawberry.enum
+class Rating(Enum):
+    """Rating for an LLM call or app run."""
+
+    GOOD = "good"
+    BAD = "bad"
+    UNDECIDED = "undecided"
+
+
+@strawberry.enum
+class MessageRole(Enum):
+    """Role of a message in interaction logs."""
+
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL = "tool"
 
 
 @strawberry.enum
@@ -227,6 +254,34 @@ class PromptForSpan:
     prompt_id: strawberry.auto
     version_id: strawberry.auto
     variables: JSON | None = None
+
+
+@strawberry.experimental.pydantic.type(model=PydanticMessage)
+class Message:
+    """Message in interaction logs."""
+
+    role: MessageRole
+    content: JSON
+    user_rating: Optional[Rating] = None
+    user_feedback: Optional[str] = None
+
+
+@strawberry.experimental.pydantic.input(model=PydanticMessage)
+class MessageInput:
+    """Message input for rating requests."""
+
+    role: MessageRole
+    content: JSON
+    user_rating: Optional[Rating] = None
+    user_feedback: Optional[str] = None
+
+
+@strawberry.experimental.pydantic.type(model=PydanticRatingResult)
+class RatingResult:
+    """Result of a rating operation."""
+
+    thoughts: strawberry.auto
+    rating: Rating
 
 
 @strawberry.type
@@ -481,6 +536,100 @@ class _Mutation:
             return True
         except Exception as e:
             raise GraphQLError(f"Failed to send session input: {str(e)}") from e
+
+    @strawberry.mutation
+    async def rate_llm_call(
+        self,
+        app_description: str,
+        interaction_logs_before_llm_call: list[MessageInput],
+        llm_input: JSON,
+        llm_output: JSON,
+        llm_configuration: JSON,
+        internal_logs_after_llm_call: list[JSON],
+        interaction_logs_after_llm_call: list[MessageInput],
+    ) -> RatingResult:
+        """Rate the quality of a specific LLM call within an application execution.
+
+        Args:
+            app_description: Description of the application.
+            interaction_logs_before_llm_call: Messages before the LLM call.
+            llm_input: Input to the LLM.
+            llm_output: Output from the LLM.
+            llm_configuration: Configuration of the LLM.
+            internal_logs_after_llm_call: Internal logs after the LLM call.
+            interaction_logs_after_llm_call: Messages after the LLM call.
+
+        Returns:
+            RatingResult with thoughts and rating.
+        """
+        # Convert MessageInput to pydantic Message, manually extracting enum values
+        messages_before = [
+            PydanticMessage(
+                role=msg.role.value,  # type: ignore
+                content=msg.content,  # type: ignore
+                user_rating=msg.user_rating.value if msg.user_rating else None,  # type: ignore
+                user_feedback=msg.user_feedback,  # type: ignore
+            )
+            for msg in interaction_logs_before_llm_call
+        ]
+        messages_after = [
+            PydanticMessage(
+                role=msg.role.value,  # type: ignore
+                content=msg.content,  # type: ignore
+                user_rating=msg.user_rating.value if msg.user_rating else None,  # type: ignore
+                user_feedback=msg.user_feedback,  # type: ignore
+            )
+            for msg in interaction_logs_after_llm_call
+        ]
+
+        # Create the input signature
+        rating_input = PydanticLlmCallRatingInput(
+            app_description=app_description,
+            interaction_logs_before_llm_call=messages_before,
+            llm_input=llm_input,
+            llm_output=llm_output,
+            llm_configuration=llm_configuration,
+            internal_logs_after_llm_call=internal_logs_after_llm_call,
+            interaction_logs_after_llm_call=messages_after,
+        )
+
+        result = await execute_rate_llm_call(rating_input)
+        return RatingResult.from_pydantic(result)
+
+    @strawberry.mutation
+    async def rate_app_run(
+        self,
+        app_description: str,
+        interaction_logs: list[MessageInput],
+    ) -> RatingResult:
+        """Rate the overall quality of an application execution.
+
+        Args:
+            app_description: Description of the application.
+            interaction_logs: All messages from the application run.
+
+        Returns:
+            RatingResult with thoughts and rating.
+        """
+        # Convert MessageInput to pydantic Message, manually extracting enum values
+        messages = [
+            PydanticMessage(
+                role=msg.role.value,  # type: ignore
+                content=msg.content,  # type: ignore
+                user_rating=msg.user_rating.value if msg.user_rating else None,  # type: ignore
+                user_feedback=msg.user_feedback,  # type: ignore
+            )
+            for msg in interaction_logs
+        ]
+
+        # Create the input signature
+        rating_input = PydanticAppRunRatingInput(
+            app_description=app_description,
+            interaction_logs=messages,
+        )
+
+        result = await execute_rate_app_run(rating_input)
+        return RatingResult.from_pydantic(result)
 
 
 def _convert_trace_to_union(trace_dict: dict | None) -> Optional[TraceDataUnion]:
