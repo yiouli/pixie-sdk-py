@@ -28,7 +28,7 @@ import janus
 from pydantic import BaseModel, JsonValue
 
 from pixie.session.constants import SESSION_RPC_SERVER_HOST
-from pixie.session.types import SessionUpdate
+from pixie.session.types import SessionInfo, SessionUpdate
 from pixie.types import InputRequired, InputType
 
 
@@ -98,12 +98,14 @@ class _ClientConnection:
 
     Attributes:
         session_id: The session ID of the client.
+        session_info: Full session information including function metadata.
         reader: The asyncio stream reader.
         writer: The asyncio stream writer.
         task: The worker task handling this client.
     """
 
     session_id: str
+    session_info: SessionInfo
     reader: asyncio.StreamReader
     writer: asyncio.StreamWriter
     task: asyncio.Task | None = None
@@ -195,13 +197,47 @@ async def _handle_client_messages(
             logger.error("Error closing client connection", exc_info=True)
 
 
+def _parse_registration_data(data: bytes) -> SessionInfo:
+    """Parse registration data from client.
+
+    Supports both new format (JSON SessionInfo) and legacy format (plain session_id).
+
+    Args:
+        data: The raw registration data bytes.
+
+    Returns:
+        SessionInfo object (either parsed from JSON or created from legacy session_id).
+
+    Raises:
+        ValueError: If the data is empty or invalid.
+    """
+    decoded = data.decode()
+    if not decoded:
+        raise ValueError("Empty registration data")
+
+    # Try to parse as JSON SessionInfo first
+    try:
+        return SessionInfo.model_validate_json(decoded)
+    except Exception:
+        # Fall back to legacy format: plain session_id string
+        # Create a minimal SessionInfo with session_id as the name
+        return SessionInfo(
+            session_id=decoded,
+            name=decoded,
+            module="unknown",
+            qualname=decoded,
+            description=None,
+        )
+
+
 async def _handle_new_connection(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
 ) -> None:
     """Handle a new incoming connection.
 
-    Waits for session_id registration within timeout, then spawns a worker.
+    Waits for SessionInfo registration within timeout, then spawns a worker.
+    Supports both new format (JSON SessionInfo) and legacy format (plain session_id).
 
     Args:
         reader: The stream reader for this connection.
@@ -220,7 +256,7 @@ async def _handle_new_connection(
 
     try:
         logger.info("New client connection received, waiting for registration")
-        # Wait for registration message (session_id) within timeout
+        # Wait for registration message within timeout
         data = await _recv_message(reader, timeout=REGISTRATION_TIMEOUT)
 
         if data is None:
@@ -230,14 +266,15 @@ async def _handle_new_connection(
             await writer.wait_closed()
             return
 
-        session_id = data.decode()
-
-        if not session_id:
-            logger.warning("Empty session_id received, rejecting connection")
-            # Empty session_id - reject
+        try:
+            session_info = _parse_registration_data(data)
+        except ValueError as e:
+            logger.warning(f"Invalid registration data: {e}")
             writer.close()
             await writer.wait_closed()
             return
+
+        session_id = session_info.session_id
 
         # Check if session_id already registered
         async with state.lock:
@@ -250,15 +287,19 @@ async def _handle_new_connection(
                 await writer.wait_closed()
                 return
 
-            # Create connection record
+            # Create connection record with full session info
             connection = _ClientConnection(
                 session_id=session_id,
+                session_info=session_info,
                 reader=reader,
                 writer=writer,
             )
             state.client_connections[session_id] = connection
             queue = state.update_queues[session_id] = janus.Queue[SessionUpdate]()
-            logger.info(f"Client registered with session_id: {session_id}")
+            logger.info(
+                f"Client registered with session_id: {session_id}, "
+                f"name: {session_info.name}, module: {session_info.module}"
+            )
 
         # Send ACK to client (empty message means success)
         await _send_message(writer, b"ACK")
@@ -459,6 +500,24 @@ async def get_connected_session_ids() -> list[str]:
         return list(state.client_connections.keys())
 
 
+async def get_connected_sessions() -> list[SessionInfo]:
+    """Get a list of SessionInfo for all currently connected sessions.
+
+    Returns a list of SessionInfo objects containing full metadata about
+    each connected session, including function name, module, qualname,
+    and description.
+
+    Returns:
+        List of SessionInfo objects for connected sessions.
+
+    Raises:
+        RuntimeError: If server is not initialized.
+    """
+    state = _get_server_state()
+    async with state.lock:
+        return [conn.session_info for conn in state.client_connections.values()]
+
+
 async def wait_for_client_update(session_id: str) -> SessionUpdate:
     """Wait for the next SessionUpdate from any client.
 
@@ -518,19 +577,22 @@ def _get_client_state() -> _ClientState:
 async def connect_to_server(
     host: str,
     port: int,
-    session_id: str,
+    session_id: str | None = None,
+    *,
+    session_info: SessionInfo | None = None,
     connection_timeout: float = 5.0,
 ) -> int:
     """Connect to the session server and register this client.
 
     Creates a singleton connection for the entire client process.
-    Connects to the specified port, sends the session_id as a registration
+    Connects to the specified port, sends the SessionInfo as a registration
     message and waits for ACK.
 
     Args:
         host: The server hostname or IP address.
         port: Port number to connect to.
-        session_id: The session ID for this client.
+        session_id: The session ID for this client (deprecated, use session_info).
+        session_info: Full session information including function metadata.
         connection_timeout: Timeout for connection attempt in seconds.
 
     Returns:
@@ -538,8 +600,23 @@ async def connect_to_server(
 
     Raises:
         RuntimeError: If already connected or if connection fails.
+        ValueError: If neither session_id nor session_info is provided.
     """
     global _client_state
+
+    # Handle backward compatibility
+    if session_info is None:
+        if session_id is None:
+            raise ValueError("Either session_id or session_info must be provided")
+        # Create minimal SessionInfo for legacy callers
+        session_info = SessionInfo(
+            session_id=session_id,
+            name=session_id,
+            module="unknown",
+            qualname=session_id,
+        )
+
+    actual_session_id = session_info.session_id
 
     with _client_lock:
         if _client_state is not None:
@@ -557,8 +634,8 @@ async def connect_to_server(
         logger.info(f"Connected to server at {host}:{port}")
 
         try:
-            # Send registration message with session_id
-            await _send_message(writer, session_id.encode())
+            # Send registration message with SessionInfo as JSON
+            await _send_message(writer, session_info.model_dump_json().encode())
 
             # Wait for ACK from server
             ack = await _recv_message(reader, timeout=REGISTRATION_TIMEOUT)
@@ -584,7 +661,7 @@ async def connect_to_server(
                 _client_state = _ClientState(
                     reader=reader,
                     writer=writer,
-                    session_id=session_id,
+                    session_id=actual_session_id,
                     connected_port=port,
                 )
 

@@ -9,7 +9,7 @@ These tests verify that:
 import asyncio
 import pytest
 import janus
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from pixie.session.rpc import (
     connect_to_server,
@@ -220,37 +220,50 @@ class TestClientCompletionOnCancel:
                     "pixie.session.client.notify_server", side_effect=mock_notify
                 ):
                     with patch("pixie.session.client.disconnect_from_server"):
-                        mock_connect.return_value = 11111
+                        with patch("pixie.session.client.enable_instrumentations"):
+                            with patch(
+                                "pixie.session.client.get_client"
+                            ) as mock_get_client:
+                                mock_connect.return_value = 11111
+                                mock_langfuse = MagicMock()
+                                mock_langfuse.auth_check.return_value = True
+                                mock_langfuse.flush = MagicMock()
+                                mock_get_client.return_value = mock_langfuse
 
-                        mock_queue = janus.Queue()
-                        mock_exec_ctx = type(
-                            "MockCtx",
-                            (),
-                            {"status_queue": mock_queue, "run_id": "test-session"},
-                        )()
-                        mock_ctx.init_run.return_value = mock_exec_ctx
-                        mock_ctx.get_current_context.return_value = mock_exec_ctx
+                                mock_queue = janus.Queue()
+                                mock_exec_ctx = type(
+                                    "MockCtx",
+                                    (),
+                                    {
+                                        "status_queue": mock_queue,
+                                        "run_id": "test-session",
+                                    },
+                                )()
+                                mock_ctx.init_run.return_value = mock_exec_ctx
+                                mock_ctx.get_current_context.return_value = (
+                                    mock_exec_ctx
+                                )
 
-                        @session
-                        async def my_func():
-                            # Simulate waiting for input then being cancelled
-                            await asyncio.sleep(10)
+                                @session
+                                async def my_func():
+                                    # Simulate waiting for input then being cancelled
+                                    await asyncio.sleep(10)
 
-                        # Run the function but cancel it
-                        task = asyncio.create_task(my_func())
-                        await asyncio.sleep(0.1)  # Let it start
-                        task.cancel()
+                                # Run the function but cancel it
+                                task = asyncio.create_task(my_func())
+                                await asyncio.sleep(0.1)  # Let it start
+                                task.cancel()
 
-                        with pytest.raises(asyncio.CancelledError):
-                            await task
+                                with pytest.raises(asyncio.CancelledError):
+                                    await task
 
-                        # Check that completed was sent
-                        completed_updates = [
-                            u for u in sent_updates if u.status == "completed"
-                        ]
-                        assert (
-                            len(completed_updates) >= 1
-                        ), f"Expected 'completed' status, got: {[u.status for u in sent_updates]}"
+                                # Check that completed was sent
+                                completed_updates = [
+                                    u for u in sent_updates if u.status == "completed"
+                                ]
+                                assert (
+                                    len(completed_updates) >= 1
+                                ), f"Expected 'completed' status, got: {[u.status for u in sent_updates]}"
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(TIMEOUT)
@@ -270,34 +283,47 @@ class TestClientCompletionOnCancel:
                     "pixie.session.client.notify_server", side_effect=mock_notify
                 ):
                     with patch("pixie.session.client.disconnect_from_server"):
-                        mock_connect.return_value = 11111
+                        with patch("pixie.session.client.enable_instrumentations"):
+                            with patch(
+                                "pixie.session.client.get_client"
+                            ) as mock_get_client:
+                                mock_connect.return_value = 11111
+                                mock_langfuse = MagicMock()
+                                mock_langfuse.auth_check.return_value = True
+                                mock_langfuse.flush = MagicMock()
+                                mock_get_client.return_value = mock_langfuse
 
-                        mock_queue = janus.Queue()
-                        mock_exec_ctx = type(
-                            "MockCtx",
-                            (),
-                            {"status_queue": mock_queue, "run_id": "test-session"},
-                        )()
-                        mock_ctx.init_run.return_value = mock_exec_ctx
-                        mock_ctx.get_current_context.return_value = mock_exec_ctx
+                                mock_queue = janus.Queue()
+                                mock_exec_ctx = type(
+                                    "MockCtx",
+                                    (),
+                                    {
+                                        "status_queue": mock_queue,
+                                        "run_id": "test-session",
+                                    },
+                                )()
+                                mock_ctx.init_run.return_value = mock_exec_ctx
+                                mock_ctx.get_current_context.return_value = (
+                                    mock_exec_ctx
+                                )
 
-                        @session
-                        async def my_func():
-                            # Simulate a long running operation
-                            await asyncio.sleep(100)
+                                @session
+                                async def my_func():
+                                    # Simulate a long running operation
+                                    await asyncio.sleep(100)
 
-                        task = asyncio.create_task(my_func())
-                        await asyncio.sleep(0.2)  # Let it start
-                        task.cancel()
+                                task = asyncio.create_task(my_func())
+                                await asyncio.sleep(0.2)  # Let it start
+                                task.cancel()
 
-                        with pytest.raises(asyncio.CancelledError):
-                            await task
+                                with pytest.raises(asyncio.CancelledError):
+                                    await task
 
-                        # Verify completed was sent even though cancelled
-                        statuses = [u.status for u in sent_updates]
-                        assert (
-                            "completed" in statuses
-                        ), f"Expected 'completed' in statuses, got: {statuses}"
+                                # Verify completed was sent even though cancelled
+                                statuses = [u.status for u in sent_updates]
+                                assert (
+                                    "completed" in statuses
+                                ), f"Expected 'completed' in statuses, got: {statuses}"
 
 
 class TestServerLoopRecovery:
