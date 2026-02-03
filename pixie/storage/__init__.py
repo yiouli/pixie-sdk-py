@@ -8,17 +8,16 @@ from .tables import (
 from .types import (
     Rating,
     RunSource,
+    MessageRole,
     Message,
     RatingDetails,
     AppInfoRecord,
     SessionInfoRecord,
     PromptInfoRecord,
+    RunRecordDetails,
     RunRecord,
-    RunRecordInput,
-    RunRecordUpdate,
+    LlmCallRecordDetails,
     LlmCallRecord,
-    LlmCallRecordInput,
-    LlmCallRecordUpdate,
     RecordFilters,
 )
 from .operations import (
@@ -38,20 +37,20 @@ __all__ = [
     "create_tables",
     "RunRecordTable",
     "LlmCallRecordTable",
-    # Types
+    # Types - Enums
     "Rating",
     "RunSource",
+    "MessageRole",
+    # Types - Models
     "Message",
     "RatingDetails",
     "AppInfoRecord",
     "SessionInfoRecord",
     "PromptInfoRecord",
+    "RunRecordDetails",
     "RunRecord",
-    "RunRecordInput",
-    "RunRecordUpdate",
+    "LlmCallRecordDetails",
     "LlmCallRecord",
-    "LlmCallRecordInput",
-    "LlmCallRecordUpdate",
     "RecordFilters",
     # Operations
     "create_run_record",

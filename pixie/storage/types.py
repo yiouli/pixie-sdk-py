@@ -4,21 +4,29 @@ These types are used for:
 1. Database storage (via Piccolo ORM)
 2. GraphQL API (via Strawberry conversion)
 3. Data exchange between frontend and backend
+
+Type hierarchy:
+- RunRecordDetails: Base class with all updatable fields (all optional)
+- RunRecord: Full record with required id (extends RunRecordDetails)
+
+- LlmCallRecordDetails: Base class with all updatable fields (all optional)
+- LlmCallRecord: Full record with required span_id, trace_id (extends LlmCallRecordDetails)
 """
 
 from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, Field, JsonValue
 
-# Rating type used across the system
+# Type aliases for string literal values
 Rating = Literal["good", "bad", "undecided"]
 RunSource = Literal["apps", "sessions"]
+MessageRole = Literal["system", "user", "assistant", "tool", "developer"]
 
 
 class Message(BaseModel):
     """A message in interaction logs."""
 
-    role: Literal["system", "user", "assistant", "tool"]
+    role: MessageRole
     content: JsonValue
     time_unix_nano: str | None = None
     user_rating: Rating | None = None
@@ -62,142 +70,81 @@ class PromptInfoRecord(BaseModel):
     variables: dict[str, JsonValue] | None = None
 
 
-class RunRecordData(BaseModel):
-    """Core data for a run record.
+# ============================================================================
+# Run Record Types
+# ============================================================================
 
-    This model is used for both creating and updating run records.
-    All fields except id are optional for partial updates.
+
+class RunRecordDetails(BaseModel):
+    """Details for a run record (used for updates).
+
+    All fields are optional to support partial updates.
     """
 
-    id: str = Field(description="Run ID for apps, session ID for sessions")
-    source: RunSource = Field(
-        default="apps", description="Source type: 'apps' or 'sessions'"
-    )
+    source: RunSource | None = None
     app_info: AppInfoRecord | None = None
     session_info: SessionInfoRecord | None = None
-    messages: list[Message] = Field(default_factory=list)
-    prompt_ids: list[str] = Field(default_factory=list)
-    start_time: str | None = None  # Unix timestamp in milliseconds as string
-    end_time: str | None = None  # Unix timestamp in milliseconds as string
-    rating: RatingDetails | None = None
-    metadata: dict[str, JsonValue] = Field(default_factory=dict)
-
-
-class RunRecordInput(BaseModel):
-    """Input for creating a run record."""
-
-    id: str
-    source: RunSource
-    app_info: AppInfoRecord | None = None
-    session_info: SessionInfoRecord | None = None
-    messages: list[Message] = Field(default_factory=list)
-    prompt_ids: list[str] = Field(default_factory=list)
-    start_time: str | None = None  # Unix timestamp in milliseconds as string
-    metadata: dict[str, JsonValue] = Field(default_factory=dict)
-
-
-class RunRecordUpdate(BaseModel):
-    """Input for updating a run record (partial update)."""
-
     messages: list[Message] | None = None
     prompt_ids: list[str] | None = None
+    start_time: str | None = None  # Unix timestamp in milliseconds as string
     end_time: str | None = None  # Unix timestamp in milliseconds as string
     rating: RatingDetails | None = None
     metadata: dict[str, JsonValue] | None = None
 
 
-class RunRecord(BaseModel):
-    """Full run record with timestamps."""
+class RunRecord(RunRecordDetails):
+    """Full run record with required fields and timestamps.
 
-    id: str
-    source: RunSource
-    app_info: AppInfoRecord | None = None
-    session_info: SessionInfoRecord | None = None
-    messages: list[Message]
-    prompt_ids: list[str]
-    start_time: str | None = None
-    end_time: str | None = None
-    rating: RatingDetails | None = None
-    metadata: dict[str, JsonValue]
-    created_at: datetime
-    updated_at: datetime
+    Used for both creating records (input) and returning records (output).
+    The id field is required.
+    """
+
+    id: str = Field(description="Run ID for apps, session ID for sessions")
+    # DB timestamps (set by database, not user)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
-class LlmCallRecordData(BaseModel):
-    """Core data for an LLM call record."""
+# ============================================================================
+# LLM Call Record Types
+# ============================================================================
 
-    span_id: str = Field(description="Unique span ID for this LLM call")
-    trace_id: str
+
+class LlmCallRecordDetails(BaseModel):
+    """Details for an LLM call record (used for updates).
+
+    All fields are optional to support partial updates.
+    """
+
     run_id: str | None = None  # Link to parent run record
-    run_source: RunSource = "apps"
+    run_source: RunSource | None = None  # Optional since run_id might be None
     app_info: AppInfoRecord | None = None
     session_info: SessionInfoRecord | None = None
     prompt_info: PromptInfoRecord | None = None
     llm_input: JsonValue = None
     llm_output: JsonValue = None
-    model_name: str = "unknown"
-    model_parameters: dict[str, JsonValue] | None = None
-    start_time: str | None = None  # Unix timestamp in nanoseconds as string
-    end_time: str | None = None  # Unix timestamp in nanoseconds as string
-    internal_logs_after: list[JsonValue] = Field(default_factory=list)
-    rating: RatingDetails | None = None
-    metadata: dict[str, JsonValue] = Field(default_factory=dict)
-
-
-class LlmCallRecordInput(BaseModel):
-    """Input for creating an LLM call record."""
-
-    span_id: str
-    trace_id: str
-    run_id: str | None = None
-    run_source: RunSource = "apps"
-    app_info: AppInfoRecord | None = None
-    session_info: SessionInfoRecord | None = None
-    prompt_info: PromptInfoRecord | None = None
-    llm_input: JsonValue = None
-    llm_output: JsonValue = None
-    model_name: str = "unknown"
-    model_parameters: dict[str, JsonValue] | None = None
-    start_time: str | None = None  # Unix timestamp in nanoseconds as string
-    end_time: str | None = None  # Unix timestamp in nanoseconds as string
-    metadata: dict[str, JsonValue] = Field(default_factory=dict)
-
-
-class LlmCallRecordUpdate(BaseModel):
-    """Input for updating an LLM call record (partial update)."""
-
-    prompt_info: PromptInfoRecord | None = None
-    llm_input: JsonValue | None = None
-    llm_output: JsonValue | None = None
     model_name: str | None = None
     model_parameters: dict[str, JsonValue] | None = None
+    start_time: str | None = None  # Unix timestamp in nanoseconds as string
     end_time: str | None = None  # Unix timestamp in nanoseconds as string
     internal_logs_after: list[JsonValue] | None = None
     rating: RatingDetails | None = None
     metadata: dict[str, JsonValue] | None = None
 
 
-class LlmCallRecord(BaseModel):
-    """Full LLM call record with timestamps."""
+class LlmCallRecord(LlmCallRecordDetails):
+    """Full LLM call record with required fields.
 
-    span_id: str
+    Used for both creating records (input) and returning records (output).
+    """
+
+    span_id: str = Field(description="Unique span ID for this LLM call")
     trace_id: str
-    run_id: str | None = None
-    run_source: RunSource
-    app_info: AppInfoRecord | None = None
-    session_info: SessionInfoRecord | None = None
-    prompt_info: PromptInfoRecord | None = None
-    llm_input: JsonValue
-    llm_output: JsonValue
-    model_name: str
-    model_parameters: dict[str, JsonValue] | None = None
-    start_time: str | None = None
-    end_time: str | None = None
-    internal_logs_after: list[JsonValue]
-    rating: RatingDetails | None = None
-    metadata: dict[str, JsonValue]
-    created_at: datetime
-    updated_at: datetime
+
+
+# ============================================================================
+# Query Filters
+# ============================================================================
 
 
 class RecordFilters(BaseModel):
@@ -212,3 +159,12 @@ class RecordFilters(BaseModel):
     created_before: datetime | None = None
     limit: int = 100
     offset: int = 0
+
+
+# Type aliases for backward compatibility with tests
+# The "input" type is the same as the full record type (with required id/span_id)
+# The "update" type is the details type (all fields optional)
+RunRecordInput = RunRecord
+RunRecordUpdate = RunRecordDetails
+LlmCallRecordInput = LlmCallRecord
+LlmCallRecordUpdate = LlmCallRecordDetails

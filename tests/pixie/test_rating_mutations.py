@@ -24,15 +24,15 @@ def sample_messages():
     """Sample messages for testing."""
     return [
         MessageInput(
-            role="USER",
+            role="user",
             content={"text": "Hello"},
             user_rating=None,
             user_feedback=None,
         ),
         MessageInput(
-            role="ASSISTANT",
+            role="assistant",
             content={"text": "Hi there!"},
-            user_rating=Rating.GOOD,
+            user_rating=Rating.good,
             user_feedback="Great response",
         ),
     ]
@@ -85,23 +85,23 @@ class TestRateLlmCallMutation:
             "appDescription": "A helpful chatbot",
             "interactionLogsBefore": [
                 {
-                    "role": "USER",
+                    "role": "user",
                     "content": {"text": "What's the weather?"},
                     "userRating": None,
                     "userFeedback": None,
                 }
             ],
             "llmInput": {
-                "messages": [{"role": "USER", "content": "What's the weather?"}]
+                "messages": [{"role": "user", "content": "What's the weather?"}]
             },
             "llmOutput": {"response": "It's sunny today."},
             "llmConfig": sample_llm_config,
             "internalLogsAfter": [{"log": "LLM call completed"}],
             "interactionLogsAfter": [
                 {
-                    "role": "ASSISTANT",
+                    "role": "assistant",
                     "content": {"text": "It's sunny today."},
-                    "userRating": "GOOD",
+                    "userRating": "good",
                     "userFeedback": None,
                 }
             ],
@@ -126,7 +126,7 @@ class TestRateLlmCallMutation:
 
             # Check result structure
             assert result.data["rateLlmCall"]["thoughts"] == expected_result.thoughts
-            assert result.data["rateLlmCall"]["rating"] == "GOOD"
+            assert result.data["rateLlmCall"]["rating"] == "good"
 
             # Verify the function was called
             assert mock_rate.called
@@ -166,21 +166,21 @@ class TestRateLlmCallMutation:
             "appDescription": "A helpful chatbot",
             "interactionLogsBefore": [
                 {
-                    "role": "USER",
+                    "role": "user",
                     "content": {"text": "Calculate 2+2"},
                     "userRating": None,
                     "userFeedback": None,
                 }
             ],
-            "llmInput": {"messages": [{"role": "USER", "content": "Calculate 2+2"}]},
+            "llmInput": {"messages": [{"role": "user", "content": "Calculate 2+2"}]},
             "llmOutput": {"response": "The answer is 5."},
             "llmConfig": sample_llm_config,
             "internalLogsAfter": [],
             "interactionLogsAfter": [
                 {
-                    "role": "ASSISTANT",
+                    "role": "assistant",
                     "content": {"text": "The answer is 5."},
-                    "userRating": "BAD",
+                    "userRating": "bad",
                     "userFeedback": "Incorrect calculation",
                 }
             ],
@@ -199,7 +199,7 @@ class TestRateLlmCallMutation:
             result = await schema.execute(mutation, variable_values=variables)
 
             assert result.errors is None
-            assert result.data["rateLlmCall"]["rating"] == "BAD"
+            assert result.data["rateLlmCall"]["rating"] == "bad"
 
     @pytest.mark.asyncio
     async def test_rate_llm_call_with_user_feedback(self, schema, sample_llm_config):
@@ -233,23 +233,23 @@ class TestRateLlmCallMutation:
             "appDescription": "Customer support bot",
             "interactionLogsBefore": [
                 {
-                    "role": "USER",
+                    "role": "user",
                     "content": {"text": "I need help with my order"},
                     "userRating": None,
                     "userFeedback": None,
                 }
             ],
             "llmInput": {
-                "messages": [{"role": "USER", "content": "I need help with my order"}]
+                "messages": [{"role": "user", "content": "I need help with my order"}]
             },
             "llmOutput": {"response": "I'll help you with that."},
             "llmConfig": sample_llm_config,
             "internalLogsAfter": [{"retrieved_order": "12345"}],
             "interactionLogsAfter": [
                 {
-                    "role": "ASSISTANT",
+                    "role": "assistant",
                     "content": {"text": "I'll help you with that."},
-                    "userRating": "GOOD",
+                    "userRating": "good",
                     "userFeedback": "Very helpful and quick response",
                 }
             ],
@@ -268,7 +268,7 @@ class TestRateLlmCallMutation:
             result = await schema.execute(mutation, variable_values=variables)
 
             assert result.errors is None
-            assert result.data["rateLlmCall"]["rating"] == "GOOD"
+            assert result.data["rateLlmCall"]["rating"] == "good"
 
             # Verify user feedback was passed through
             call_args = mock_rate.call_args[0][0]
@@ -302,19 +302,19 @@ class TestRateRunMutation:
             "runDescription": "A Q&A assistant",
             "interactionLogs": [
                 {
-                    "role": "USER",
+                    "role": "user",
                     "content": {"text": "What is Python?"},
                     "userRating": None,
                     "userFeedback": None,
                 },
                 {
-                    "role": "ASSISTANT",
+                    "role": "assistant",
                     "content": {"text": "Python is a high-level programming language."},
-                    "userRating": "GOOD",
+                    "userRating": "good",
                     "userFeedback": None,
                 },
                 {
-                    "role": "USER",
+                    "role": "user",
                     "content": {"text": "Thanks!"},
                     "userRating": None,
                     "userFeedback": None,
@@ -340,7 +340,7 @@ class TestRateRunMutation:
 
             # Check result structure
             assert result.data["rateRun"]["thoughts"] == expected_result.thoughts
-            assert result.data["rateRun"]["rating"] == "GOOD"
+            assert result.data["rateRun"]["rating"] == "good"
 
             # Verify the function was called with correct args
             assert mock_rate.called
@@ -371,27 +371,27 @@ class TestRateRunMutation:
             "runDescription": "Multi-turn conversation assistant",
             "interactionLogs": [
                 {
-                    "role": "USER",
+                    "role": "user",
                     "content": {"text": "First question"},
                     "userRating": None,
                     "userFeedback": None,
                 },
                 {
-                    "role": "ASSISTANT",
+                    "role": "assistant",
                     "content": {"text": "Good answer"},
-                    "userRating": "GOOD",
+                    "userRating": "good",
                     "userFeedback": "Helpful",
                 },
                 {
-                    "role": "USER",
+                    "role": "user",
                     "content": {"text": "Second question"},
                     "userRating": None,
                     "userFeedback": None,
                 },
                 {
-                    "role": "ASSISTANT",
+                    "role": "assistant",
                     "content": {"text": "Bad answer"},
-                    "userRating": "BAD",
+                    "userRating": "bad",
                     "userFeedback": "Not accurate",
                 },
             ],
@@ -410,7 +410,7 @@ class TestRateRunMutation:
             result = await schema.execute(mutation, variable_values=variables)
 
             assert result.errors is None
-            assert result.data["rateRun"]["rating"] == "UNDECIDED"
+            assert result.data["rateRun"]["rating"] == "undecided"
 
     @pytest.mark.asyncio
     async def test_rate_app_run_empty_logs(self, schema):
@@ -448,7 +448,7 @@ class TestRateRunMutation:
             result = await schema.execute(mutation, variable_values=variables)
 
             assert result.errors is None
-            assert result.data["rateRun"]["rating"] == "UNDECIDED"
+            assert result.data["rateRun"]["rating"] == "undecided"
 
     @pytest.mark.asyncio
     async def test_rate_app_run_message_conversion(self, schema):
@@ -472,9 +472,9 @@ class TestRateRunMutation:
             "runDescription": "Test conversion",
             "interactionLogs": [
                 {
-                    "role": "USER",
+                    "role": "user",
                     "content": {"text": "test"},
-                    "userRating": "GOOD",
+                    "userRating": "good",
                     "userFeedback": "test feedback",
                 }
             ],
@@ -528,15 +528,15 @@ class TestRatingEnumConversion:
 
         # Test each rating value
         for rating_value, expected_graphql in [
-            ("good", "GOOD"),
-            ("bad", "BAD"),
-            ("undecided", "UNDECIDED"),
+            ("good", "good"),
+            ("bad", "bad"),
+            ("undecided", "undecided"),
         ]:
             variables = {
                 "runDescription": "Test",
                 "interactionLogs": [
                     {
-                        "role": "USER",
+                        "role": "user",
                         "content": {"text": "test"},
                         "userRating": expected_graphql,
                         "userFeedback": None,

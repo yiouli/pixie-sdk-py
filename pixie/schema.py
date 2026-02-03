@@ -5,7 +5,6 @@ import json
 import logging
 import time
 import uuid
-from enum import Enum
 from typing import AsyncGenerator, Callable, Coroutine, Optional, cast
 
 from graphql import GraphQLError
@@ -51,15 +50,22 @@ from pixie.storage.graphql import (
     StorageQuery,
     StorageMutation,
 )
+from pixie.storage.types import Message as PydanticMessage
 from pixie.agents.rating_agent import (
-    Message as PydanticMessage,
     RatingResult as PydanticRatingResult,
     LlmCallRatingAgentInput as PydanticLlmCallRatingInput,
     AppRunRatingAgentInput as PydanticAppRunRatingInput,
     rate_llm_call as execute_rate_llm_call,
     rate_app_run as execute_rate_app_run,
 )
-
+from pixie.strawberry_types import (
+    BreakpointTiming,
+    BreakpointType,
+    AppRunStatus,
+    Rating,
+    MessageRole,
+    TraceEventType,
+)
 
 # Global registry for input queues per run
 _input_queues: dict[str, janus.Queue] = {}
@@ -79,66 +85,6 @@ def _get_input_queue(run_id: str) -> janus.Queue:
 
 
 logger = logging.getLogger(__name__)
-
-
-# Create Strawberry enums matching Pydantic Literals
-@strawberry.enum
-class BreakpointTiming(Enum):
-    """Mode for pausing execution."""
-
-    BEFORE = "BEFORE"
-    AFTER = "AFTER"
-
-
-@strawberry.enum
-class BreakpointType(Enum):
-    """Types of pausible points in execution."""
-
-    LLM = "LLM"
-    TOOL = "TOOL"
-    CUSTOM = "CUSTOM"
-
-
-@strawberry.enum
-class AppRunStatus(Enum):
-    """Status of an application run."""
-
-    RUNNING = "running"
-    COMPLETED = "completed"
-    ERROR = "error"
-    PAUSED = "paused"
-    WAITING = "waiting"
-    CANCELLED = "cancelled"
-    UNCHANGED = "unchanged"
-
-
-@strawberry.enum
-class Rating(Enum):
-    """Rating for an LLM call or app run."""
-
-    GOOD = "good"
-    BAD = "bad"
-    UNDECIDED = "undecided"
-
-
-@strawberry.enum
-class MessageRole(Enum):
-    """Role of a message in interaction logs."""
-
-    SYSTEM = "system"
-    USER = "user"
-    ASSISTANT = "assistant"
-    TOOL = "tool"
-
-
-@strawberry.enum
-class TraceEventType(Enum):
-    """Type of trace event.
-
-    Indicates whether the trace data is from a span starting or other event.
-    """
-
-    SPAN_START = "span_start"
 
 
 # Convert Pydantic models to Strawberry types with explicit field types

@@ -10,11 +10,9 @@ from piccolo.columns import Column
 from .tables import RunRecord as RunRecordTable, LlmCallRecord as LlmCallRecordTable
 from .types import (
     RunRecord,
-    RunRecordInput,
-    RunRecordUpdate,
+    RunRecordDetails,
     LlmCallRecord,
-    LlmCallRecordInput,
-    LlmCallRecordUpdate,
+    LlmCallRecordDetails,
     RecordFilters,
     Message,
     RatingDetails,
@@ -144,8 +142,6 @@ def _row_to_llm_call_record(row: dict) -> LlmCallRecord:
         ),
         rating=_parse_rating(row["rating"]),
         metadata=_parse_json(row["metadata"]) or {},
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
     )
 
 
@@ -154,21 +150,21 @@ def _row_to_llm_call_record(row: dict) -> LlmCallRecord:
 # ============================================================================
 
 
-async def create_run_record(input_data: RunRecordInput) -> RunRecord:
+async def create_run_record(input_data: RunRecord) -> RunRecord:
     """Create a new run record."""
     now = _now()
 
     record = RunRecordTable(
         id=input_data.id,
-        source=input_data.source,
+        source=input_data.source if input_data.source else "apps",
         app_info=_serialize_json(input_data.app_info),
         session_info=_serialize_json(input_data.session_info),
-        messages=json.dumps([m.model_dump() for m in input_data.messages]),
-        prompt_ids=json.dumps(input_data.prompt_ids),
+        messages=json.dumps([m.model_dump() for m in (input_data.messages or [])]),
+        prompt_ids=json.dumps(input_data.prompt_ids or []),
         start_time=input_data.start_time,
         end_time=None,
         rating=None,
-        metadata=json.dumps(input_data.metadata),
+        metadata=json.dumps(input_data.metadata or {}),
         created_at=now,
         updated_at=now,
     )
@@ -188,7 +184,7 @@ async def get_run_record(run_id: str) -> Optional[RunRecord]:
 
 
 async def update_run_record(
-    run_id: str, update_data: RunRecordUpdate
+    run_id: str, update_data: RunRecordDetails
 ) -> Optional[RunRecord]:
     """Update an existing run record with partial data."""
     rows = await RunRecordTable.select().where(RunRecordTable.id == run_id)
@@ -273,7 +269,7 @@ async def get_run_records(filters: RecordFilters) -> list[RunRecord]:
 # ============================================================================
 
 
-async def create_llm_call_record(input_data: LlmCallRecordInput) -> LlmCallRecord:
+async def create_llm_call_record(input_data: LlmCallRecord) -> LlmCallRecord:
     """Create a new LLM call record."""
     now = _now()
 
@@ -287,13 +283,13 @@ async def create_llm_call_record(input_data: LlmCallRecordInput) -> LlmCallRecor
         prompt_info=_serialize_json(input_data.prompt_info),
         llm_input=_serialize_json(input_data.llm_input),
         llm_output=_serialize_json(input_data.llm_output),
-        model_name=input_data.model_name,
+        model_name=input_data.model_name or "unknown",
         model_parameters=_serialize_json(input_data.model_parameters),
         start_time=input_data.start_time,
         end_time=input_data.end_time,
-        internal_logs_after=json.dumps([]),
+        internal_logs_after=json.dumps(input_data.internal_logs_after or []),
         rating=None,
-        metadata=json.dumps(input_data.metadata),
+        metadata=json.dumps(input_data.metadata or {}),
         created_at=now,
         updated_at=now,
     )
@@ -317,7 +313,7 @@ async def get_llm_call_record(span_id: str) -> Optional[LlmCallRecord]:
 
 
 async def update_llm_call_record(
-    span_id: str, update_data: LlmCallRecordUpdate
+    span_id: str, update_data: LlmCallRecordDetails
 ) -> Optional[LlmCallRecord]:
     """Update an existing LLM call record with partial data."""
     rows = await LlmCallRecordTable.select().where(

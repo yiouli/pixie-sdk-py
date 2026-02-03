@@ -1,13 +1,17 @@
 """GraphQL types and resolvers for storage records."""
 
 from datetime import datetime
-from enum import Enum
 from typing import Optional
 
 import strawberry
 from strawberry.scalars import JSON
 import strawberry.experimental.pydantic
 
+from pixie.strawberry_types import (
+    Rating as RatingEnum,
+    MessageRole as MessageRoleEnum,
+    RunSource as RunSourceEnum,
+)
 from pixie.storage.types import (
     Message as PydanticMessage,
     RatingDetails as PydanticRatingDetails,
@@ -15,11 +19,9 @@ from pixie.storage.types import (
     SessionInfoRecord as PydanticSessionInfoRecord,
     PromptInfoRecord as PydanticPromptInfoRecord,
     RunRecord as PydanticRunRecord,
-    RunRecordInput as PydanticRunRecordInput,
-    RunRecordUpdate as PydanticRunRecordUpdate,
+    RunRecordDetails as PydanticRunRecordDetails,
     LlmCallRecord as PydanticLlmCallRecord,
-    LlmCallRecordInput as PydanticLlmCallRecordInput,
-    LlmCallRecordUpdate as PydanticLlmCallRecordUpdate,
+    LlmCallRecordDetails as PydanticLlmCallRecordDetails,
     RecordFilters as PydanticRecordFilters,
 )
 from pixie.storage import (
@@ -35,26 +37,6 @@ from pixie.storage import (
 )
 
 # ============================================================================
-# Enums
-# ============================================================================
-
-
-class RunSourceEnum(Enum):
-    """Source type for run records."""
-
-    APPS = "apps"
-    SESSIONS = "sessions"
-
-
-class RatingValueEnum(Enum):
-    """Rating value."""
-
-    GOOD = "good"
-    BAD = "bad"
-    UNDECIDED = "undecided"
-
-
-# ============================================================================
 # Output Types (Pydantic to Strawberry conversion)
 # ============================================================================
 
@@ -63,7 +45,7 @@ class RatingValueEnum(Enum):
 class RatingDetailsType:
     """Rating details for a record."""
 
-    value: str  # Literal type not supported, use str
+    value: RatingEnum
     rated_at: str  # String to avoid 32-bit int overflow
     notes: strawberry.auto
 
@@ -95,10 +77,10 @@ class PromptInfoRecordType:
 class StorageMessage:
     """Message in interaction logs (for storage records)."""
 
-    role: str  # Literal type not supported, use str
+    role: MessageRoleEnum
     content: JSON
     time_unix_nano: Optional[str] = None
-    user_rating: Optional[str] = None  # Literal type not supported
+    user_rating: Optional[RatingEnum] = None
     user_feedback: Optional[str] = None
 
 
@@ -107,7 +89,7 @@ class RunRecordType:
     """Full run record."""
 
     id: strawberry.auto
-    source: str  # Literal type not supported, use str
+    source: RunSourceEnum
     app_info: Optional[AppInfoRecordType] = None
     session_info: Optional[SessionInfoRecordType] = None
     messages: list[StorageMessage]
@@ -116,8 +98,8 @@ class RunRecordType:
     end_time: Optional[str] = None  # String to avoid 32-bit int overflow
     rating: Optional[RatingDetailsType] = None
     metadata: JSON
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 @strawberry.experimental.pydantic.type(model=PydanticLlmCallRecord)
@@ -127,7 +109,7 @@ class LlmCallRecordType:
     span_id: strawberry.auto
     trace_id: strawberry.auto
     run_id: Optional[str] = None
-    run_source: str  # Literal type not supported, use str
+    run_source: Optional[RunSourceEnum] = None
     app_info: Optional[AppInfoRecordType] = None
     session_info: Optional[SessionInfoRecordType] = None
     prompt_info: Optional[PromptInfoRecordType] = None
@@ -140,8 +122,6 @@ class LlmCallRecordType:
     internal_logs_after: list[JSON]
     rating: Optional[RatingDetailsType] = None
     metadata: JSON
-    created_at: datetime
-    updated_at: datetime
 
 
 # ============================================================================
@@ -153,7 +133,7 @@ class LlmCallRecordType:
 class RatingDetailsInput:
     """Rating details input."""
 
-    value: str  # Literal type not supported, use str
+    value: RatingEnum
     rated_at: str  # String to avoid 32-bit int overflow
     notes: strawberry.auto
 
@@ -187,19 +167,19 @@ class PromptInfoRecordInput:
 class StorageMessageInput:
     """Message input for storage records."""
 
-    role: str  # Literal type not supported, use str
+    role: MessageRoleEnum
     content: JSON
     time_unix_nano: Optional[str] = None
-    user_rating: Optional[str] = None  # Literal type not supported
+    user_rating: Optional[RatingEnum] = None
     user_feedback: Optional[str] = None
 
 
-@strawberry.experimental.pydantic.input(model=PydanticRunRecordInput)
-class RunRecordInputType:
+@strawberry.experimental.pydantic.input(model=PydanticRunRecord)
+class RunRecordInput:
     """Input for creating a run record."""
 
     id: strawberry.auto
-    source: str  # Literal type not supported, use str
+    source: RunSourceEnum | None = None
     app_info: Optional[AppInfoRecordInput] = None
     session_info: Optional[SessionInfoRecordInput] = None
     messages: list[StorageMessageInput] = strawberry.field(default_factory=list)
@@ -208,8 +188,8 @@ class RunRecordInputType:
     metadata: JSON = strawberry.field(default_factory=dict)
 
 
-@strawberry.experimental.pydantic.input(model=PydanticRunRecordUpdate)
-class RunRecordUpdateInput:
+@strawberry.experimental.pydantic.input(model=PydanticRunRecordDetails)
+class RunRecordDetailsInput:
     """Input for updating a run record."""
 
     messages: Optional[list[StorageMessageInput]] = None
@@ -219,14 +199,14 @@ class RunRecordUpdateInput:
     metadata: Optional[JSON] = None
 
 
-@strawberry.experimental.pydantic.input(model=PydanticLlmCallRecordInput)
-class LlmCallRecordInputType:
+@strawberry.experimental.pydantic.input(model=PydanticLlmCallRecord)
+class LlmCallRecordInput:
     """Input for creating an LLM call record."""
 
     span_id: strawberry.auto
     trace_id: strawberry.auto
     run_id: Optional[str] = None
-    run_source: str = "apps"  # Literal type not supported, use str
+    run_source: Optional[RunSourceEnum] = None
     app_info: Optional[AppInfoRecordInput] = None
     session_info: Optional[SessionInfoRecordInput] = None
     prompt_info: Optional[PromptInfoRecordInput] = None
@@ -239,8 +219,8 @@ class LlmCallRecordInputType:
     metadata: JSON = strawberry.field(default_factory=dict)
 
 
-@strawberry.experimental.pydantic.input(model=PydanticLlmCallRecordUpdate)
-class LlmCallRecordUpdateInput:
+@strawberry.experimental.pydantic.input(model=PydanticLlmCallRecordDetails)
+class LlmCallRecordDetailsInput:
     """Input for updating an LLM call record."""
 
     prompt_info: Optional[PromptInfoRecordInput] = None
@@ -260,9 +240,9 @@ class RecordFiltersInput:
 
     prompt_id: Optional[str] = None
     app_id: Optional[str] = None
-    run_source: Optional[str] = None
+    run_source: Optional[RunSourceEnum] = None
     has_rating: Optional[bool] = None
-    rating_value: Optional[str] = None
+    rating_value: Optional[RatingEnum] = None
     created_after: Optional[datetime] = None
     created_before: Optional[datetime] = None
     limit: int = 100
@@ -329,7 +309,7 @@ class StorageMutation:
     """GraphQL mutations for storage records."""
 
     @strawberry.mutation
-    async def create_run_record(self, input_data: RunRecordInputType) -> RunRecordType:
+    async def create_run_record(self, input_data: RunRecordInput) -> RunRecordType:
         """Create a new run record."""
         pydantic_input = input_data.to_pydantic()
         record = await db_create_run_record(pydantic_input)
@@ -337,7 +317,7 @@ class StorageMutation:
 
     @strawberry.mutation
     async def update_run_record(
-        self, run_id: str, input_data: RunRecordUpdateInput
+        self, run_id: str, input_data: RunRecordDetailsInput
     ) -> Optional[RunRecordType]:
         """Update an existing run record."""
         pydantic_input = input_data.to_pydantic()
@@ -348,7 +328,7 @@ class StorageMutation:
 
     @strawberry.mutation
     async def create_llm_call_record(
-        self, input_data: LlmCallRecordInputType
+        self, input_data: LlmCallRecordInput
     ) -> LlmCallRecordType:
         """Create a new LLM call record."""
         pydantic_input = input_data.to_pydantic()
@@ -357,7 +337,7 @@ class StorageMutation:
 
     @strawberry.mutation
     async def update_llm_call_record(
-        self, span_id: str, input_data: LlmCallRecordUpdateInput
+        self, span_id: str, input_data: LlmCallRecordDetailsInput
     ) -> Optional[LlmCallRecordType]:
         """Update an existing LLM call record."""
         pydantic_input = input_data.to_pydantic()
