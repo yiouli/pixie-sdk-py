@@ -9,6 +9,7 @@ import strawberry.experimental.pydantic
 
 from pixie.strawberry_types import (
     Rating as RatingEnum,
+    RatedBy as RatedByEnum,
     MessageRole as MessageRoleEnum,
     RunSource as RunSourceEnum,
 )
@@ -47,6 +48,7 @@ class RatingDetailsType:
 
     value: RatingEnum
     rated_at: str  # String to avoid 32-bit int overflow
+    rated_by: RatedByEnum
     notes: strawberry.auto
 
 
@@ -135,6 +137,7 @@ class RatingDetailsInput:
 
     value: RatingEnum
     rated_at: str  # String to avoid 32-bit int overflow
+    rated_by: RatedByEnum = RatedByEnum.user  # Default to user rating
     notes: strawberry.auto
 
 

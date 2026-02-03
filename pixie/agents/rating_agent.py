@@ -4,6 +4,14 @@ from pydantic import BaseModel, JsonValue
 from pixie.storage.types import Message, Rating
 
 
+class FindBadResponseInput(BaseModel):
+    """Input for finding the problematic response in a conversation."""
+
+    ai_description: str
+    conversation: list[Message]
+    reasoning_for_negative_rating: str
+
+
 class LlmCallRatingAgentInput(dspy.Signature):
     app_description: str = dspy.InputField()
     interaction_logs_before_llm_call: list[Message] = dspy.InputField()
@@ -140,7 +148,7 @@ class FindBadResponseAgent(dspy.Module):
             ).bad_ai_message_index
 
 
-async def find_bad_response(input: FindBadResponseAgentInput) -> Message:
+async def find_bad_response(input: FindBadResponseInput) -> Message:
     """DSPy chain-of-thought agent to identify the main assistant response in the conversation
     that leads a negative rating."""
     dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))

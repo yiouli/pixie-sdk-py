@@ -48,6 +48,14 @@ class Rating(str, Enum):
 
 
 @strawberry.enum
+class RatedBy(str, Enum):
+    """Who made the rating."""
+
+    user = "user"
+    ai = "ai"
+
+
+@strawberry.enum
 class MessageRole(str, Enum):
     """Role of a message in interaction logs."""
 

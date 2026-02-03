@@ -55,8 +55,10 @@ from pixie.agents.rating_agent import (
     RatingResult as PydanticRatingResult,
     LlmCallRatingAgentInput as PydanticLlmCallRatingInput,
     AppRunRatingAgentInput as PydanticAppRunRatingInput,
+    FindBadResponseInput as PydanticFindBadResponseInput,
     rate_llm_call as execute_rate_llm_call,
     rate_app_run as execute_rate_app_run,
+    find_bad_response as execute_find_bad_response,
 )
 from pixie.strawberry_types import (
     BreakpointTiming,
@@ -213,6 +215,7 @@ class Message:
 
     role: MessageRole
     content: JSON
+    time_unix_nano: strawberry.auto
     user_rating: Optional[Rating] = None
     user_feedback: Optional[str] = None
 
@@ -223,6 +226,7 @@ class MessageInput:
 
     role: MessageRole
     content: JSON
+    time_unix_nano: strawberry.auto
     user_rating: Optional[Rating] = None
     user_feedback: Optional[str] = None
 
@@ -587,6 +591,44 @@ class _Mutation:
 
         result = await execute_rate_app_run(rating_input)
         return RatingResult.from_pydantic(result)
+
+    @strawberry.mutation
+    async def find_bad_response(
+        self,
+        ai_description: str,
+        conversation: list[MessageInput],
+        reasoning_for_negative_rating: str,
+    ) -> Message:
+        """Find the problematic assistant message in a conversation that led to a negative rating.
+
+        Args:
+            ai_description: Description of the AI application.
+            conversation: The full conversation as a list of messages.
+            reasoning_for_negative_rating: Why the conversation was rated negatively.
+
+        Returns:
+            The Message that was identified as the problematic response.
+        """
+        # Convert MessageInput to pydantic Message
+        messages = [
+            PydanticMessage(
+                role=msg.role.value,  # type: ignore
+                content=msg.content,  # type: ignore
+                user_rating=msg.user_rating.value if msg.user_rating else None,  # type: ignore
+                user_feedback=msg.user_feedback,  # type: ignore
+            )
+            for msg in conversation
+        ]
+
+        # Create the input and call the agent
+        find_input = PydanticFindBadResponseInput(
+            ai_description=ai_description,
+            conversation=messages,
+            reasoning_for_negative_rating=reasoning_for_negative_rating,
+        )
+
+        result = await execute_find_bad_response(find_input)
+        return Message.from_pydantic(result)
 
 
 def _convert_trace_to_union(trace_dict: dict | None) -> Optional[TraceDataUnion]:
