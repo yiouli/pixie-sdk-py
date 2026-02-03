@@ -525,23 +525,9 @@ class _Mutation:
         """
         # Convert MessageInput to pydantic Message, manually extracting enum values
         messages_before = [
-            PydanticMessage(
-                role=msg.role.value,  # type: ignore
-                content=msg.content,  # type: ignore
-                user_rating=msg.user_rating.value if msg.user_rating else None,  # type: ignore
-                user_feedback=msg.user_feedback,  # type: ignore
-            )
-            for msg in interaction_logs_before_llm_call
+            msg.to_pydantic() for msg in interaction_logs_before_llm_call
         ]
-        messages_after = [
-            PydanticMessage(
-                role=msg.role.value,  # type: ignore
-                content=msg.content,  # type: ignore
-                user_rating=msg.user_rating.value if msg.user_rating else None,  # type: ignore
-                user_feedback=msg.user_feedback,  # type: ignore
-            )
-            for msg in interaction_logs_after_llm_call
-        ]
+        messages_after = [msg.to_pydantic() for msg in interaction_logs_after_llm_call]
 
         # Create the input signature
         rating_input = PydanticLlmCallRatingInput(

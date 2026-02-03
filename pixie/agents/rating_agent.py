@@ -1,5 +1,5 @@
 import dspy
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel
 
 from pixie.storage.types import Message, Rating
 
@@ -15,10 +15,10 @@ class FindBadResponseInput(BaseModel):
 class LlmCallRatingAgentInput(dspy.Signature):
     app_description: str = dspy.InputField()
     interaction_logs_before_llm_call: list[Message] = dspy.InputField()
-    llm_input: JsonValue = dspy.InputField()
-    llm_output: JsonValue = dspy.InputField()
-    llm_configuration: JsonValue = dspy.InputField()
-    internal_logs_after_llm_call: list[JsonValue] = dspy.InputField()
+    llm_input: list = dspy.InputField()
+    llm_output: list | dict = dspy.InputField()
+    llm_configuration: dict = dspy.InputField()
+    internal_logs_after_llm_call: list[dict] = dspy.InputField()
     interaction_logs_after_llm_call: list[Message] = dspy.InputField()
 
 
