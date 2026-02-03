@@ -90,7 +90,7 @@ def sample_rating() -> RatingDetails:
     """Sample rating for testing."""
     return RatingDetails(
         value="good",
-        rated_at=1700000000000,
+        rated_at="1700000000000",  # Unix timestamp in milliseconds as string
         notes="Great response!",
     )
 
@@ -181,11 +181,12 @@ class TestParseJson:
 
     def test_parse_rating_details(self):
         """Should parse RatingDetails correctly."""
-        data = {"value": "good", "rated_at": 1700000000000, "notes": "Great!"}
+        # Unix timestamp in milliseconds as string
+        data = {"value": "good", "rated_at": "1700000000000", "notes": "Great!"}
         result = _parse_json(data, RatingDetails)
         assert isinstance(result, RatingDetails)
         assert result.value == "good"
-        assert result.rated_at == 1700000000000
+        assert result.rated_at == "1700000000000"
         assert result.notes == "Great!"
 
     def test_type_safety_returns_correct_type(self):
@@ -253,14 +254,17 @@ class TestParseRating:
 
     def test_parse_dict(self):
         """Should parse dict to RatingDetails."""
-        data = {"value": "bad", "rated_at": 1700000000000}
+        data = {
+            "value": "bad",
+            "rated_at": "1700000000000",
+        }  # Unix timestamp in milliseconds as string
         result = _parse_rating(data)
         assert isinstance(result, RatingDetails)
         assert result.value == "bad"
 
     def test_parse_json_string(self):
         """Should parse JSON string to RatingDetails."""
-        data = '{"value": "good", "rated_at": 1700000000000}'
+        data = '{"value": "good", "rated_at": "1700000000000"}'  # Unix timestamp in milliseconds as string
         result = _parse_rating(data)
         assert isinstance(result, RatingDetails)
         assert result.value == "good"
@@ -358,7 +362,7 @@ class TestRunRecordOperations:
             app_info=sample_app_info,
             messages=sample_messages,
             prompt_ids=["prompt-1"],
-            start_time=1700000000000,
+            start_time="1700000000000",
             metadata={"test": "value"},
         )
 
@@ -418,7 +422,7 @@ class TestRunRecordOperations:
         update_data = RunRecordUpdate(
             messages=[Message(role="user", content="Updated message")],
             prompt_ids=["new-prompt"],
-            end_time=1700000001000,
+            end_time="1700000001000",
         )
         result = await update_run_record("run-003", update_data)
 
@@ -426,7 +430,7 @@ class TestRunRecordOperations:
         assert len(result.messages) == 1
         assert result.messages[0].content == "Updated message"
         assert result.prompt_ids == ["new-prompt"]
-        assert result.end_time == 1700000001000
+        assert result.end_time == "1700000001000"
 
     @pytest.mark.asyncio
     async def test_get_run_records_with_filter(
@@ -475,8 +479,8 @@ class TestLlmCallRecordOperations:
             llm_output={"content": "Hi!"},
             model_name="gpt-4",
             model_parameters={"temperature": 0.7},
-            start_time=1700000000000000,
-            end_time=1700000001000000,
+            start_time="1700000000000000",
+            end_time="1700000001000000",
             metadata={"test": "value"},
         )
 
@@ -530,7 +534,9 @@ class TestLlmCallRecordOperations:
 
         # Update with rating
         update_data = LlmCallRecordUpdate(
-            rating=RatingDetails(value="good", rated_at=1700000000000)
+            rating=RatingDetails(
+                value="good", rated_at="1700000000000"
+            )  # Unix timestamp in milliseconds as string
         )
         result = await update_llm_call_record("span-003", update_data)
 

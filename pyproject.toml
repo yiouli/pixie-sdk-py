@@ -56,6 +56,7 @@ langgraph = ">=1"
 autoevals = "^0.0.130"
 pydantic-ai = ">=1.11.0"
 opentelemetry-instrumentation-threading = "^0.60b1"
+piccolo-admin = "^1.12.0"
 
 [tool.poetry.group.docs.dependencies]
 pdoc = "^15.0.4"

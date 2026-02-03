@@ -34,7 +34,6 @@ from pixie.storage import (
     get_llm_call_records_by_run as db_get_llm_call_records_by_run,
 )
 
-
 # ============================================================================
 # Enums
 # ============================================================================
@@ -65,7 +64,7 @@ class RatingDetailsType:
     """Rating details for a record."""
 
     value: str  # Literal type not supported, use str
-    rated_at: strawberry.auto
+    rated_at: str  # String to avoid 32-bit int overflow
     notes: strawberry.auto
 
 
@@ -113,8 +112,8 @@ class RunRecordType:
     session_info: Optional[SessionInfoRecordType] = None
     messages: list[StorageMessage]
     prompt_ids: list[str]
-    start_time: Optional[int] = None
-    end_time: Optional[int] = None
+    start_time: Optional[str] = None  # String to avoid 32-bit int overflow
+    end_time: Optional[str] = None  # String to avoid 32-bit int overflow
     rating: Optional[RatingDetailsType] = None
     metadata: JSON
     created_at: datetime
@@ -136,8 +135,8 @@ class LlmCallRecordType:
     llm_output: JSON
     model_name: strawberry.auto
     model_parameters: Optional[JSON] = None
-    start_time: Optional[int] = None
-    end_time: Optional[int] = None
+    start_time: Optional[str] = None  # String to avoid 32-bit int overflow
+    end_time: Optional[str] = None  # String to avoid 32-bit int overflow
     internal_logs_after: list[JSON]
     rating: Optional[RatingDetailsType] = None
     metadata: JSON
@@ -155,7 +154,7 @@ class RatingDetailsInput:
     """Rating details input."""
 
     value: str  # Literal type not supported, use str
-    rated_at: strawberry.auto
+    rated_at: str  # String to avoid 32-bit int overflow
     notes: strawberry.auto
 
 
@@ -205,7 +204,7 @@ class RunRecordInputType:
     session_info: Optional[SessionInfoRecordInput] = None
     messages: list[StorageMessageInput] = strawberry.field(default_factory=list)
     prompt_ids: list[str] = strawberry.field(default_factory=list)
-    start_time: Optional[int] = None
+    start_time: Optional[str] = None  # String to avoid 32-bit int overflow
     metadata: JSON = strawberry.field(default_factory=dict)
 
 
@@ -215,7 +214,7 @@ class RunRecordUpdateInput:
 
     messages: Optional[list[StorageMessageInput]] = None
     prompt_ids: Optional[list[str]] = None
-    end_time: Optional[int] = None
+    end_time: Optional[str] = None  # String to avoid 32-bit int overflow
     rating: Optional[RatingDetailsInput] = None
     metadata: Optional[JSON] = None
 
@@ -235,8 +234,8 @@ class LlmCallRecordInputType:
     llm_output: Optional[JSON] = None
     model_name: str = "unknown"
     model_parameters: Optional[JSON] = None
-    start_time: Optional[int] = None
-    end_time: Optional[int] = None
+    start_time: Optional[str] = None  # String to avoid 32-bit int overflow
+    end_time: Optional[str] = None  # String to avoid 32-bit int overflow
     metadata: JSON = strawberry.field(default_factory=dict)
 
 
@@ -249,7 +248,7 @@ class LlmCallRecordUpdateInput:
     llm_output: Optional[JSON] = None
     model_name: Optional[str] = None
     model_parameters: Optional[JSON] = None
-    end_time: Optional[int] = None
+    end_time: Optional[str] = None  # String to avoid 32-bit int overflow
     internal_logs_after: Optional[list[JSON]] = None
     rating: Optional[RatingDetailsInput] = None
     metadata: Optional[JSON] = None

@@ -7,10 +7,7 @@ from piccolo.columns import (
     Timestamptz,
     BigInt,
 )
-from piccolo.engine.sqlite import SQLiteEngine
-
-# Configure SQLite database (can swap to PostgreSQL later)
-DB = SQLiteEngine(path="pixie.db")
+from pixie.piccolo_conf import DB
 
 
 class RunRecord(Table, db=DB):

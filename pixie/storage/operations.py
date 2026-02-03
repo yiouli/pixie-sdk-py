@@ -23,7 +23,6 @@ from .types import (
     PromptInfoRecord,
 )
 
-
 # Type variable for Pydantic model classes
 T = TypeVar("T", bound=BaseModel)
 
@@ -113,8 +112,8 @@ def _row_to_run_record(row: dict) -> RunRecord:
         session_info=_parse_json(row["session_info"], SessionInfoRecord),
         messages=_parse_messages(row["messages"]),
         prompt_ids=_parse_prompt_ids(row["prompt_ids"]),
-        start_time=row["start_time"],
-        end_time=row["end_time"],
+        start_time=str(row["start_time"]) if row["start_time"] is not None else None,
+        end_time=str(row["end_time"]) if row["end_time"] is not None else None,
         rating=_parse_rating(row["rating"]),
         metadata=_parse_json(row["metadata"]) or {},
         created_at=row["created_at"],
@@ -136,8 +135,8 @@ def _row_to_llm_call_record(row: dict) -> LlmCallRecord:
         llm_output=_parse_json(row["llm_output"]),
         model_name=row["model_name"],
         model_parameters=_parse_json(row["model_parameters"]),
-        start_time=row["start_time"],
-        end_time=row["end_time"],
+        start_time=str(row["start_time"]) if row["start_time"] is not None else None,
+        end_time=str(row["end_time"]) if row["end_time"] is not None else None,
         internal_logs_after=(
             logs
             if isinstance((logs := _parse_json(row["internal_logs_after"])), list)

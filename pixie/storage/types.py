@@ -10,7 +10,6 @@ from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, Field, JsonValue
 
-
 # Rating type used across the system
 Rating = Literal["good", "bad", "undecided"]
 RunSource = Literal["apps", "sessions"]
@@ -30,7 +29,7 @@ class RatingDetails(BaseModel):
     """Rating details for a run or LLM call."""
 
     value: Rating
-    rated_at: int  # Unix timestamp in milliseconds
+    rated_at: str  # Unix timestamp in milliseconds as string
     notes: str | None = None
 
 
@@ -78,8 +77,8 @@ class RunRecordData(BaseModel):
     session_info: SessionInfoRecord | None = None
     messages: list[Message] = Field(default_factory=list)
     prompt_ids: list[str] = Field(default_factory=list)
-    start_time: int | None = None  # Unix timestamp in milliseconds
-    end_time: int | None = None  # Unix timestamp in milliseconds
+    start_time: str | None = None  # Unix timestamp in milliseconds as string
+    end_time: str | None = None  # Unix timestamp in milliseconds as string
     rating: RatingDetails | None = None
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
 
@@ -93,7 +92,7 @@ class RunRecordInput(BaseModel):
     session_info: SessionInfoRecord | None = None
     messages: list[Message] = Field(default_factory=list)
     prompt_ids: list[str] = Field(default_factory=list)
-    start_time: int | None = None
+    start_time: str | None = None  # Unix timestamp in milliseconds as string
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
 
 
@@ -102,7 +101,7 @@ class RunRecordUpdate(BaseModel):
 
     messages: list[Message] | None = None
     prompt_ids: list[str] | None = None
-    end_time: int | None = None
+    end_time: str | None = None  # Unix timestamp in milliseconds as string
     rating: RatingDetails | None = None
     metadata: dict[str, JsonValue] | None = None
 
@@ -116,8 +115,8 @@ class RunRecord(BaseModel):
     session_info: SessionInfoRecord | None = None
     messages: list[Message]
     prompt_ids: list[str]
-    start_time: int | None = None
-    end_time: int | None = None
+    start_time: str | None = None
+    end_time: str | None = None
     rating: RatingDetails | None = None
     metadata: dict[str, JsonValue]
     created_at: datetime
@@ -138,8 +137,8 @@ class LlmCallRecordData(BaseModel):
     llm_output: JsonValue = None
     model_name: str = "unknown"
     model_parameters: dict[str, JsonValue] | None = None
-    start_time: int | None = None  # Unix timestamp in nanoseconds
-    end_time: int | None = None  # Unix timestamp in nanoseconds
+    start_time: str | None = None  # Unix timestamp in nanoseconds as string
+    end_time: str | None = None  # Unix timestamp in nanoseconds as string
     internal_logs_after: list[JsonValue] = Field(default_factory=list)
     rating: RatingDetails | None = None
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
@@ -159,8 +158,8 @@ class LlmCallRecordInput(BaseModel):
     llm_output: JsonValue = None
     model_name: str = "unknown"
     model_parameters: dict[str, JsonValue] | None = None
-    start_time: int | None = None
-    end_time: int | None = None
+    start_time: str | None = None  # Unix timestamp in nanoseconds as string
+    end_time: str | None = None  # Unix timestamp in nanoseconds as string
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
 
 
@@ -172,7 +171,7 @@ class LlmCallRecordUpdate(BaseModel):
     llm_output: JsonValue | None = None
     model_name: str | None = None
     model_parameters: dict[str, JsonValue] | None = None
-    end_time: int | None = None
+    end_time: str | None = None  # Unix timestamp in nanoseconds as string
     internal_logs_after: list[JsonValue] | None = None
     rating: RatingDetails | None = None
     metadata: dict[str, JsonValue] | None = None
@@ -192,8 +191,8 @@ class LlmCallRecord(BaseModel):
     llm_output: JsonValue
     model_name: str
     model_parameters: dict[str, JsonValue] | None = None
-    start_time: int | None = None
-    end_time: int | None = None
+    start_time: str | None = None
+    end_time: str | None = None
     internal_logs_after: list[JsonValue]
     rating: RatingDetails | None = None
     metadata: dict[str, JsonValue]
