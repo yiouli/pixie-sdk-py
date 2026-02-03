@@ -35,10 +35,10 @@ class RatingResult(BaseModel):
 
 async def rate_llm_call(rating_input: LlmCallRatingAgentInput) -> RatingResult:
     """DSPy chain-of-thought agent to rate the quality of a specific LLM call within an application execution."""
-    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
-    agent = dspy.ChainOfThought(LlmCallRatingAgentSignature)
-    res = await agent.acall(**rating_input.model_dump())
-    return RatingResult(thoughts=res.reasoning, rating=res.rating)
+    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini")):
+        agent = dspy.ChainOfThought(LlmCallRatingAgentSignature)
+        res = await agent.acall(**rating_input.model_dump())
+        return RatingResult(thoughts=res.reasoning, rating=res.rating)
 
 
 class AppRunRatingAgentInput(dspy.Signature):
@@ -54,10 +54,10 @@ class AppRunRatingAgentSignature(AppRunRatingAgentInput):
 
 async def rate_app_run(rating_input: AppRunRatingAgentInput) -> RatingResult:
     """DSPy chain-of-thought agent to rate the overall quality of an application execution."""
-    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
-    agent = dspy.ChainOfThought(AppRunRatingAgentSignature)
-    res = await agent.acall(**rating_input.model_dump())
-    return RatingResult(thoughts=res.reasoning, rating=res.rating)
+    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini")):
+        agent = dspy.ChainOfThought(AppRunRatingAgentSignature)
+        res = await agent.acall(**rating_input.model_dump())
+        return RatingResult(thoughts=res.reasoning, rating=res.rating)
 
 
 class FindBadResponseAgentInput(dspy.Signature):
@@ -151,7 +151,7 @@ class FindBadResponseAgent(dspy.Module):
 async def find_bad_response(input: FindBadResponseInput) -> Message:
     """DSPy chain-of-thought agent to identify the main assistant response in the conversation
     that leads a negative rating."""
-    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
-    agent = FindBadResponseAgent()
-    res = await agent.acall(**input.model_dump())
-    return res.bad_response
+    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini")):
+        agent = FindBadResponseAgent()
+        res = await agent.acall(**input.model_dump())
+        return res.bad_response
