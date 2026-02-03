@@ -3,9 +3,16 @@ from piccolo.conf.apps import AppRegistry
 
 DB = SQLiteEngine(path="pixie.db")
 
-APP_REGISTRY = AppRegistry(
-    apps=[
-        "piccolo.apps.user.piccolo_app",
-        "piccolo_admin.piccolo_app",
-    ]
-)
+apps = [
+    "piccolo.apps.user.piccolo_app",
+]
+
+try:
+    import piccolo_admin
+
+    apps.append("piccolo_admin.piccolo_app")
+except ImportError:
+    pass
+
+
+APP_REGISTRY = AppRegistry(apps=apps)
