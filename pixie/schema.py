@@ -215,7 +215,7 @@ class Message:
 
     role: MessageRole
     content: JSON
-    time_unix_nano: strawberry.auto
+    time_unix_nano: Optional[str]
     user_rating: Optional[Rating] = None
     user_feedback: Optional[str] = None
 
@@ -226,7 +226,7 @@ class MessageInput:
 
     role: MessageRole
     content: JSON
-    time_unix_nano: strawberry.auto
+    time_unix_nano: Optional[str]
     user_rating: Optional[Rating] = None
     user_feedback: Optional[str] = None
 
@@ -598,7 +598,7 @@ class _Mutation:
         ai_description: str,
         conversation: list[MessageInput],
         reasoning_for_negative_rating: str,
-    ) -> Message:
+    ) -> int:
         """Find the problematic assistant message in a conversation that led to a negative rating.
 
         Args:
@@ -607,7 +607,7 @@ class _Mutation:
             reasoning_for_negative_rating: Why the conversation was rated negatively.
 
         Returns:
-            The Message that was identified as the problematic response.
+            The index of the Message that was identified as the problematic response.
         """
         # Convert MessageInput to pydantic Message
         messages = [
@@ -628,7 +628,7 @@ class _Mutation:
         )
 
         result = await execute_find_bad_response(find_input)
-        return Message.from_pydantic(result)
+        return result
 
 
 def _convert_trace_to_union(trace_dict: dict | None) -> Optional[TraceDataUnion]:

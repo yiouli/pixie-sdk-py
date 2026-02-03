@@ -320,7 +320,9 @@ class StorageMutation:
 
     @strawberry.mutation
     async def update_run_record(
-        self, run_id: str, input_data: RunRecordDetailsInput
+        self,
+        run_id: str,
+        input_data: RunRecordDetailsInput,
     ) -> Optional[RunRecordType]:
         """Update an existing run record."""
         pydantic_input = input_data.to_pydantic()

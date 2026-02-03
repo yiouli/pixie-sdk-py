@@ -73,13 +73,6 @@ class FindBadResponseSignature(FindBadResponseAgentInput):
     bad_ai_response_index: int = dspy.OutputField()
 
 
-class FindBadResponseAgentSignature(FindBadResponseAgentInput):
-    """Identify the main assistant response in the conversation,
-    that leads to the negative user rating for the conversation with AI."""
-
-    bad_response: Message = dspy.OutputField()
-
-
 class FixIndexSignature(dspy.Signature):
     """Given the reasoning of which assistant message is bad in the conversation,
     and a list of wrong indices, pick the correct index."""
@@ -95,13 +88,16 @@ class FindBadResponseAgent(dspy.Module):
         self.find_bad_response = dspy.ChainOfThought(FindBadResponseSignature)
         self.fix_index = dspy.ChainOfThought(FixIndexSignature)
 
-    def forward(
-        self, input: FindBadResponseAgentInput
-    ) -> FindBadResponseAgentSignature:
-        res = self.find_bad_response(
-            app_description=input.ai_description,
-            conversation=input.conversation,
-            reasoning_for_negative_rating=input.reasoning_for_negative_rating,
+    async def aforward(
+        self,
+        ai_description: str,
+        conversation: list[Message],
+        reasoning_for_negative_rating: str,
+    ) -> FindBadResponseSignature:
+        res = await self.find_bad_response.acall(
+            ai_description=ai_description,
+            conversation=conversation,
+            reasoning_for_negative_rating=reasoning_for_negative_rating,
         )
         target_index = res.bad_ai_response_index
 
@@ -109,15 +105,22 @@ class FindBadResponseAgent(dspy.Module):
         wrong_indices = []
         reasons_for_wrong_indices = []
 
-        while True:
-            if target_index < 0 or target_index >= len(input.conversation):
+        tries = 0
+
+        while tries < 3:
+            if target_index < 0 or target_index >= len(conversation):
                 wrong_indices.append(target_index)
                 reasons_for_wrong_indices.append(
                     f"Index {target_index} is out of bounds for the conversation."
                 )
 
-            elif target_index not in wrong_indices:
-                message = input.conversation[target_index]
+            elif target_index in wrong_indices:
+                wrong_indices.append(target_index)
+                reasons_for_wrong_indices.append(
+                    f"Index {target_index} has already been identified as wrong."
+                )
+            else:
+                message = conversation[target_index]
                 if message.role != "assistant":
                     wrong_indices.append(target_index)
                     content_preview = (
@@ -128,30 +131,36 @@ class FindBadResponseAgent(dspy.Module):
                     reasons_for_wrong_indices.append(
                         f"Message at index {target_index} is not from AI: [{message.role}]'{content_preview}...'"
                     )
-            elif target_index in wrong_indices:
-                wrong_indices.append(target_index)
-                reasons_for_wrong_indices.append(
-                    f"Index {target_index} has already been identified as wrong."
-                )
-            else:
-                return FindBadResponseAgentSignature(
-                    app_description=input.ai_description,
-                    conversation=input.conversation,
-                    reasoning_for_negative_rating=input.reasoning_for_negative_rating,
-                    bad_response=input.conversation[target_index],
-                )
+                else:
+                    return FindBadResponseSignature(
+                        ai_description=ai_description,
+                        conversation=conversation,
+                        reasoning_for_negative_rating=reasoning_for_negative_rating,
+                        bad_ai_response_index=target_index,
+                    )
+            tries += 1
 
-            target_index = self.fix_index(
-                conversation=input.conversation,
-                wrong_indices=wrong_indices,
-                reasons_for_wrong_indices=reasons_for_wrong_indices,
+            target_index = (
+                await self.fix_index.acall(
+                    conversation=conversation,
+                    wrong_indices=wrong_indices,
+                    reasons_for_wrong_indices=reasons_for_wrong_indices,
+                )
             ).bad_ai_message_index
 
+        raise ValueError(
+            "Failed to identify the bad AI response after multiple attempts."
+        )
 
-async def find_bad_response(input: FindBadResponseInput) -> Message:
+
+async def find_bad_response(input: FindBadResponseInput) -> int:
     """DSPy chain-of-thought agent to identify the main assistant response in the conversation
     that leads a negative rating."""
     with dspy.context(lm=dspy.LM("openai/gpt-4o-mini")):
         agent = FindBadResponseAgent()
-        res = await agent.acall(**input.model_dump())
-        return res.bad_response
+        res = await agent.acall(
+            ai_description=input.ai_description,
+            conversation=input.conversation,
+            reasoning_for_negative_rating=input.reasoning_for_negative_rating,
+        )
+        return res.bad_ai_response_index
