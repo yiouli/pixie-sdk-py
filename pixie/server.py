@@ -19,6 +19,7 @@ from pixie.prompts.file_watcher import discover_and_load_modules, init_prompt_st
 from pixie.schema import schema
 from pixie.server_utils import enable_instrumentations, setup_logging
 from pixie.session.server import start_session_server
+from pixie.storage.tables import create_tables
 
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
 
         Initializes prompt storage on startup.
         """
+        await create_tables()
         storage_lifespan = init_prompt_storage()
         async with storage_lifespan(app):
             session_server = await start_session_server()

@@ -1,16 +1,7 @@
-from typing import Literal
 import dspy
 from pydantic import BaseModel, JsonValue
 
-
-Rating = Literal["good", "bad", "undecided"]
-
-
-class Message(BaseModel):
-    role: Literal["system", "user", "assistant", "tool"]
-    content: JsonValue
-    user_rating: Rating | None = None
-    user_feedback: str | None = None
+from pixie.storage.types import Message, Rating
 
 
 class AppRunRatingAgentInput(dspy.Signature):

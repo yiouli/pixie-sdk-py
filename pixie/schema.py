@@ -47,6 +47,10 @@ from pixie.otel_types import (
 import pixie.execution_context as exec_ctx
 from importlib.metadata import PackageNotFoundError, version
 from pixie.prompts.graphql import Mutation as PromptsMutation, Query as PromptsQuery
+from pixie.storage.graphql import (
+    StorageQuery,
+    StorageMutation,
+)
 from pixie.agents.rating_agent import (
     Message as PydanticMessage,
     RatingResult as PydanticRatingResult,
@@ -604,16 +608,16 @@ class _Mutation:
         return RatingResult.from_pydantic(result)
 
     @strawberry.mutation
-    async def rate_app_run(
+    async def rate_run(
         self,
-        app_description: str,
+        run_description: str,
         interaction_logs: list[MessageInput],
     ) -> RatingResult:
-        """Rate the overall quality of an application execution.
+        """Rate the overall quality of an app/session run.
 
         Args:
-            app_description: Description of the application.
-            interaction_logs: All messages from the application run.
+            run_description: Description of the run.
+            interaction_logs: All messages from the run.
 
         Returns:
             RatingResult with thoughts and rating.
@@ -631,7 +635,7 @@ class _Mutation:
 
         # Create the input signature
         rating_input = PydanticAppRunRatingInput(
-            app_description=app_description,
+            app_description=run_description,
             interaction_logs=messages,
         )
 
@@ -898,12 +902,12 @@ class Subscription:
 
 
 @strawberry.type
-class Query(_Query, PromptsQuery):
+class Query(_Query, PromptsQuery, StorageQuery):
     """Combined GraphQL query schema."""
 
 
 @strawberry.type
-class Mutation(_Mutation, PromptsMutation):
+class Mutation(_Mutation, PromptsMutation, StorageMutation):
     """Combined GraphQL mutation schema."""
 
 

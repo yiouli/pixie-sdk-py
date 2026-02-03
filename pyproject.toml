@@ -40,6 +40,7 @@ websockets = ">=15.0.1"
 docstring-parser = "^0.17.0"
 pixie-prompts = {version = "^0.1.11", extras = ["server"]}
 dspy = "^3.1.2"
+piccolo = {extras = ["sqlite"], version = "^1.30.0"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=7.4,<9.0"

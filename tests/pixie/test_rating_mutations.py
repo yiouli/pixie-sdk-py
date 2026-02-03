@@ -277,19 +277,19 @@ class TestRateLlmCallMutation:
             assert after_messages[0].user_feedback == "Very helpful and quick response"
 
 
-class TestRateAppRunMutation:
+class TestRateRunMutation:
     """Test rate_app_run mutation."""
 
     @pytest.mark.asyncio
     async def test_rate_app_run_success(self, schema, sample_messages):
         """Test successful app run rating."""
         mutation = """
-            mutation RateAppRun(
-                $appDescription: String!,
+            mutation RateRun(
+                $runDescription: String!,
                 $interactionLogs: [MessageInput!]!
             ) {
-                rateAppRun(
-                    appDescription: $appDescription,
+                rateRun(
+                    runDescription: $runDescription,
                     interactionLogs: $interactionLogs
                 ) {
                     thoughts
@@ -299,7 +299,7 @@ class TestRateAppRunMutation:
         """
 
         variables = {
-            "appDescription": "A Q&A assistant",
+            "runDescription": "A Q&A assistant",
             "interactionLogs": [
                 {
                     "role": "USER",
@@ -339,8 +339,8 @@ class TestRateAppRunMutation:
             assert result.data is not None
 
             # Check result structure
-            assert result.data["rateAppRun"]["thoughts"] == expected_result.thoughts
-            assert result.data["rateAppRun"]["rating"] == "GOOD"
+            assert result.data["rateRun"]["thoughts"] == expected_result.thoughts
+            assert result.data["rateRun"]["rating"] == "GOOD"
 
             # Verify the function was called with correct args
             assert mock_rate.called
@@ -353,12 +353,12 @@ class TestRateAppRunMutation:
     async def test_rate_app_run_with_mixed_ratings(self, schema):
         """Test app run rating with mixed user ratings."""
         mutation = """
-            mutation RateAppRun(
-                $appDescription: String!,
+            mutation RateRun(
+                $runDescription: String!,
                 $interactionLogs: [MessageInput!]!
             ) {
-                rateAppRun(
-                    appDescription: $appDescription,
+                rateRun(
+                    runDescription: $runDescription,
                     interactionLogs: $interactionLogs
                 ) {
                     thoughts
@@ -368,7 +368,7 @@ class TestRateAppRunMutation:
         """
 
         variables = {
-            "appDescription": "Multi-turn conversation assistant",
+            "runDescription": "Multi-turn conversation assistant",
             "interactionLogs": [
                 {
                     "role": "USER",
@@ -410,18 +410,18 @@ class TestRateAppRunMutation:
             result = await schema.execute(mutation, variable_values=variables)
 
             assert result.errors is None
-            assert result.data["rateAppRun"]["rating"] == "UNDECIDED"
+            assert result.data["rateRun"]["rating"] == "UNDECIDED"
 
     @pytest.mark.asyncio
     async def test_rate_app_run_empty_logs(self, schema):
         """Test app run rating with empty interaction logs."""
         mutation = """
-            mutation RateAppRun(
-                $appDescription: String!,
+            mutation RateRun(
+                $runDescription: String!,
                 $interactionLogs: [MessageInput!]!
             ) {
-                rateAppRun(
-                    appDescription: $appDescription,
+                rateRun(
+                    runDescription: $runDescription,
                     interactionLogs: $interactionLogs
                 ) {
                     thoughts
@@ -431,7 +431,7 @@ class TestRateAppRunMutation:
         """
 
         variables = {
-            "appDescription": "Test app",
+            "runDescription": "Test app",
             "interactionLogs": [],
         }
 
@@ -448,18 +448,18 @@ class TestRateAppRunMutation:
             result = await schema.execute(mutation, variable_values=variables)
 
             assert result.errors is None
-            assert result.data["rateAppRun"]["rating"] == "UNDECIDED"
+            assert result.data["rateRun"]["rating"] == "UNDECIDED"
 
     @pytest.mark.asyncio
     async def test_rate_app_run_message_conversion(self, schema):
         """Test that MessageInput is properly converted to pydantic Message."""
         mutation = """
-            mutation RateAppRun(
-                $appDescription: String!,
+            mutation RateRun(
+                $runDescription: String!,
                 $interactionLogs: [MessageInput!]!
             ) {
-                rateAppRun(
-                    appDescription: $appDescription,
+                rateRun(
+                    runDescription: $runDescription,
                     interactionLogs: $interactionLogs
                 ) {
                     thoughts
@@ -469,7 +469,7 @@ class TestRateAppRunMutation:
         """
 
         variables = {
-            "appDescription": "Test conversion",
+            "runDescription": "Test conversion",
             "interactionLogs": [
                 {
                     "role": "USER",
@@ -512,12 +512,12 @@ class TestRatingEnumConversion:
     async def test_rating_enum_values(self, schema):
         """Test all rating enum values are properly handled."""
         mutation = """
-            mutation RateAppRun(
-                $appDescription: String!,
+            mutation RateRun(
+                $runDescription: String!,
                 $interactionLogs: [MessageInput!]!
             ) {
-                rateAppRun(
-                    appDescription: $appDescription,
+                rateRun(
+                    runDescription: $runDescription,
                     interactionLogs: $interactionLogs
                 ) {
                     thoughts
@@ -533,7 +533,7 @@ class TestRatingEnumConversion:
             ("undecided", "UNDECIDED"),
         ]:
             variables = {
-                "appDescription": "Test",
+                "runDescription": "Test",
                 "interactionLogs": [
                     {
                         "role": "USER",
@@ -557,4 +557,4 @@ class TestRatingEnumConversion:
                 result = await schema.execute(mutation, variable_values=variables)
 
                 assert result.errors is None
-                assert result.data["rateAppRun"]["rating"] == expected_graphql
+                assert result.data["rateRun"]["rating"] == expected_graphql
