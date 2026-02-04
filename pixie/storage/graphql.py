@@ -253,6 +253,49 @@ class RecordFiltersInput:
 
 
 # ============================================================================
+# Conversion Helpers
+# ============================================================================
+
+
+def convert_run_record_to_graphql(record: PydanticRunRecord) -> "RunRecordType":
+    """Convert a Pydantic RunRecord to a Strawberry RunRecordType.
+
+    This is necessary because Strawberry's from_pydantic() doesn't automatically
+    convert nested lists of Pydantic models to their Strawberry equivalents.
+
+    Args:
+        record: The Pydantic RunRecord to convert
+
+    Returns:
+        A properly converted RunRecordType with all nested types converted
+    """
+    return RunRecordType(
+        id=record.id,
+        source=RunSourceEnum(record.source),
+        app_info=(
+            AppInfoRecordType.from_pydantic(record.app_info)
+            if record.app_info
+            else None
+        ),
+        session_info=(
+            SessionInfoRecordType.from_pydantic(record.session_info)
+            if record.session_info
+            else None
+        ),
+        messages=[StorageMessage.from_pydantic(m) for m in (record.messages or [])],
+        prompt_ids=record.prompt_ids,
+        start_time=record.start_time,
+        end_time=record.end_time,
+        rating=(
+            RatingDetailsType.from_pydantic(record.rating) if record.rating else None
+        ),
+        metadata=record.metadata,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+# ============================================================================
 # GraphQL Query
 # ============================================================================
 
@@ -267,7 +310,7 @@ class StorageQuery:
         record = await db_get_run_record(run_id)
         if record is None:
             return None
-        return RunRecordType.from_pydantic(record)
+        return convert_run_record_to_graphql(record)
 
     @strawberry.field
     async def get_run_records(
@@ -276,7 +319,7 @@ class StorageQuery:
         """Get run records with optional filters."""
         filter_model = filters.to_pydantic() if filters else PydanticRecordFilters()
         records = await db_get_run_records(filter_model)
-        return [RunRecordType.from_pydantic(r) for r in records]
+        return [convert_run_record_to_graphql(r) for r in records]
 
     @strawberry.field
     async def get_llm_call_record(self, span_id: str) -> Optional[LlmCallRecordType]:
@@ -316,7 +359,7 @@ class StorageMutation:
         """Create a new run record."""
         pydantic_input = input_data.to_pydantic()
         record = await db_create_run_record(pydantic_input)
-        return RunRecordType.from_pydantic(record)
+        return convert_run_record_to_graphql(record)
 
     @strawberry.mutation
     async def update_run_record(
@@ -329,7 +372,7 @@ class StorageMutation:
         record = await db_update_run_record(run_id, pydantic_input)
         if record is None:
             return None
-        return RunRecordType.from_pydantic(record)
+        return convert_run_record_to_graphql(record)
 
     @strawberry.mutation
     async def create_llm_call_record(

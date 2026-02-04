@@ -402,3 +402,147 @@ class TestTimestampPrecisionPreservation:
         assert retrieved is not None
         assert retrieved.start_time == problematic
         assert isinstance(retrieved.start_time, str)
+
+
+class TestRunRecordConversion:
+    """Test conversion from Pydantic RunRecord to Strawberry RunRecordType."""
+
+    def test_convert_run_record_to_graphql_type_basic(self):
+        """Should convert basic RunRecord with messages to RunRecordType."""
+        from pixie.storage.types import RunRecord, Message
+        from pixie.storage.graphql import convert_run_record_to_graphql
+
+        # Arrange - Create a Pydantic RunRecord with messages
+        record = RunRecord(
+            id="test-run-001",
+            source="apps",
+            messages=[
+                Message(
+                    role="user",
+                    content="Hello",
+                    time_unix_nano="1234567890",
+                    user_rating="good",
+                    user_feedback="Great response",
+                ),
+                Message(
+                    role="assistant",
+                    content={"text": "Hi there!"},
+                    time_unix_nano="1234567900",
+                ),
+            ],
+            prompt_ids=["prompt-1", "prompt-2"],
+            start_time="1700000000000",
+            end_time="1700001000000",
+            metadata={"key": "value"},
+        )
+
+        # Act - Convert to GraphQL type
+        result = convert_run_record_to_graphql(record)
+
+        # Assert - Check all fields are properly converted
+        assert result.id == "test-run-001"
+        assert len(result.messages) == 2
+        assert result.messages[0].role == "user"
+        assert result.messages[0].content == "Hello"
+        assert result.messages[0].user_rating == "good"
+        assert result.messages[1].role == "assistant"
+        assert result.messages[1].content == {"text": "Hi there!"}
+        assert result.prompt_ids == ["prompt-1", "prompt-2"]
+
+    def test_convert_run_record_with_nested_objects(self):
+        """Should convert RunRecord with app_info, session_info, and rating."""
+        from pixie.storage.types import (
+            RunRecord,
+            AppInfoRecord,
+            SessionInfoRecord,
+            RatingDetails,
+        )
+        from pixie.storage.graphql import convert_run_record_to_graphql
+
+        # Arrange
+        record = RunRecord(
+            id="test-run-002",
+            source="sessions",
+            app_info=AppInfoRecord(
+                id="app-1",
+                name="Test App",
+                module="test_module",
+                qualified_name="test_module.TestApp",
+            ),
+            session_info=SessionInfoRecord(
+                session_id="session-1",
+                name="Test Session",
+                module="test_module",
+                qualname="test_module.TestSession",
+            ),
+            rating=RatingDetails(
+                value="good",
+                rated_at="1700000000000",
+                rated_by="user",
+                notes="Excellent work",
+            ),
+            messages=[],
+            prompt_ids=[],
+            metadata={},
+        )
+
+        # Act
+        result = convert_run_record_to_graphql(record)
+
+        # Assert
+        assert result.app_info is not None
+        assert result.app_info.id == "app-1"
+        assert result.session_info is not None
+        assert result.session_info.session_id == "session-1"
+        assert result.rating is not None
+        assert result.rating.value == "good"
+        assert result.rating.notes == "Excellent work"
+
+    def test_convert_run_record_with_empty_messages(self):
+        """Should handle empty messages list."""
+        from pixie.storage.types import RunRecord
+        from pixie.storage.graphql import convert_run_record_to_graphql
+
+        # Arrange
+        record = RunRecord(
+            id="test-run-003",
+            source="apps",
+            messages=[],
+            prompt_ids=[],
+            metadata={},
+        )
+
+        # Act
+        result = convert_run_record_to_graphql(record)
+
+        # Assert
+        assert result.messages == []
+
+    def test_convert_run_record_with_none_optional_fields(self):
+        """Should handle None values for optional fields."""
+        from pixie.storage.types import RunRecord
+        from pixie.storage.graphql import convert_run_record_to_graphql
+
+        # Arrange
+        record = RunRecord(
+            id="test-run-004",
+            source="apps",
+            app_info=None,
+            session_info=None,
+            rating=None,
+            start_time=None,
+            end_time=None,
+            messages=[],
+            prompt_ids=[],
+            metadata={},
+        )
+
+        # Act
+        result = convert_run_record_to_graphql(record)
+
+        # Assert
+        assert result.app_info is None
+        assert result.session_info is None
+        assert result.rating is None
+        assert result.start_time is None
+        assert result.end_time is None
