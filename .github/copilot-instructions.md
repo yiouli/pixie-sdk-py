@@ -417,6 +417,131 @@ mypy .                       # Zero type errors
 ruff check .                 # No linting errors
 ```
 
+## Incremental Development
+
+**CRITICAL**: Implement changes incrementally, one small task at a time. This ensures stability and makes debugging easier.
+
+### Development Workflow
+
+1. **Break down the work**: Split large features into small, independent tasks
+2. **Before starting each task**:
+   - Run `pytest` - ensure existing tests pass
+   - Run `mypy .` - ensure no type errors
+3. **Implement one small task**
+4. **After completing each task**:
+   - Run `pytest` - verify tests still pass
+   - Run `mypy .` - verify no new type errors
+   - Fix any issues before moving to next task
+5. **Repeat** for each task
+
+**Example of task breakdown:**
+
+❌ **WRONG** - One big task:
+- "Implement agent orchestration feature"
+
+✅ **CORRECT** - Small incremental tasks:
+1. Add type definitions for orchestration config
+2. Create base orchestrator class
+3. Implement task queue logic
+4. Add agent registration method
+5. Implement task distribution
+6. Add error handling and retries
+7. Create integration tests
+
+## Code Reuse and DRY Principles
+
+**CRITICAL**: Avoid duplicating code. Always scan the codebase for existing similar code before adding new code.
+
+### Before Writing New Code
+
+1. **Search for existing implementations**:
+   - Use semantic search or grep to find similar functionality
+   - Check `pixie/` for existing utilities and helpers
+   - Check `pixie/agents/` for agent-related code
+   - Check `pixie/storage/` for data persistence patterns
+
+2. **Evaluate reusability**:
+   - Can existing code be used directly?
+   - Can existing code be extended or modified?
+   - Should you extract a shared helper?
+
+### When to Extract Shared Code
+
+**Extract a shared helper/module when:**
+- The same logic appears in 2+ places
+- Similar patterns with minor variations exist
+- A piece of code could benefit other parts of the codebase
+
+**❌ WRONG** - Duplicated logic:
+
+```python
+# In module_a.py
+def validate_config(config: dict) -> bool:
+    return 'name' in config and 'model' in config
+
+# In module_b.py - DUPLICATED!
+def validate_config(config: dict) -> bool:
+    return 'name' in config and 'model' in config
+```
+
+**✅ CORRECT** - Shared utility:
+
+```python
+# In pixie/utils.py
+def validate_config(config: dict) -> bool:
+    """Validate that config has required fields."""
+    return 'name' in config and 'model' in config
+
+# In module_a.py and module_b.py
+from pixie.utils import validate_config
+```
+
+### Patterns for Shared Code
+
+- **Utility functions**: Place in `pixie/utils.py` or create specific utility modules
+- **Base classes**: Create abstract base classes for common interfaces
+- **Type definitions**: Place in `pixie/types.py` or domain-specific type files
+- **Constants**: Place in relevant module or create `pixie/constants.py`
+- **Decorators**: Place in `pixie/utils.py` or `pixie/decorators.py`
+
+### Example: Extracting Common Patterns
+
+```python
+# Before: Similar retry logic in multiple places
+class AgentA:
+    def execute(self, task: str) -> str:
+        for attempt in range(3):
+            try:
+                return self._run(task)
+            except Exception:
+                if attempt == 2:
+                    raise
+                time.sleep(1)
+
+class AgentB:
+    def execute(self, task: str) -> str:
+        for attempt in range(3):
+            try:
+                return self._run(task)
+            except Exception:
+                if attempt == 2:
+                    raise
+                time.sleep(1)
+
+# After: Shared retry decorator
+from pixie.utils import retry
+
+class AgentA:
+    @retry(max_attempts=3, delay=1)
+    def execute(self, task: str) -> str:
+        return self._run(task)
+
+class AgentB:
+    @retry(max_attempts=3, delay=1)
+    def execute(self, task: str) -> str:
+        return self._run(task)
+```
+
 ## Summary
 
 **Before every commit:**
@@ -427,12 +552,14 @@ ruff check .                 # No linting errors
 5. ✅ Verify functionality works as expected
 
 **Development cycle:**
-1. Write test first in `tests/pixie/` (TDD)
-2. Implement feature with proper type annotations
-3. Run tests (`pytest`)
-4. Run type checking (`mypy .`)
-5. Run linting (`ruff check .`)
-6. Fix any issues
-7. Commit
+1. Break down work into small tasks
+2. Before each task: run tests and type check
+3. Search codebase for existing similar code
+4. Write test first in `tests/pixie/` (TDD)
+5. Implement feature (reuse existing code when possible)
+6. After each task: run tests and type check
+7. Run linting (`ruff check .`)
+8. Fix any issues
+9. Commit
 
 Following these practices ensures high code quality, type safety, maintainability, and reliability.
