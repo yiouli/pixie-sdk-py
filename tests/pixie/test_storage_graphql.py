@@ -308,7 +308,7 @@ class TestGraphQLCRUDOperations:
                 await db_update_llm_call_record(created.span_id, update)
 
         # Filter by rating value
-        filters = RecordFilters(rating_value="good")
+        filters = RecordFilters(rating_values=["good"])
         results = await db_get_llm_call_records(filters)
 
         assert len(results) >= 1

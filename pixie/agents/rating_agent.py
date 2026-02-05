@@ -298,3 +298,57 @@ async def find_bad_llm_call(input: FindBadLlmCallInput) -> int:
             reasoning_for_negative_rating=input.reasoning_for_negative_rating,
         )
         return res.bad_llm_call_index
+
+
+# ============================================================================
+# Prompt-Based LLM Call Evaluation Agent
+# ============================================================================
+
+
+class PromptLlmCallEvalInput(BaseModel):
+    """Input for evaluating an LLM call using prompt template context."""
+
+    prompt_description: str
+    input_messages: list[dict]
+    output_messages: list[dict]
+    tools: list[dict] | None = None
+    output_type: dict | None = None
+
+
+class PromptLlmCallEvalSignature(dspy.Signature):
+    """Evaluate the quality of an LLM call given the prompt template description,
+    input messages, output messages, and optional tools/output type configuration."""
+
+    prompt_description: str = dspy.InputField(
+        desc="Description of the prompt template used to generate part of the input messages."
+    )
+    input_messages: list[dict] = dspy.InputField(
+        desc="The input messages sent to the LLM."
+    )
+    output_messages: list[dict] = dspy.InputField(
+        desc="The output messages returned by the LLM."
+    )
+    tools: list[dict] | None = dspy.InputField(
+        desc="Tool definitions available to the LLM, if any.", default=None
+    )
+    output_type: dict | None = dspy.InputField(
+        desc="Expected output type/schema configuration, if any.", default=None
+    )
+    rating: Rating = dspy.OutputField()
+
+
+async def rate_prompt_llm_call(
+    rating_input: PromptLlmCallEvalInput,
+) -> RatingResult:
+    """DSPy chain-of-thought agent to evaluate the quality of an LLM call
+    using prompt template context."""
+    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini")):
+        agent = dspy.ChainOfThought(PromptLlmCallEvalSignature)
+        res = await agent.acall(
+            prompt_description=rating_input.prompt_description,
+            input_messages=rating_input.input_messages,
+            output_messages=rating_input.output_messages,
+            tools=rating_input.tools,
+            output_type=rating_input.output_type,
+        )
+        return RatingResult(thoughts=res.reasoning, rating=res.rating)

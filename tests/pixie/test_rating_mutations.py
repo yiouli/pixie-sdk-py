@@ -9,6 +9,7 @@ from pixie.agents.rating_agent import (
     RatingResult as PydanticRatingResult,
     LlmCallRatingAgentInput,
     AppRunRatingAgentInput,
+    PromptLlmCallEvalInput,
     Message as PydanticMessage,
 )
 
@@ -554,3 +555,257 @@ class TestRatingEnumConversion:
 
                 assert result.errors is None
                 assert result.data["rateRun"]["rating"] == expected_graphql
+
+
+class TestRatePromptLlmCallMutation:
+    """Test rate_prompt_llm_call mutation."""
+
+    MUTATION = """
+        mutation RatePromptLlmCall(
+            $promptDescription: String!,
+            $inputMessages: [JSON!]!,
+            $outputMessages: [JSON!]!,
+            $tools: [JSON!],
+            $outputType: JSON
+        ) {
+            ratePromptLlmCall(
+                promptDescription: $promptDescription,
+                inputMessages: $inputMessages,
+                outputMessages: $outputMessages,
+                tools: $tools,
+                outputType: $outputType
+            ) {
+                thoughts
+                rating
+            }
+        }
+    """
+
+    @pytest.mark.asyncio
+    async def test_rate_prompt_llm_call_success(self, schema):
+        """Test successful prompt-based LLM call evaluation."""
+        variables = {
+            "promptDescription": "A customer support prompt that answers user questions about orders.",
+            "inputMessages": [
+                {
+                    "role": "system",
+                    "content": "You are a helpful customer support agent.",
+                },
+                {"role": "user", "content": "Where is my order #12345?"},
+            ],
+            "outputMessages": [
+                {
+                    "role": "assistant",
+                    "content": "Your order #12345 is currently in transit "
+                    "and expected to arrive tomorrow.",
+                },
+            ],
+        }
+
+        expected_result = PydanticRatingResult(
+            thoughts="The LLM response is accurate, relevant, and helpful.",
+            rating="good",
+        )
+
+        with patch(
+            "pixie.schema.execute_rate_prompt_llm_call",
+            new_callable=AsyncMock,
+            return_value=expected_result,
+        ) as mock_rate:
+            result = await schema.execute(self.MUTATION, variable_values=variables)
+
+            assert result.errors is None
+            assert result.data is not None
+            assert (
+                result.data["ratePromptLlmCall"]["thoughts"] == expected_result.thoughts
+            )
+            assert result.data["ratePromptLlmCall"]["rating"] == "good"
+
+            assert mock_rate.called
+            call_args = mock_rate.call_args[0][0]
+            assert isinstance(call_args, PromptLlmCallEvalInput)
+            assert call_args.prompt_description == variables["promptDescription"]
+            assert len(call_args.input_messages) == 2
+            assert len(call_args.output_messages) == 1
+            assert call_args.tools is None
+            assert call_args.output_type is None
+
+    @pytest.mark.asyncio
+    async def test_rate_prompt_llm_call_with_tools(self, schema):
+        """Test prompt-based LLM call evaluation with tools."""
+        variables = {
+            "promptDescription": "An agent that can search a knowledge base.",
+            "inputMessages": [
+                {"role": "user", "content": "What is our refund policy?"},
+            ],
+            "outputMessages": [
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "search_kb",
+                                "arguments": '{"query": "refund policy"}',
+                            }
+                        }
+                    ],
+                },
+            ],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "search_kb",
+                        "description": "Search the knowledge base",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"query": {"type": "string"}},
+                        },
+                    },
+                }
+            ],
+        }
+
+        expected_result = PydanticRatingResult(
+            thoughts="The LLM correctly chose to use the search tool.",
+            rating="good",
+        )
+
+        with patch(
+            "pixie.schema.execute_rate_prompt_llm_call",
+            new_callable=AsyncMock,
+            return_value=expected_result,
+        ) as mock_rate:
+            result = await schema.execute(self.MUTATION, variable_values=variables)
+
+            assert result.errors is None
+            assert result.data["ratePromptLlmCall"]["rating"] == "good"
+
+            call_args = mock_rate.call_args[0][0]
+            assert call_args.tools is not None
+            assert len(call_args.tools) == 1
+            assert call_args.tools[0]["function"]["name"] == "search_kb"
+
+    @pytest.mark.asyncio
+    async def test_rate_prompt_llm_call_with_output_type(self, schema):
+        """Test prompt-based LLM call evaluation with output type."""
+        variables = {
+            "promptDescription": "A structured data extraction prompt.",
+            "inputMessages": [
+                {"role": "user", "content": "Extract: John Doe, age 30, from NYC"},
+            ],
+            "outputMessages": [
+                {
+                    "role": "assistant",
+                    "content": '{"name": "John Doe", "age": 30, "city": "NYC"}',
+                },
+            ],
+            "outputType": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"},
+                    "city": {"type": "string"},
+                },
+            },
+        }
+
+        expected_result = PydanticRatingResult(
+            thoughts="Output matches the expected schema.",
+            rating="good",
+        )
+
+        with patch(
+            "pixie.schema.execute_rate_prompt_llm_call",
+            new_callable=AsyncMock,
+            return_value=expected_result,
+        ) as mock_rate:
+            result = await schema.execute(self.MUTATION, variable_values=variables)
+
+            assert result.errors is None
+            assert result.data["ratePromptLlmCall"]["rating"] == "good"
+
+            call_args = mock_rate.call_args[0][0]
+            assert call_args.output_type is not None
+            assert "properties" in call_args.output_type
+
+    @pytest.mark.asyncio
+    async def test_rate_prompt_llm_call_bad_rating(self, schema):
+        """Test prompt-based LLM call evaluation with bad result."""
+        variables = {
+            "promptDescription": "A math tutor prompt.",
+            "inputMessages": [
+                {"role": "user", "content": "What is 2 + 2?"},
+            ],
+            "outputMessages": [
+                {"role": "assistant", "content": "2 + 2 = 5"},
+            ],
+        }
+
+        expected_result = PydanticRatingResult(
+            thoughts="The LLM provided an incorrect mathematical answer.",
+            rating="bad",
+        )
+
+        with patch(
+            "pixie.schema.execute_rate_prompt_llm_call",
+            new_callable=AsyncMock,
+            return_value=expected_result,
+        ):
+            result = await schema.execute(self.MUTATION, variable_values=variables)
+
+            assert result.errors is None
+            assert result.data["ratePromptLlmCall"]["rating"] == "bad"
+
+    @pytest.mark.asyncio
+    async def test_rate_prompt_llm_call_with_all_optional_fields(self, schema):
+        """Test prompt-based LLM call evaluation with all optional fields provided."""
+        variables = {
+            "promptDescription": "A structured assistant with tools.",
+            "inputMessages": [
+                {"role": "system", "content": "You are an assistant."},
+                {"role": "user", "content": "Look up the weather."},
+            ],
+            "outputMessages": [
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {"function": {"name": "get_weather", "arguments": "{}"}}
+                    ],
+                },
+            ],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "description": "Get current weather",
+                    },
+                }
+            ],
+            "outputType": {
+                "type": "object",
+                "properties": {"forecast": {"type": "string"}},
+            },
+        }
+
+        expected_result = PydanticRatingResult(
+            thoughts="Appropriate tool usage with correct output schema.",
+            rating="good",
+        )
+
+        with patch(
+            "pixie.schema.execute_rate_prompt_llm_call",
+            new_callable=AsyncMock,
+            return_value=expected_result,
+        ) as mock_rate:
+            result = await schema.execute(self.MUTATION, variable_values=variables)
+
+            assert result.errors is None
+            assert result.data["ratePromptLlmCall"]["rating"] == "good"
+
+            call_args = mock_rate.call_args[0][0]
+            assert call_args.tools is not None
+            assert call_args.output_type is not None

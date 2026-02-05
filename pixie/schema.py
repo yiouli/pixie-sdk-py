@@ -45,7 +45,11 @@ from pixie.otel_types import (
 
 import pixie.execution_context as exec_ctx
 from importlib.metadata import PackageNotFoundError, version
-from pixie.prompts.graphql import Mutation as PromptsMutation, Query as PromptsQuery
+from pixie.prompts.graphql import (
+    Mutation as PromptsMutation,
+    Query as PromptsQuery,
+)
+
 from pixie.storage.graphql import (
     StorageQuery,
     StorageMutation,
@@ -58,10 +62,12 @@ from pixie.agents.rating_agent import (
     FindBadResponseInput as PydanticFindBadResponseInput,
     FindBadLlmCallInput as PydanticFindBadLlmCallInput,
     LlmCallSpan as PydanticLlmCallSpan,
+    PromptLlmCallEvalInput as PydanticPromptLlmCallEvalInput,
     rate_llm_call as execute_rate_llm_call,
     rate_app_run as execute_rate_app_run,
     find_bad_response as execute_find_bad_response,
     find_bad_llm_call as execute_find_bad_llm_call,
+    rate_prompt_llm_call as execute_rate_prompt_llm_call,
 )
 from pixie.strawberry_types import (
     BreakpointTiming,
@@ -676,6 +682,42 @@ class _Mutation:
 
         result = await execute_find_bad_llm_call(find_input)
         return result
+
+    @strawberry.mutation
+    async def rate_prompt_llm_call(
+        self,
+        prompt_description: str,
+        input_messages: list[JSON],
+        output_messages: list[JSON],
+        tools: list[JSON] | None = None,
+        output_type: JSON | None = None,
+    ) -> RatingResult:
+        """Evaluate the quality of an LLM call using prompt template context.
+
+        A lighter-weight evaluation that requires only the prompt description,
+        input/output messages, and optional tools/output type configuration.
+
+        Args:
+            prompt_description: Description of the prompt template used to
+                generate part of the input messages.
+            input_messages: The input messages sent to the LLM.
+            output_messages: The output messages returned by the LLM.
+            tools: Optional tool definitions available to the LLM.
+            output_type: Optional expected output type/schema configuration.
+
+        Returns:
+            RatingResult with thoughts and rating.
+        """
+        eval_input = PydanticPromptLlmCallEvalInput(
+            prompt_description=prompt_description,
+            input_messages=[dict(m) for m in input_messages],  # type: ignore[arg-type]
+            output_messages=[dict(m) for m in output_messages],  # type: ignore[arg-type]
+            tools=[dict(t) for t in tools] if tools else None,  # type: ignore[arg-type]
+            output_type=dict(output_type) if output_type else None,  # type: ignore[arg-type]
+        )
+
+        result = await execute_rate_prompt_llm_call(eval_input)
+        return RatingResult.from_pydantic(result)
 
 
 def _convert_trace_to_union(trace_dict: dict | None) -> Optional[TraceDataUnion]:
