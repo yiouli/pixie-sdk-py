@@ -1,6 +1,7 @@
 """GraphQL schema for SDK server."""
 
 import asyncio
+from enum import Enum
 import json
 import logging
 import time
@@ -48,6 +49,9 @@ from importlib.metadata import PackageNotFoundError, version
 from pixie.prompts.graphql import (
     Mutation as PromptsMutation,
     Query as PromptsQuery,
+    LlmCallInput,
+    LlmCallResult,
+    execute_single_llm_call,
 )
 
 from pixie.storage.graphql import (
@@ -77,6 +81,31 @@ from pixie.strawberry_types import (
     MessageRole,
     TraceEventType,
 )
+
+# Batch size for concurrent LLM calls
+BATCH_LLM_CONCURRENCY = 5
+
+
+@strawberry.enum
+class BatchLlmCallStatus(str, Enum):
+    """Status of a batch LLM call item."""
+
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    ERROR = "ERROR"
+
+
+@strawberry.type
+class BatchLlmCallUpdate:
+    """Status update for a batch LLM call."""
+
+    id: strawberry.ID
+    """The id of the LLM call this update is for."""
+    status: BatchLlmCallStatus
+    result: Optional[LlmCallResult] = None
+    error: Optional[str] = None
+
 
 # Global registry for input queues per run
 _input_queues: dict[str, janus.Queue] = {}
@@ -782,6 +811,74 @@ def _create_app_run_in_thread(run: Coroutine) -> tuple[Coroutine, Callable[[], N
 @strawberry.type
 class Subscription:
     """GraphQL subscriptions."""
+
+    @strawberry.subscription
+    async def batch_call_llm(
+        self,
+        calls: list[LlmCallInput],
+    ) -> AsyncGenerator[BatchLlmCallUpdate, None]:
+        """Execute multiple LLM calls in batches and stream status updates.
+
+        Runs LLM calls in batches of BATCH_LLM_CONCURRENCY (5) at a time.
+        First yields "pending" status for all calls, then yields "running" status
+        when each call starts, and finally yields "completed" or "error" status
+        when each call finishes.
+
+        Args:
+            calls: List of LLM call inputs to execute.
+
+        Yields:
+            BatchLlmCallUpdate objects with status updates for each call.
+        """
+        if not calls:
+            return
+
+        # First, yield pending status for all calls
+        for call in calls:
+            yield BatchLlmCallUpdate(
+                id=call.id,
+                status=BatchLlmCallStatus.PENDING,
+                result=None,
+                error=None,
+            )
+
+        # Process calls in batches
+        for batch_start in range(0, len(calls), BATCH_LLM_CONCURRENCY):
+            batch = calls[batch_start : batch_start + BATCH_LLM_CONCURRENCY]
+
+            # Yield "running" status for each call in this batch
+            for call in batch:
+                yield BatchLlmCallUpdate(
+                    id=call.id,
+                    status=BatchLlmCallStatus.RUNNING,
+                    result=None,
+                    error=None,
+                )
+
+            # Execute batch concurrently
+            tasks = [execute_single_llm_call(call) for call in batch]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            call_with_results = zip(batch, results)
+
+            # Yield results as they complete
+            for call, result in call_with_results:
+                if isinstance(result, BaseException):
+                    logger.error(
+                        "Error executing LLM call id=%s: %s", call.id, str(result)
+                    )
+                    yield BatchLlmCallUpdate(
+                        id=call.id,
+                        status=BatchLlmCallStatus.ERROR,
+                        result=None,
+                        error=str(result),
+                    )
+                else:
+                    yield BatchLlmCallUpdate(
+                        id=call.id,
+                        status=BatchLlmCallStatus.COMPLETED,
+                        result=result,
+                        error=None,
+                    )
 
     @strawberry.subscription
     async def run_session(self, session_id: str) -> AsyncGenerator[AppRunUpdate, None]:
