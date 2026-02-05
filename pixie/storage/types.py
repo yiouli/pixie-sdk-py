@@ -153,10 +153,11 @@ class RecordFilters(BaseModel):
     """Common filters for querying records."""
 
     prompt_id: str | None = None
-    app_id: str | None = None
+    app_ids: list[str] | None = None
     run_source: RunSource | None = None
     has_rating: bool | None = None
-    rating_value: Rating | None = None
+    rating_values: list[Rating] | None = None
+    rated_by_values: list[RatedBy] | None = None
     created_after: datetime | None = None
     created_before: datetime | None = None
     limit: int = 100

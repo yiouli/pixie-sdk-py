@@ -233,9 +233,17 @@ async def get_run_records(filters: RecordFilters) -> list[RunRecord]:
     """Get run records with optional filters."""
     query = RunRecordTable.select()
 
-    if filters.app_id:
-        # Filter by app_id in app_info JSON
-        query = query.where(RunRecordTable.app_info.like(f'%"id": "{filters.app_id}"%'))
+    if filters.app_ids:
+        # Filter by any of the app_ids in app_info JSON (OR logic)
+        app_conditions = [
+            RunRecordTable.app_info.like(f'%"id": "{app_id}"%')
+            for app_id in filters.app_ids
+        ]
+        if app_conditions:
+            combined = app_conditions[0]
+            for cond in app_conditions[1:]:
+                combined = combined | cond
+            query = query.where(combined)
 
     if filters.run_source:
         query = query.where(RunRecordTable.source == filters.run_source)
@@ -246,10 +254,29 @@ async def get_run_records(filters: RecordFilters) -> list[RunRecord]:
         else:
             query = query.where(RunRecordTable.rating.is_null())
 
-    if filters.rating_value:
-        query = query.where(
-            RunRecordTable.rating.like(f'%"value": "{filters.rating_value}"%')
-        )
+    if filters.rating_values:
+        # Filter by any of the rating values (OR logic)
+        rating_conditions = [
+            RunRecordTable.rating.like(f'%"value": "{rv}"%')
+            for rv in filters.rating_values
+        ]
+        if rating_conditions:
+            combined = rating_conditions[0]
+            for cond in rating_conditions[1:]:
+                combined = combined | cond
+            query = query.where(combined)
+
+    if filters.rated_by_values:
+        # Filter by any of the rated_by values (OR logic)
+        rated_by_conditions = [
+            RunRecordTable.rating.like(f'%"rated_by": "{rb}"%')
+            for rb in filters.rated_by_values
+        ]
+        if rated_by_conditions:
+            combined = rated_by_conditions[0]
+            for cond in rated_by_conditions[1:]:
+                combined = combined | cond
+            query = query.where(combined)
 
     if filters.created_after:
         query = query.where(RunRecordTable.created_at >= filters.created_after)
@@ -379,10 +406,17 @@ async def get_llm_call_records(filters: RecordFilters) -> list[LlmCallRecord]:
             LlmCallRecordTable.prompt_info.like(f'%"prompt_id": "{filters.prompt_id}"%')
         )
 
-    if filters.app_id:
-        query = query.where(
-            LlmCallRecordTable.app_info.like(f'%"id": "{filters.app_id}"%')
-        )
+    if filters.app_ids:
+        # Filter by any of the app_ids in app_info JSON (OR logic)
+        app_conditions = [
+            LlmCallRecordTable.app_info.like(f'%"id": "{app_id}"%')
+            for app_id in filters.app_ids
+        ]
+        if app_conditions:
+            combined = app_conditions[0]
+            for cond in app_conditions[1:]:
+                combined = combined | cond
+            query = query.where(combined)
 
     if filters.run_source:
         query = query.where(LlmCallRecordTable.run_source == filters.run_source)
@@ -393,10 +427,29 @@ async def get_llm_call_records(filters: RecordFilters) -> list[LlmCallRecord]:
         else:
             query = query.where(LlmCallRecordTable.rating.is_null())
 
-    if filters.rating_value:
-        query = query.where(
-            LlmCallRecordTable.rating.like(f'%"value": "{filters.rating_value}"%')
-        )
+    if filters.rating_values:
+        # Filter by any of the rating values (OR logic)
+        rating_conditions = [
+            LlmCallRecordTable.rating.like(f'%"value": "{rv}"%')
+            for rv in filters.rating_values
+        ]
+        if rating_conditions:
+            combined = rating_conditions[0]
+            for cond in rating_conditions[1:]:
+                combined = combined | cond
+            query = query.where(combined)
+
+    if filters.rated_by_values:
+        # Filter by any of the rated_by values (OR logic)
+        rated_by_conditions = [
+            LlmCallRecordTable.rating.like(f'%"rated_by": "{rb}"%')
+            for rb in filters.rated_by_values
+        ]
+        if rated_by_conditions:
+            combined = rated_by_conditions[0]
+            for cond in rated_by_conditions[1:]:
+                combined = combined | cond
+            query = query.where(combined)
 
     if filters.created_after:
         query = query.where(LlmCallRecordTable.created_at >= filters.created_after)

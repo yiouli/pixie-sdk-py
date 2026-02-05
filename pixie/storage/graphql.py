@@ -242,10 +242,11 @@ class RecordFiltersInput:
     """Filters for querying records."""
 
     prompt_id: Optional[str] = None
-    app_id: Optional[str] = None
+    app_ids: Optional[list[str]] = None
     run_source: Optional[RunSourceEnum] = None
     has_rating: Optional[bool] = None
-    rating_value: Optional[RatingEnum] = None
+    rating_values: Optional[list[RatingEnum]] = None
+    rated_by_values: Optional[list[RatedByEnum]] = None
     created_after: Optional[datetime] = None
     created_before: Optional[datetime] = None
     limit: int = 100

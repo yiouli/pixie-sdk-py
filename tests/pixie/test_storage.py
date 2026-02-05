@@ -91,6 +91,7 @@ def sample_rating() -> RatingDetails:
     return RatingDetails(
         value="good",
         rated_at="1700000000000",  # Unix timestamp in milliseconds as string
+        rated_by="user",
         notes="Great response!",
     )
 
@@ -381,6 +382,7 @@ class TestRunRecordOperations:
         assert result.source == "apps"
         assert result.app_info is not None
         assert result.app_info.id == "app-123"
+        assert result.messages is not None
         assert len(result.messages) == 2
         assert result.prompt_ids == ["prompt-1"]
         assert result.metadata == {"test": "value"}
@@ -436,6 +438,7 @@ class TestRunRecordOperations:
         result = await update_run_record("run-003", update_data)
 
         assert result is not None
+        assert result.messages is not None
         assert len(result.messages) == 1
         assert result.messages[0].content == "Updated message"
         assert result.prompt_ids == ["new-prompt"]
@@ -611,3 +614,156 @@ class TestLlmCallRecordOperations:
 
         assert len(results) == 2
         assert all(r.run_id == "run-A" for r in results)
+
+    @pytest.mark.asyncio
+    async def test_get_llm_call_records_by_multiple_app_ids(
+        self, test_db, sample_prompt_info: PromptInfoRecord
+    ):
+        """Should filter LLM call records by multiple app IDs."""
+        # Create records with different app IDs
+        app_infos = [
+            AppInfoRecord(
+                id="app-a", name="App A", module="test.a", qualified_name="test.a.AppA"
+            ),
+            AppInfoRecord(
+                id="app-b", name="App B", module="test.b", qualified_name="test.b.AppB"
+            ),
+            AppInfoRecord(
+                id="app-c", name="App C", module="test.c", qualified_name="test.c.AppC"
+            ),
+        ]
+        for i, app_info in enumerate(app_infos):
+            input_data = LlmCallRecordInput(
+                span_id=f"span-app-multi-{i}",
+                trace_id=f"trace-app-multi-{i}",
+                run_source="apps",
+                app_info=app_info,
+                prompt_info=sample_prompt_info,
+                llm_input={},
+                llm_output={},
+                metadata={},
+            )
+            await create_llm_call_record(input_data)
+
+        # Filter by multiple app IDs (app-a and app-b)
+        filters = RecordFilters(app_ids=["app-a", "app-b"])
+        results = await get_llm_call_records(filters)
+
+        assert len(results) == 2
+        app_ids_in_results = {r.app_info.id for r in results if r.app_info}
+        assert app_ids_in_results == {"app-a", "app-b"}
+
+    @pytest.mark.asyncio
+    async def test_get_llm_call_records_by_multiple_rating_values(
+        self, test_db, sample_app_info: AppInfoRecord
+    ):
+        """Should filter LLM call records by multiple rating values."""
+        # Create records with different ratings
+        ratings: list[RatingDetails] = [
+            RatingDetails(value="good", rated_at="1700000000000", rated_by="user"),
+            RatingDetails(value="bad", rated_at="1700000000001", rated_by="user"),
+            RatingDetails(value="undecided", rated_at="1700000000002", rated_by="user"),
+        ]
+        for i, rating in enumerate(ratings):
+            input_data = LlmCallRecordInput(
+                span_id=f"span-rating-multi-{i}",
+                trace_id=f"trace-rating-multi-{i}",
+                run_source="apps",
+                app_info=sample_app_info,
+                llm_input={},
+                llm_output={},
+                metadata={},
+            )
+            await create_llm_call_record(input_data)
+            # Update with rating
+            await update_llm_call_record(
+                f"span-rating-multi-{i}", LlmCallRecordUpdate(rating=rating)
+            )
+
+        # Filter by multiple rating values (good and bad)
+        filters = RecordFilters(rating_values=["good", "bad"])
+        results = await get_llm_call_records(filters)
+
+        assert len(results) == 2
+        rating_values_in_results = {r.rating.value for r in results if r.rating}
+        assert rating_values_in_results == {"good", "bad"}
+
+    @pytest.mark.asyncio
+    async def test_get_llm_call_records_by_multiple_rated_by_values(
+        self, test_db, sample_app_info: AppInfoRecord
+    ):
+        """Should filter LLM call records by multiple rated_by values."""
+        # Create records with different rated_by values
+        ratings: list[RatingDetails] = [
+            RatingDetails(value="good", rated_at="1700000000000", rated_by="user"),
+            RatingDetails(value="good", rated_at="1700000000001", rated_by="ai"),
+            RatingDetails(value="good", rated_at="1700000000002", rated_by="system"),
+        ]
+        for i, rating in enumerate(ratings):
+            input_data = LlmCallRecordInput(
+                span_id=f"span-ratedby-multi-{i}",
+                trace_id=f"trace-ratedby-multi-{i}",
+                run_source="apps",
+                app_info=sample_app_info,
+                llm_input={},
+                llm_output={},
+                metadata={},
+            )
+            await create_llm_call_record(input_data)
+            # Update with rating
+            await update_llm_call_record(
+                f"span-ratedby-multi-{i}", LlmCallRecordUpdate(rating=rating)
+            )
+
+        # Filter by multiple rated_by values (ai and system - automated)
+        filters = RecordFilters(rated_by_values=["ai", "system"])
+        results = await get_llm_call_records(filters)
+
+        assert len(results) == 2
+        rated_by_values_in_results = {r.rating.rated_by for r in results if r.rating}
+        assert rated_by_values_in_results == {"ai", "system"}
+
+    @pytest.mark.asyncio
+    async def test_get_llm_call_records_combined_multi_filters(self, test_db):
+        """Should filter LLM call records with combined multi-select filters."""
+        # Create records with various combinations
+        test_cases: list[tuple[str, str, str, str, str, str]] = [
+            ("app-x", "App X", "test.x", "test.x.X", "good", "user"),
+            ("app-x", "App X", "test.x", "test.x.X", "bad", "ai"),
+            ("app-y", "App Y", "test.y", "test.y.Y", "good", "system"),
+            ("app-y", "App Y", "test.y", "test.y.Y", "bad", "user"),
+        ]
+        for i, (app_id, app_name, module, qname, rating_val, rated_by) in enumerate(
+            test_cases
+        ):
+            app_info = AppInfoRecord(
+                id=app_id, name=app_name, module=module, qualified_name=qname
+            )
+            input_data = LlmCallRecordInput(
+                span_id=f"span-combined-{i}",
+                trace_id=f"trace-combined-{i}",
+                run_source="apps",
+                app_info=app_info,
+                llm_input={},
+                llm_output={},
+                metadata={},
+            )
+            await create_llm_call_record(input_data)
+            rating = RatingDetails(
+                value=rating_val,  # type: ignore[arg-type]
+                rated_at=f"170000000000{i}",
+                rated_by=rated_by,  # type: ignore[arg-type]
+            )
+            await update_llm_call_record(
+                f"span-combined-{i}", LlmCallRecordUpdate(rating=rating)
+            )
+
+        # Filter by app-x AND good rating
+        filters = RecordFilters(app_ids=["app-x"], rating_values=["good"])
+        results = await get_llm_call_records(filters)
+
+        assert len(results) == 1
+        assert results[0].app_info is not None
+        assert results[0].app_info.id == "app-x"
+        assert results[0].rating is not None
+        assert results[0].rating.value == "good"
