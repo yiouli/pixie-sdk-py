@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field, JsonValue
 
 # Type aliases for string literal values
 Rating = Literal["good", "bad", "undecided"]
-RatedBy = Literal["user", "ai"]
+RatedBy = Literal["user", "ai", "system"]
 RunSource = Literal["apps", "sessions"]
 MessageRole = Literal["system", "user", "assistant", "tool", "developer"]
 
@@ -39,7 +39,7 @@ class RatingDetails(BaseModel):
 
     value: Rating
     rated_at: str  # Unix timestamp in milliseconds as string
-    rated_by: RatedBy = "user"  # Who made the rating: 'user' or 'ai'
+    rated_by: RatedBy
     notes: str | None = None
 
 

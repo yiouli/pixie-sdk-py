@@ -91,9 +91,7 @@ class TestRateLlmCallMutation:
                     "userFeedback": None,
                 }
             ],
-            "llmInput": {
-                "messages": [{"role": "user", "content": "What's the weather?"}]
-            },
+            "llmInput": [{"role": "user", "content": "What's the weather?"}],
             "llmOutput": {"response": "It's sunny today."},
             "llmConfig": sample_llm_config,
             "internalLogsAfter": [{"log": "LLM call completed"}],
@@ -172,7 +170,7 @@ class TestRateLlmCallMutation:
                     "userFeedback": None,
                 }
             ],
-            "llmInput": {"messages": [{"role": "user", "content": "Calculate 2+2"}]},
+            "llmInput": [{"role": "user", "content": "Calculate 2+2"}],
             "llmOutput": {"response": "The answer is 5."},
             "llmConfig": sample_llm_config,
             "internalLogsAfter": [],
@@ -239,9 +237,7 @@ class TestRateLlmCallMutation:
                     "userFeedback": None,
                 }
             ],
-            "llmInput": {
-                "messages": [{"role": "user", "content": "I need help with my order"}]
-            },
+            "llmInput": [{"role": "user", "content": "I need help with my order"}],
             "llmOutput": {"response": "I'll help you with that."},
             "llmConfig": sample_llm_config,
             "internalLogsAfter": [{"retrieved_order": "12345"}],

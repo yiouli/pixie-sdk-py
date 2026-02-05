@@ -53,6 +53,7 @@ class RatedBy(str, Enum):
 
     user = "user"
     ai = "ai"
+    system = "system"
 
 
 @strawberry.enum

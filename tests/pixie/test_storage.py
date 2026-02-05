@@ -182,11 +182,17 @@ class TestParseJson:
     def test_parse_rating_details(self):
         """Should parse RatingDetails correctly."""
         # Unix timestamp in milliseconds as string
-        data = {"value": "good", "rated_at": "1700000000000", "notes": "Great!"}
+        data = {
+            "value": "good",
+            "rated_at": "1700000000000",
+            "rated_by": "user",
+            "notes": "Great!",
+        }
         result = _parse_json(data, RatingDetails)
         assert isinstance(result, RatingDetails)
         assert result.value == "good"
         assert result.rated_at == "1700000000000"
+        assert result.rated_by == "user"
         assert result.notes == "Great!"
 
     def test_type_safety_returns_correct_type(self):
@@ -257,16 +263,19 @@ class TestParseRating:
         data = {
             "value": "bad",
             "rated_at": "1700000000000",
+            "rated_by": "user",
         }  # Unix timestamp in milliseconds as string
         result = _parse_rating(data)
         assert isinstance(result, RatingDetails)
         assert result.value == "bad"
+        assert result.rated_by == "user"
 
     def test_parse_json_string(self):
         """Should parse JSON string to RatingDetails."""
-        data = '{"value": "good", "rated_at": "1700000000000"}'  # Unix timestamp in milliseconds as string
+        data = '{"value": "good", "rated_at": "1700000000000", "rated_by": "user"}'
         result = _parse_rating(data)
         assert isinstance(result, RatingDetails)
+        assert result.rated_by == "user"
         assert result.value == "good"
 
 
@@ -535,7 +544,7 @@ class TestLlmCallRecordOperations:
         # Update with rating
         update_data = LlmCallRecordUpdate(
             rating=RatingDetails(
-                value="good", rated_at="1700000000000"
+                value="good", rated_at="1700000000000", rated_by="user"
             )  # Unix timestamp in milliseconds as string
         )
         result = await update_llm_call_record("span-003", update_data)

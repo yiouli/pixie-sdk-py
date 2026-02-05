@@ -123,6 +123,7 @@ class TestTimestampStringConversion:
             rating=RatingDetails(
                 value="good",
                 rated_at="1700000001000",
+                rated_by="user",
                 notes="Great!",
             )
         )
@@ -301,6 +302,7 @@ class TestGraphQLCRUDOperations:
                     rating=RatingDetails(
                         value=rating_value,  # type: ignore[arg-type]
                         rated_at="1700000001000",
+                        rated_by="user",
                     )
                 )
                 await db_update_llm_call_record(created.span_id, update)
