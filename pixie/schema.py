@@ -56,9 +56,12 @@ from pixie.agents.rating_agent import (
     LlmCallRatingAgentInput as PydanticLlmCallRatingInput,
     AppRunRatingAgentInput as PydanticAppRunRatingInput,
     FindBadResponseInput as PydanticFindBadResponseInput,
+    FindBadLlmCallInput as PydanticFindBadLlmCallInput,
+    LlmCallSpan as PydanticLlmCallSpan,
     rate_llm_call as execute_rate_llm_call,
     rate_app_run as execute_rate_app_run,
     find_bad_response as execute_find_bad_response,
+    find_bad_llm_call as execute_find_bad_llm_call,
 )
 from pixie.strawberry_types import (
     BreakpointTiming,
@@ -229,6 +232,15 @@ class MessageInput:
     time_unix_nano: Optional[str]
     user_rating: Optional[Rating] = None
     user_feedback: Optional[str] = None
+
+
+@strawberry.experimental.pydantic.input(model=PydanticLlmCallSpan)
+class LlmCallSpanInput:
+    """LLM call span input for trace analysis."""
+
+    span_type: strawberry.auto
+    llm_input: JSON
+    llm_output: JSON
 
 
 @strawberry.experimental.pydantic.type(model=PydanticRatingResult)
@@ -614,6 +626,55 @@ class _Mutation:
         )
 
         result = await execute_find_bad_response(find_input)
+        return result
+
+    @strawberry.mutation
+    async def find_bad_llm_call(
+        self,
+        ai_description: str,
+        conversation: list[MessageInput],
+        trace: list[JSON],
+        reasoning_for_negative_rating: str,
+    ) -> int:
+        """Find the problematic LLM call span in a trace that led to a bad response.
+
+        Args:
+            ai_description: Description of the AI application.
+            conversation: Conversation leading up to the bad response.
+                The last item is the response being labeled bad.
+            trace: Server trace spans for the last message.
+                Some are LLM call spans (with span_type='llm_call'), some are not.
+            reasoning_for_negative_rating: Notes for the bad rating for the last
+                message in conversation.
+
+        Returns:
+            The index of the LLM call span that was identified as problematic.
+        """
+        # Convert MessageInput to pydantic Message
+        messages = [
+            PydanticMessage(
+                role=msg.role.value,  # type: ignore
+                content=msg.content,  # type: ignore
+                user_rating=msg.user_rating.value if msg.user_rating else None,  # type: ignore
+                user_feedback=msg.user_feedback,  # type: ignore
+            )
+            for msg in conversation
+        ]
+
+        # Convert trace spans - they come as JSON dicts
+        trace_spans: list[PydanticLlmCallSpan | dict] = [
+            dict(span) for span in trace  # type: ignore[arg-type]
+        ]
+
+        # Create the input and call the agent
+        find_input = PydanticFindBadLlmCallInput(
+            ai_description=ai_description,
+            conversation=messages,
+            trace=trace_spans,
+            reasoning_for_negative_rating=reasoning_for_negative_rating,
+        )
+
+        result = await execute_find_bad_llm_call(find_input)
         return result
 
 

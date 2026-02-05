@@ -1,3 +1,4 @@
+from typing import Literal
 import dspy
 from pydantic import BaseModel
 
@@ -164,3 +165,136 @@ async def find_bad_response(input: FindBadResponseInput) -> int:
             reasoning_for_negative_rating=input.reasoning_for_negative_rating,
         )
         return res.bad_ai_response_index
+
+
+class LlmCallSpan(BaseModel):
+    span_type: Literal["llm_call"]
+    llm_input: list
+    llm_output: list | dict
+
+
+class FindBadLlmCallInput(BaseModel):
+    """Input for finding the problematic LLM call span in a trace."""
+
+    ai_description: str
+    conversation: list[Message]
+    trace: list[LlmCallSpan | dict]
+    reasoning_for_negative_rating: str
+
+
+class FindBadLlmCallAgentInput(dspy.Signature):
+    ai_description: str = dspy.InputField()
+    conversation: list[Message] = dspy.InputField(
+        desc="Conversation leading up to the bad response. The last item is the response being labeled bad."
+    )
+    trace: list[LlmCallSpan | dict] = dspy.InputField(
+        desc="Server trace spans for the last message. "
+        "Some are LLM call spans (with span_type='llm_call'), some are not."
+    )
+    reasoning_for_negative_rating: str = dspy.InputField(
+        desc="Notes explaining why the last message in conversation received a bad rating."
+    )
+
+
+class FindBadLlmCallSignature(FindBadLlmCallAgentInput):
+    """Identify the index of the LLM call span in the trace that is most likely
+    responsible for the problematic assistant response."""
+
+    bad_llm_call_index: int = dspy.OutputField(
+        desc="The index of the problematic LLM call span in the trace."
+    )
+
+
+class FixLlmCallIndexSignature(dspy.Signature):
+    """Given the reasoning of which LLM call is problematic in the trace,
+    and a list of wrong indices, pick the correct index."""
+
+    trace: list[LlmCallSpan | dict] = dspy.InputField()
+    wrong_indices: list[int] = dspy.InputField()
+    reasons_for_wrong_indices: list[str] = dspy.InputField()
+    bad_llm_call_index: int = dspy.OutputField()
+
+
+class FindBadLlmCallAgent(dspy.Module):
+    def __init__(self):
+        self.find_bad_llm_call = dspy.ChainOfThought(FindBadLlmCallSignature)
+        self.fix_index = dspy.ChainOfThought(FixLlmCallIndexSignature)
+
+    async def aforward(
+        self,
+        ai_description: str,
+        conversation: list[Message],
+        trace: list[LlmCallSpan | dict],
+        reasoning_for_negative_rating: str,
+    ) -> FindBadLlmCallSignature:
+        res = await self.find_bad_llm_call.acall(
+            ai_description=ai_description,
+            conversation=conversation,
+            trace=trace,
+            reasoning_for_negative_rating=reasoning_for_negative_rating,
+        )
+        target_index = res.bad_llm_call_index
+
+        # If the index is out of bounds or not an LLM call span, try to fix it
+        wrong_indices = []
+        reasons_for_wrong_indices = []
+
+        tries = 0
+
+        while tries < 3:
+            if target_index < 0 or target_index >= len(trace):
+                wrong_indices.append(target_index)
+                reasons_for_wrong_indices.append(
+                    f"Index {target_index} is out of bounds for the trace."
+                )
+            elif target_index in wrong_indices:
+                wrong_indices.append(target_index)
+                reasons_for_wrong_indices.append(
+                    f"Index {target_index} has already been identified as wrong."
+                )
+            else:
+                span = trace[target_index]
+                # Check if it's an LLM call span
+                span_type = (
+                    span.span_type
+                    if isinstance(span, LlmCallSpan)
+                    else span.get("span_type")
+                )
+                if span_type != "llm_call":
+                    wrong_indices.append(target_index)
+                    reasons_for_wrong_indices.append(
+                        f"Span at index {target_index} is not an LLM call span (span_type='{span_type}')."
+                    )
+                else:
+                    return FindBadLlmCallSignature(
+                        ai_description=ai_description,
+                        conversation=conversation,
+                        trace=trace,
+                        reasoning_for_negative_rating=reasoning_for_negative_rating,
+                        bad_llm_call_index=target_index,
+                    )
+            tries += 1
+
+            target_index = (
+                await self.fix_index.acall(
+                    trace=trace,
+                    wrong_indices=wrong_indices,
+                    reasons_for_wrong_indices=reasons_for_wrong_indices,
+                )
+            ).bad_llm_call_index
+
+        raise ValueError("Failed to identify the bad LLM call after multiple attempts.")
+
+
+async def find_bad_llm_call(input: FindBadLlmCallInput) -> int:
+    """DSPy chain-of-thought agent to identify the LLM call span in a trace
+    that is most likely responsible for a problematic assistant response."""
+    with dspy.context(lm=dspy.LM("openai/gpt-4o-mini")):
+        agent = FindBadLlmCallAgent()
+        res = await agent.acall(
+            ai_description=input.ai_description,
+            conversation=input.conversation,
+            trace=input.trace,
+            reasoning_for_negative_rating=input.reasoning_for_negative_rating,
+        )
+        return res.bad_llm_call_index
