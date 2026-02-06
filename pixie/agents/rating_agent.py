@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 import dspy
 from pydantic import BaseModel
 
@@ -310,7 +310,7 @@ class PromptLlmCallEvalInput(BaseModel):
 
     prompt_description: str
     input_messages: list[dict]
-    output_messages: list[dict]
+    output: Any
     tools: list[dict] | None = None
     output_type: dict | None = None
 
@@ -325,9 +325,7 @@ class PromptLlmCallEvalSignature(dspy.Signature):
     input_messages: list[dict] = dspy.InputField(
         desc="The input messages sent to the LLM."
     )
-    output_messages: list[dict] = dspy.InputField(
-        desc="The output messages returned by the LLM."
-    )
+    output: Any = dspy.InputField(desc="The output returned by the LLM.")
     tools: list[dict] | None = dspy.InputField(
         desc="Tool definitions available to the LLM, if any.", default=None
     )
@@ -347,7 +345,7 @@ async def rate_prompt_llm_call(
         res = await agent.acall(
             prompt_description=rating_input.prompt_description,
             input_messages=rating_input.input_messages,
-            output_messages=rating_input.output_messages,
+            output=rating_input.output,
             tools=rating_input.tools,
             output_type=rating_input.output_type,
         )

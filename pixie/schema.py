@@ -94,6 +94,18 @@ class BatchLlmCallStatus(str, Enum):
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
     ERROR = "ERROR"
+    RATING = "RATING"
+    """Rating is in progress for this call."""
+    RATED = "RATED"
+    """Rating has completed for this call."""
+
+
+@strawberry.type
+class BatchLlmCallRating:
+    """Rating result for a batch LLM call."""
+
+    rating: Rating
+    thoughts: str
 
 
 @strawberry.type
@@ -105,6 +117,15 @@ class BatchLlmCallUpdate:
     status: BatchLlmCallStatus
     result: Optional[LlmCallResult] = None
     error: Optional[str] = None
+    rating_result: Optional[BatchLlmCallRating] = None
+    """Rating result, present when status is RATED."""
+
+
+@strawberry.type
+class BatchLlmCallsUpdate:
+    """Batched status updates for multiple LLM calls. Sent as a single message."""
+
+    updates: list[BatchLlmCallUpdate]
 
 
 # Global registry for input queues per run
@@ -717,7 +738,7 @@ class _Mutation:
         self,
         prompt_description: str,
         input_messages: list[JSON],
-        output_messages: list[JSON],
+        output: JSON,
         tools: list[JSON] | None = None,
         output_type: JSON | None = None,
     ) -> RatingResult:
@@ -740,7 +761,7 @@ class _Mutation:
         eval_input = PydanticPromptLlmCallEvalInput(
             prompt_description=prompt_description,
             input_messages=[dict(m) for m in input_messages],  # type: ignore[arg-type]
-            output_messages=[dict(m) for m in output_messages],  # type: ignore[arg-type]
+            output=output,  # type: ignore[arg-type]
             tools=[dict(t) for t in tools] if tools else None,  # type: ignore[arg-type]
             output_type=dict(output_type) if output_type else None,  # type: ignore[arg-type]
         )
@@ -816,69 +837,172 @@ class Subscription:
     async def batch_call_llm(
         self,
         calls: list[LlmCallInput],
-    ) -> AsyncGenerator[BatchLlmCallUpdate, None]:
-        """Execute multiple LLM calls in batches and stream status updates.
+        prompt_description: Optional[str] = None,
+    ) -> AsyncGenerator[BatchLlmCallsUpdate, None]:
+        """Execute multiple LLM calls and stream batched status updates.
 
-        Runs LLM calls in batches of BATCH_LLM_CONCURRENCY (5) at a time.
-        First yields "pending" status for all calls, then yields "running" status
-        when each call starts, and finally yields "completed" or "error" status
-        when each call finishes.
+        Uses a producer-consumer pattern with asyncio.Queue to stream updates
+        as soon as each call completes, rather than waiting for entire batches.
+        After each LLM call completes, runs the rating agent to evaluate it.
 
         Args:
             calls: List of LLM call inputs to execute.
+            prompt_description: Optional description for rating context.
 
         Yields:
-            BatchLlmCallUpdate objects with status updates for each call.
+            BatchLlmCallsUpdate containing one or more status updates.
         """
         if not calls:
             return
 
-        # First, yield pending status for all calls
-        for call in calls:
-            yield BatchLlmCallUpdate(
+        # First, yield pending status for all calls in a single batch
+        pending_updates = [
+            BatchLlmCallUpdate(
                 id=call.id,
                 status=BatchLlmCallStatus.PENDING,
                 result=None,
                 error=None,
+                rating_result=None,
             )
+            for call in calls
+        ]
+        yield BatchLlmCallsUpdate(updates=pending_updates)
 
-        # Process calls in batches
-        for batch_start in range(0, len(calls), BATCH_LLM_CONCURRENCY):
-            batch = calls[batch_start : batch_start + BATCH_LLM_CONCURRENCY]
+        # Create a queue for streaming updates
+        update_queue: asyncio.Queue[BatchLlmCallUpdate | None] = asyncio.Queue()
 
-            # Yield "running" status for each call in this batch
-            for call in batch:
-                yield BatchLlmCallUpdate(
-                    id=call.id,
+        async def process_single_call(call: LlmCallInput) -> None:
+            """Process a single LLM call: execute, then rate."""
+            call_id = call.id
+            result: LlmCallResult | None = None
+            error_msg: str | None = None
+
+            # Signal that this call is running
+            await update_queue.put(
+                BatchLlmCallUpdate(
+                    id=call_id,
                     status=BatchLlmCallStatus.RUNNING,
                     result=None,
                     error=None,
+                    rating_result=None,
                 )
+            )
 
-            # Execute batch concurrently
-            tasks = [execute_single_llm_call(call) for call in batch]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            call_with_results = zip(batch, results)
-
-            # Yield results as they complete
-            for call, result in call_with_results:
-                if isinstance(result, BaseException):
-                    logger.error(
-                        "Error executing LLM call id=%s: %s", call.id, str(result)
-                    )
-                    yield BatchLlmCallUpdate(
-                        id=call.id,
-                        status=BatchLlmCallStatus.ERROR,
-                        result=None,
-                        error=str(result),
-                    )
-                else:
-                    yield BatchLlmCallUpdate(
-                        id=call.id,
+            # Execute the LLM call
+            try:
+                result = await execute_single_llm_call(call)
+                # Yield COMPLETED status
+                await update_queue.put(
+                    BatchLlmCallUpdate(
+                        id=call_id,
                         status=BatchLlmCallStatus.COMPLETED,
                         result=result,
                         error=None,
+                        rating_result=None,
                     )
+                )
+            except Exception as e:
+                logger.error("Error executing LLM call id=%s: %s", call_id, str(e))
+                error_msg = str(e)
+                # Yield ERROR status and skip rating
+                await update_queue.put(
+                    BatchLlmCallUpdate(
+                        id=call_id,
+                        status=BatchLlmCallStatus.ERROR,
+                        result=None,
+                        error=error_msg,
+                        rating_result=None,
+                    )
+                )
+                return
+
+            # Now run rating if we have a successful result and prompt_description
+            if result and prompt_description:
+                # Signal rating in progress
+                await update_queue.put(
+                    BatchLlmCallUpdate(
+                        id=call_id,
+                        status=BatchLlmCallStatus.RATING,
+                        result=result,
+                        error=None,
+                        rating_result=None,
+                    )
+                )
+
+                try:
+                    rating_input = PydanticPromptLlmCallEvalInput(
+                        prompt_description=prompt_description,
+                        input_messages=result.input,  # type: ignore[arg-type]
+                        output=result.output,  # type: ignore[arg-type]
+                        tools=result.tool_calls,  # type: ignore[arg-type]
+                        output_type=call.output_schema,  # type: ignore[arg-type]
+                    )
+
+                    rating_result = await execute_rate_prompt_llm_call(rating_input)
+
+                    # Convert Literal rating to strawberry enum
+                    rating_enum = Rating(rating_result.rating)
+
+                    await update_queue.put(
+                        BatchLlmCallUpdate(
+                            id=call_id,
+                            status=BatchLlmCallStatus.RATED,
+                            result=result,
+                            error=None,
+                            rating_result=BatchLlmCallRating(
+                                rating=rating_enum,
+                                thoughts=rating_result.thoughts,
+                            ),
+                        )
+                    )
+                except Exception as e:
+                    logger.error("Error rating LLM call id=%s: %s", call_id, str(e))
+                    # Still mark as RATED but with no rating result
+                    await update_queue.put(
+                        BatchLlmCallUpdate(
+                            id=call_id,
+                            status=BatchLlmCallStatus.RATED,
+                            result=result,
+                            error=f"Rating failed: {str(e)}",
+                            rating_result=None,
+                        )
+                    )
+
+        async def producer(call_list: list[LlmCallInput]) -> None:
+            """Process all calls using a semaphore to limit concurrency."""
+            semaphore = asyncio.Semaphore(BATCH_LLM_CONCURRENCY)
+
+            async def limited_process(call: LlmCallInput) -> None:
+                async with semaphore:
+                    await process_single_call(call)
+
+            # Run all calls concurrently, limited by semaphore
+            await asyncio.gather(
+                *[limited_process(call) for call in call_list],
+                return_exceptions=True,
+            )
+            # Signal completion
+            await update_queue.put(None)
+
+        # Start producer in background
+        producer_task = asyncio.create_task(producer(calls))
+
+        # Consumer: yield updates as they arrive
+        try:
+            while True:
+                update = await update_queue.get()
+                if update is None:
+                    # Producer finished
+                    break
+                yield BatchLlmCallsUpdate(updates=[update])
+        finally:
+            # Ensure producer completes
+            if not producer_task.done():
+                producer_task.cancel()
+                try:
+                    await producer_task
+                except asyncio.CancelledError:
+                    pass
 
     @strawberry.subscription
     async def run_session(self, session_id: str) -> AsyncGenerator[AppRunUpdate, None]:

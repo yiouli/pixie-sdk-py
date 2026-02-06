@@ -626,7 +626,7 @@ class TestRatePromptLlmCallMutation:
             assert isinstance(call_args, PromptLlmCallEvalInput)
             assert call_args.prompt_description == variables["promptDescription"]
             assert len(call_args.input_messages) == 2
-            assert len(call_args.output_messages) == 1
+            assert len(call_args.output) == 1
             assert call_args.tools is None
             assert call_args.output_type is None
 
