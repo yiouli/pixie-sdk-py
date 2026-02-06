@@ -6,6 +6,7 @@ import time
 from typing import Any, AsyncGenerator, Awaitable, Callable, TypeVar, cast, overload
 from uuid import uuid4
 
+import docstring_parser
 from langfuse import Langfuse, get_client
 from pydantic import BaseModel, JsonValue
 
@@ -18,13 +19,30 @@ from pixie.session.rpc import (
     notify_server,
     wait_for_input,
 )
-from pixie.session.types import SessionUpdate
+from pixie.session.types import SessionInfo, SessionUpdate
 from pixie.types import InputRequired, InputType
 
 
 logger = logging.getLogger(__name__)
 
 _langfuse = Langfuse()
+
+
+def _get_description_from_docstring(func: Callable) -> str | None:
+    """Extract description from function docstring.
+
+    Args:
+        func: The function to extract docstring from.
+
+    Returns:
+        The short description if available, otherwise None.
+    """
+    doc = inspect.getdoc(func)
+    if not doc:
+        return None
+
+    docstring = docstring_parser.parse(doc)
+    return docstring.short_description
 
 
 async def print(data: str | JsonValue) -> None:
@@ -115,12 +133,31 @@ def session(func: T_Func) -> T_Func:
     Returns:
         A wrapped function that maintains the same signature and return type.
     """
+    # Extract function metadata once at decoration time
+    func_name = func.__name__
+    func_module = func.__module__
+    func_qualname = func.__qualname__
+    func_description = _get_description_from_docstring(func)
+
     session_completed = False
 
     async def _session_setup(session_id: str):
         """Common setup logic for session."""
         ctx = execution_context.init_run(session_id)
-        await connect_to_server(SESSION_RPC_SERVER_HOST, SESSION_RPC_PORT, session_id)
+
+        # Create SessionInfo with captured function metadata
+        session_info = SessionInfo(
+            session_id=session_id,
+            name=func_name,
+            module=func_module,
+            qualname=func_qualname,
+            description=func_description,
+        )
+        await connect_to_server(
+            SESSION_RPC_SERVER_HOST,
+            SESSION_RPC_PORT,
+            session_info=session_info,
+        )
 
         update_queue = ctx.status_queue
 

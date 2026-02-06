@@ -648,11 +648,19 @@ def app(func: Callable) -> Callable:
 
     if is_generator:
         _register_generator(
-            cast(ApplicationGenerator, func), registry_key, name, module, qualname
+            cast(ApplicationGenerator, func),
+            registry_key,
+            name,
+            module,
+            qualname,
         )
     else:
         _register_callable(
-            cast(ApplicationCallable, func), registry_key, name, module, qualname
+            cast(ApplicationCallable, func),
+            registry_key,
+            name,
+            module,
+            qualname,
         )
 
     logger.info(

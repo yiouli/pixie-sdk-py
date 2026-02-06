@@ -1,11 +1,11 @@
 """GraphQL schema for SDK server."""
 
 import asyncio
+from enum import Enum
 import json
 import logging
 import time
 import uuid
-from enum import Enum
 from typing import AsyncGenerator, Callable, Coroutine, Optional, cast
 
 from graphql import GraphQLError
@@ -18,10 +18,11 @@ from strawberry.scalars import JSON
 from langfuse import get_client
 from pixie.registry import call_application, get_application, list_applications
 from pixie.session.rpc import (
-    get_connected_session_ids,
+    get_connected_sessions,
     send_input_to_client,
     wait_for_client_update,
 )
+from pixie.session.types import SessionInfo as PydanticSessionInfo
 from pixie.types import (
     AppRunCancelled,
     BreakpointDetail as PydanticBreakpointDetail,
@@ -45,7 +46,86 @@ from pixie.otel_types import (
 
 import pixie.execution_context as exec_ctx
 from importlib.metadata import PackageNotFoundError, version
-from pixie.prompts.graphql import Mutation as PromptsMutation, Query as PromptsQuery
+from pixie.prompts.graphql import (
+    Mutation as PromptsMutation,
+    Query as PromptsQuery,
+    LlmCallInput,
+    LlmCallResult,
+    execute_single_llm_call,
+)
+
+from pixie.storage.graphql import (
+    StorageQuery,
+    StorageMutation,
+)
+from pixie.storage.types import Message as PydanticMessage
+from pixie.agents.rating_agent import (
+    RatingResult as PydanticRatingResult,
+    LlmCallRatingAgentInput as PydanticLlmCallRatingInput,
+    AppRunRatingAgentInput as PydanticAppRunRatingInput,
+    FindBadResponseInput as PydanticFindBadResponseInput,
+    FindBadLlmCallInput as PydanticFindBadLlmCallInput,
+    LlmCallSpan as PydanticLlmCallSpan,
+    PromptLlmCallEvalInput as PydanticPromptLlmCallEvalInput,
+    rate_llm_call as execute_rate_llm_call,
+    rate_app_run as execute_rate_app_run,
+    find_bad_response as execute_find_bad_response,
+    find_bad_llm_call as execute_find_bad_llm_call,
+    rate_prompt_llm_call as execute_rate_prompt_llm_call,
+)
+from pixie.strawberry_types import (
+    BreakpointTiming,
+    BreakpointType,
+    AppRunStatus,
+    Rating,
+    MessageRole,
+    TraceEventType,
+)
+
+# Batch size for concurrent LLM calls
+BATCH_LLM_CONCURRENCY = 5
+
+
+@strawberry.enum
+class BatchLlmCallStatus(str, Enum):
+    """Status of a batch LLM call item."""
+
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    ERROR = "ERROR"
+    RATING = "RATING"
+    """Rating is in progress for this call."""
+    RATED = "RATED"
+    """Rating has completed for this call."""
+
+
+@strawberry.type
+class BatchLlmCallRating:
+    """Rating result for a batch LLM call."""
+
+    rating: Rating
+    thoughts: str
+
+
+@strawberry.type
+class BatchLlmCallUpdate:
+    """Status update for a batch LLM call."""
+
+    id: strawberry.ID
+    """The id of the LLM call this update is for."""
+    status: BatchLlmCallStatus
+    result: Optional[LlmCallResult] = None
+    error: Optional[str] = None
+    rating_result: Optional[BatchLlmCallRating] = None
+    """Rating result, present when status is RATED."""
+
+
+@strawberry.type
+class BatchLlmCallsUpdate:
+    """Batched status updates for multiple LLM calls. Sent as a single message."""
+
+    updates: list[BatchLlmCallUpdate]
 
 
 # Global registry for input queues per run
@@ -66,47 +146,6 @@ def _get_input_queue(run_id: str) -> janus.Queue:
 
 
 logger = logging.getLogger(__name__)
-
-
-# Create Strawberry enums matching Pydantic Literals
-@strawberry.enum
-class BreakpointTiming(Enum):
-    """Mode for pausing execution."""
-
-    BEFORE = "BEFORE"
-    AFTER = "AFTER"
-
-
-@strawberry.enum
-class BreakpointType(Enum):
-    """Types of pausible points in execution."""
-
-    LLM = "LLM"
-    TOOL = "TOOL"
-    CUSTOM = "CUSTOM"
-
-
-@strawberry.enum
-class AppRunStatus(Enum):
-    """Status of an application run."""
-
-    RUNNING = "running"
-    COMPLETED = "completed"
-    ERROR = "error"
-    PAUSED = "paused"
-    WAITING = "waiting"
-    CANCELLED = "cancelled"
-    UNCHANGED = "unchanged"
-
-
-@strawberry.enum
-class TraceEventType(Enum):
-    """Type of trace event.
-
-    Indicates whether the trace data is from a span starting or other event.
-    """
-
-    SPAN_START = "span_start"
 
 
 # Convert Pydantic models to Strawberry types with explicit field types
@@ -229,6 +268,45 @@ class PromptForSpan:
     variables: JSON | None = None
 
 
+@strawberry.experimental.pydantic.type(model=PydanticMessage)
+class Message:
+    """Message in interaction logs."""
+
+    role: MessageRole
+    content: JSON
+    time_unix_nano: Optional[str]
+    user_rating: Optional[Rating] = None
+    user_feedback: Optional[str] = None
+
+
+@strawberry.experimental.pydantic.input(model=PydanticMessage)
+class MessageInput:
+    """Message input for rating requests."""
+
+    role: MessageRole
+    content: JSON
+    time_unix_nano: Optional[str]
+    user_rating: Optional[Rating] = None
+    user_feedback: Optional[str] = None
+
+
+@strawberry.experimental.pydantic.input(model=PydanticLlmCallSpan)
+class LlmCallSpanInput:
+    """LLM call span input for trace analysis."""
+
+    span_type: strawberry.auto
+    llm_input: JSON
+    llm_output: JSON
+
+
+@strawberry.experimental.pydantic.type(model=PydanticRatingResult)
+class RatingResult:
+    """Result of a rating operation."""
+
+    thoughts: strawberry.auto
+    rating: Rating
+
+
 @strawberry.type
 class AppRunUpdate:
     """Represents updates for an application run.
@@ -326,6 +404,11 @@ class TKeyValue:
     value: str
 
 
+@strawberry.experimental.pydantic.type(model=PydanticSessionInfo, all_fields=True)
+class SessionInfo:
+    pass
+
+
 @strawberry.type
 class _Query:
     """GraphQL queries."""
@@ -343,13 +426,14 @@ class _Query:
             return "0.0.0"
 
     @strawberry.field
-    async def list_sessions(self) -> list[str]:
+    async def list_sessions(self) -> list[SessionInfo]:
         """List all active session IDs.
 
         Returns:
             A list of active session IDs.
         """
-        return await get_connected_session_ids()
+        sessions = await get_connected_sessions()
+        return [SessionInfo.from_pydantic(s) for s in sessions]
 
     @strawberry.field
     def list_apps(self) -> list[AppInfo]:
@@ -482,6 +566,209 @@ class _Mutation:
         except Exception as e:
             raise GraphQLError(f"Failed to send session input: {str(e)}") from e
 
+    @strawberry.mutation
+    async def rate_llm_call(
+        self,
+        app_description: str,
+        interaction_logs_before_llm_call: list[MessageInput],
+        llm_input: JSON,
+        llm_output: JSON,
+        llm_configuration: JSON,
+        internal_logs_after_llm_call: list[JSON],
+        interaction_logs_after_llm_call: list[MessageInput],
+    ) -> RatingResult:
+        """Rate the quality of a specific LLM call within an application execution.
+
+        Args:
+            app_description: Description of the application.
+            interaction_logs_before_llm_call: Messages before the LLM call.
+            llm_input: Input to the LLM.
+            llm_output: Output from the LLM.
+            llm_configuration: Configuration of the LLM.
+            internal_logs_after_llm_call: Internal logs after the LLM call.
+            interaction_logs_after_llm_call: Messages after the LLM call.
+
+        Returns:
+            RatingResult with thoughts and rating.
+        """
+        # Convert MessageInput to pydantic Message, manually extracting enum values
+        messages_before = [
+            msg.to_pydantic() for msg in interaction_logs_before_llm_call
+        ]
+        messages_after = [msg.to_pydantic() for msg in interaction_logs_after_llm_call]
+
+        # Create the input signature
+        rating_input = PydanticLlmCallRatingInput(
+            app_description=app_description,
+            interaction_logs_before_llm_call=messages_before,
+            llm_input=llm_input,
+            llm_output=llm_output,
+            llm_configuration=llm_configuration,
+            internal_logs_after_llm_call=internal_logs_after_llm_call,
+            interaction_logs_after_llm_call=messages_after,
+        )
+
+        result = await execute_rate_llm_call(rating_input)
+        return RatingResult.from_pydantic(result)
+
+    @strawberry.mutation
+    async def rate_run(
+        self,
+        run_description: str,
+        interaction_logs: list[MessageInput],
+    ) -> RatingResult:
+        """Rate the overall quality of an app/session run.
+
+        Args:
+            run_description: Description of the run.
+            interaction_logs: All messages from the run.
+
+        Returns:
+            RatingResult with thoughts and rating.
+        """
+        # Convert MessageInput to pydantic Message, manually extracting enum values
+        messages = [
+            PydanticMessage(
+                role=msg.role.value,  # type: ignore
+                content=msg.content,  # type: ignore
+                user_rating=msg.user_rating.value if msg.user_rating else None,  # type: ignore
+                user_feedback=msg.user_feedback,  # type: ignore
+            )
+            for msg in interaction_logs
+        ]
+
+        # Create the input signature
+        rating_input = PydanticAppRunRatingInput(
+            app_description=run_description,
+            interaction_logs=messages,
+        )
+
+        result = await execute_rate_app_run(rating_input)
+        return RatingResult.from_pydantic(result)
+
+    @strawberry.mutation
+    async def find_bad_response(
+        self,
+        ai_description: str,
+        conversation: list[MessageInput],
+        reasoning_for_negative_rating: str,
+    ) -> int:
+        """Find the problematic assistant message in a conversation that led to a negative rating.
+
+        Args:
+            ai_description: Description of the AI application.
+            conversation: The full conversation as a list of messages.
+            reasoning_for_negative_rating: Why the conversation was rated negatively.
+
+        Returns:
+            The index of the Message that was identified as the problematic response.
+        """
+        # Convert MessageInput to pydantic Message
+        messages = [
+            PydanticMessage(
+                role=msg.role.value,  # type: ignore
+                content=msg.content,  # type: ignore
+                user_rating=msg.user_rating.value if msg.user_rating else None,  # type: ignore
+                user_feedback=msg.user_feedback,  # type: ignore
+            )
+            for msg in conversation
+        ]
+
+        # Create the input and call the agent
+        find_input = PydanticFindBadResponseInput(
+            ai_description=ai_description,
+            conversation=messages,
+            reasoning_for_negative_rating=reasoning_for_negative_rating,
+        )
+
+        result = await execute_find_bad_response(find_input)
+        return result
+
+    @strawberry.mutation
+    async def find_bad_llm_call(
+        self,
+        ai_description: str,
+        conversation: list[MessageInput],
+        trace: list[JSON],
+        reasoning_for_negative_rating: str,
+    ) -> int:
+        """Find the problematic LLM call span in a trace that led to a bad response.
+
+        Args:
+            ai_description: Description of the AI application.
+            conversation: Conversation leading up to the bad response.
+                The last item is the response being labeled bad.
+            trace: Server trace spans for the last message.
+                Some are LLM call spans (with span_type='llm_call'), some are not.
+            reasoning_for_negative_rating: Notes for the bad rating for the last
+                message in conversation.
+
+        Returns:
+            The index of the LLM call span that was identified as problematic.
+        """
+        # Convert MessageInput to pydantic Message
+        messages = [
+            PydanticMessage(
+                role=msg.role.value,  # type: ignore
+                content=msg.content,  # type: ignore
+                user_rating=msg.user_rating.value if msg.user_rating else None,  # type: ignore
+                user_feedback=msg.user_feedback,  # type: ignore
+            )
+            for msg in conversation
+        ]
+
+        # Convert trace spans - they come as JSON dicts
+        trace_spans: list[PydanticLlmCallSpan | dict] = [
+            dict(span) for span in trace  # type: ignore[arg-type]
+        ]
+
+        # Create the input and call the agent
+        find_input = PydanticFindBadLlmCallInput(
+            ai_description=ai_description,
+            conversation=messages,
+            trace=trace_spans,
+            reasoning_for_negative_rating=reasoning_for_negative_rating,
+        )
+
+        result = await execute_find_bad_llm_call(find_input)
+        return result
+
+    @strawberry.mutation
+    async def rate_prompt_llm_call(
+        self,
+        prompt_description: str,
+        input_messages: list[JSON],
+        output: JSON,
+        tools: list[JSON] | None = None,
+        output_type: JSON | None = None,
+    ) -> RatingResult:
+        """Evaluate the quality of an LLM call using prompt template context.
+
+        A lighter-weight evaluation that requires only the prompt description,
+        input/output messages, and optional tools/output type configuration.
+
+        Args:
+            prompt_description: Description of the prompt template used to
+                generate part of the input messages.
+            input_messages: The input messages sent to the LLM.
+            output_messages: The output messages returned by the LLM.
+            tools: Optional tool definitions available to the LLM.
+            output_type: Optional expected output type/schema configuration.
+
+        Returns:
+            RatingResult with thoughts and rating.
+        """
+        eval_input = PydanticPromptLlmCallEvalInput(
+            prompt_description=prompt_description,
+            input_messages=[dict(m) for m in input_messages],  # type: ignore[arg-type]
+            output=output,  # type: ignore[arg-type]
+            tools=[dict(t) for t in tools] if tools else None,  # type: ignore[arg-type]
+            output_type=dict(output_type) if output_type else None,  # type: ignore[arg-type]
+        )
+
+        result = await execute_rate_prompt_llm_call(eval_input)
+        return RatingResult.from_pydantic(result)
+
 
 def _convert_trace_to_union(trace_dict: dict | None) -> Optional[TraceDataUnion]:
     """Convert trace data dict to TraceDataUnion.
@@ -545,6 +832,177 @@ def _create_app_run_in_thread(run: Coroutine) -> tuple[Coroutine, Callable[[], N
 @strawberry.type
 class Subscription:
     """GraphQL subscriptions."""
+
+    @strawberry.subscription
+    async def batch_call_llm(
+        self,
+        calls: list[LlmCallInput],
+        prompt_description: Optional[str] = None,
+    ) -> AsyncGenerator[BatchLlmCallsUpdate, None]:
+        """Execute multiple LLM calls and stream batched status updates.
+
+        Uses a producer-consumer pattern with asyncio.Queue to stream updates
+        as soon as each call completes, rather than waiting for entire batches.
+        After each LLM call completes, runs the rating agent to evaluate it.
+
+        Args:
+            calls: List of LLM call inputs to execute.
+            prompt_description: Optional description for rating context.
+
+        Yields:
+            BatchLlmCallsUpdate containing one or more status updates.
+        """
+        if not calls:
+            return
+
+        # First, yield pending status for all calls in a single batch
+        pending_updates = [
+            BatchLlmCallUpdate(
+                id=call.id,
+                status=BatchLlmCallStatus.PENDING,
+                result=None,
+                error=None,
+                rating_result=None,
+            )
+            for call in calls
+        ]
+        yield BatchLlmCallsUpdate(updates=pending_updates)
+
+        # Create a queue for streaming updates
+        update_queue: asyncio.Queue[BatchLlmCallUpdate | None] = asyncio.Queue()
+
+        async def process_single_call(call: LlmCallInput) -> None:
+            """Process a single LLM call: execute, then rate."""
+            call_id = call.id
+            result: LlmCallResult | None = None
+            error_msg: str | None = None
+
+            # Signal that this call is running
+            await update_queue.put(
+                BatchLlmCallUpdate(
+                    id=call_id,
+                    status=BatchLlmCallStatus.RUNNING,
+                    result=None,
+                    error=None,
+                    rating_result=None,
+                )
+            )
+
+            # Execute the LLM call
+            try:
+                result = await execute_single_llm_call(call)
+                # Yield COMPLETED status
+                await update_queue.put(
+                    BatchLlmCallUpdate(
+                        id=call_id,
+                        status=BatchLlmCallStatus.COMPLETED,
+                        result=result,
+                        error=None,
+                        rating_result=None,
+                    )
+                )
+            except Exception as e:
+                logger.error("Error executing LLM call id=%s: %s", call_id, str(e))
+                error_msg = str(e)
+                # Yield ERROR status and skip rating
+                await update_queue.put(
+                    BatchLlmCallUpdate(
+                        id=call_id,
+                        status=BatchLlmCallStatus.ERROR,
+                        result=None,
+                        error=error_msg,
+                        rating_result=None,
+                    )
+                )
+                return
+
+            # Now run rating if we have a successful result and prompt_description
+            if result and prompt_description:
+                # Signal rating in progress
+                await update_queue.put(
+                    BatchLlmCallUpdate(
+                        id=call_id,
+                        status=BatchLlmCallStatus.RATING,
+                        result=result,
+                        error=None,
+                        rating_result=None,
+                    )
+                )
+
+                try:
+                    rating_input = PydanticPromptLlmCallEvalInput(
+                        prompt_description=prompt_description,
+                        input_messages=result.input,  # type: ignore[arg-type]
+                        output=result.output,  # type: ignore[arg-type]
+                        tools=result.tool_calls,  # type: ignore[arg-type]
+                        output_type=call.output_schema,  # type: ignore[arg-type]
+                    )
+
+                    rating_result = await execute_rate_prompt_llm_call(rating_input)
+
+                    # Convert Literal rating to strawberry enum
+                    rating_enum = Rating(rating_result.rating)
+
+                    await update_queue.put(
+                        BatchLlmCallUpdate(
+                            id=call_id,
+                            status=BatchLlmCallStatus.RATED,
+                            result=result,
+                            error=None,
+                            rating_result=BatchLlmCallRating(
+                                rating=rating_enum,
+                                thoughts=rating_result.thoughts,
+                            ),
+                        )
+                    )
+                except Exception as e:
+                    logger.error("Error rating LLM call id=%s: %s", call_id, str(e))
+                    # Still mark as RATED but with no rating result
+                    await update_queue.put(
+                        BatchLlmCallUpdate(
+                            id=call_id,
+                            status=BatchLlmCallStatus.RATED,
+                            result=result,
+                            error=f"Rating failed: {str(e)}",
+                            rating_result=None,
+                        )
+                    )
+
+        async def producer(call_list: list[LlmCallInput]) -> None:
+            """Process all calls using a semaphore to limit concurrency."""
+            semaphore = asyncio.Semaphore(BATCH_LLM_CONCURRENCY)
+
+            async def limited_process(call: LlmCallInput) -> None:
+                async with semaphore:
+                    await process_single_call(call)
+
+            # Run all calls concurrently, limited by semaphore
+            await asyncio.gather(
+                *[limited_process(call) for call in call_list],
+                return_exceptions=True,
+            )
+            # Signal completion
+            await update_queue.put(None)
+
+        # Start producer in background
+        producer_task = asyncio.create_task(producer(calls))
+
+        # Consumer: yield updates as they arrive
+        try:
+            while True:
+                update = await update_queue.get()
+                if update is None:
+                    # Producer finished
+                    break
+                yield BatchLlmCallsUpdate(updates=[update])
+        finally:
+            # Ensure producer completes
+            if not producer_task.done():
+                producer_task.cancel()
+                try:
+                    await producer_task
+                except asyncio.CancelledError:
+                    pass
 
     @strawberry.subscription
     async def run_session(self, session_id: str) -> AsyncGenerator[AppRunUpdate, None]:
@@ -742,12 +1200,12 @@ class Subscription:
 
 
 @strawberry.type
-class Query(_Query, PromptsQuery):
+class Query(_Query, PromptsQuery, StorageQuery):
     """Combined GraphQL query schema."""
 
 
 @strawberry.type
-class Mutation(_Mutation, PromptsMutation):
+class Mutation(_Mutation, PromptsMutation, StorageMutation):
     """Combined GraphQL mutation schema."""
 
 

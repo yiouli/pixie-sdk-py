@@ -5,7 +5,7 @@ packages = [
     { include = "langfuse" },
 ]
 
-version = "0.2.12"
+version = "0.2.14"
 description = "Interactive debugging tool for AI applications"
 authors = ["Yiou Li <yol@gopixie.ai>"]
 license = "MIT"
@@ -19,7 +19,7 @@ Issues = "https://github.com/yiouli/pixie-sdk-py/issues"
 Changelog = "https://github.com/yiouli/pixie-sdk-py/commits/main/"
 
 [tool.poetry.dependencies]
-python = ">=3.10,<4.0"
+python = ">=3.10,<3.14"
 httpx = ">=0.15.4,<1.0"
 pydantic = ">=1.10.7, <3.0"
 backoff = ">=1.10.0"
@@ -38,7 +38,9 @@ dotenv = ">=0.9.9"
 janus = ">=2.0.0"
 websockets = ">=15.0.1"
 docstring-parser = "^0.17.0"
-pixie-prompts = {version = "^0.1.11", extras = ["server"]}
+pixie-prompts = {version = "^0.1.12", extras = ["server"]}
+dspy = "^3.1.2"
+piccolo = {extras = ["sqlite"], version = "^1.30.0"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=7.4,<9.0"
@@ -54,6 +56,7 @@ langgraph = ">=1"
 autoevals = "^0.0.130"
 pydantic-ai = ">=1.11.0"
 opentelemetry-instrumentation-threading = "^0.60b1"
+piccolo-admin = "^1.12.0"
 
 [tool.poetry.group.docs.dependencies]
 pdoc = "^15.0.4"

@@ -43,3 +43,8 @@ docs/.cache-loader/
 docs/yarn.lock
 
 poetry.lock
+
+# SQLite databases (test and production)
+*.db
+*.db-shm
+*.db-wal

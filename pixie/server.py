@@ -13,13 +13,14 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from piccolo.engine import engine_finder
 from strawberry.fastapi import GraphQLRouter
 
 from pixie.prompts.file_watcher import discover_and_load_modules, init_prompt_storage
 from pixie.schema import schema
 from pixie.server_utils import enable_instrumentations, setup_logging
 from pixie.session.server import start_session_server
-
+from pixie.storage.tables import create_tables
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,9 @@ def create_app() -> FastAPI:
     Returns:
         Configured FastAPI application instance with GraphQL router.
     """
+    # Set the Piccolo config path BEFORE importing engine_finder
+    os.environ.setdefault("PICCOLO_CONF", "pixie.piccolo_conf")
+
     # Setup logging first (use global logging mode)
     setup_logging()
 
@@ -45,14 +49,40 @@ def create_app() -> FastAPI:
 
         Initializes prompt storage on startup.
         """
-        storage_lifespan = init_prompt_storage()
-        async with storage_lifespan(app):
-            session_server = await start_session_server()
-            try:
-                yield
-            finally:
-                session_server.task.cancel()
-                session_server.cancel()
+        engine = engine_finder()
+        if engine is None:
+            logger.error("No Piccolo engine found, storage will not work")
+        else:
+            await engine.start_connection_pool()
+        try:
+            if engine:
+                await create_tables()
+            storage_lifespan = init_prompt_storage()
+            async with storage_lifespan(app):
+                session_server = await start_session_server()
+                try:
+                    yield
+                finally:
+                    session_server.task.cancel()
+                    session_server.cancel()
+        finally:
+            if engine:
+                await engine.close_connection_pool()
+
+    admin_app = None
+    try:
+        from piccolo_admin.endpoints import create_admin
+
+        # Import your Piccolo tables here
+        from pixie.storage.tables import RunRecord, LlmCallRecord
+
+        admin_app = create_admin(
+            tables=[RunRecord, LlmCallRecord], site_name="Pixie Admin"
+        )
+
+        logger.info("Piccolo Admin enabled at /admin/")
+    except ImportError:
+        logger.warning("Piccolo Admin not installed - admin UI disabled")
 
     app = FastAPI(
         title="Pixie SDK Server",
@@ -77,6 +107,9 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(graphql_app, prefix="/graphql")
+
+    if admin_app:
+        app.mount("/admin", admin_app)
 
     REMOTE_URL = "https://gopixie.ai"
 
