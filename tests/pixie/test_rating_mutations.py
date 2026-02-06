@@ -564,14 +564,14 @@ class TestRatePromptLlmCallMutation:
         mutation RatePromptLlmCall(
             $promptDescription: String!,
             $inputMessages: [JSON!]!,
-            $outputMessages: [JSON!]!,
+            $output: JSON!,
             $tools: [JSON!],
             $outputType: JSON
         ) {
             ratePromptLlmCall(
                 promptDescription: $promptDescription,
                 inputMessages: $inputMessages,
-                outputMessages: $outputMessages,
+                output: $output,
                 tools: $tools,
                 outputType: $outputType
             ) {
@@ -593,7 +593,7 @@ class TestRatePromptLlmCallMutation:
                 },
                 {"role": "user", "content": "Where is my order #12345?"},
             ],
-            "outputMessages": [
+            "output": [
                 {
                     "role": "assistant",
                     "content": "Your order #12345 is currently in transit "
@@ -638,7 +638,7 @@ class TestRatePromptLlmCallMutation:
             "inputMessages": [
                 {"role": "user", "content": "What is our refund policy?"},
             ],
-            "outputMessages": [
+            "output": [
                 {
                     "role": "assistant",
                     "content": None,
@@ -695,7 +695,7 @@ class TestRatePromptLlmCallMutation:
             "inputMessages": [
                 {"role": "user", "content": "Extract: John Doe, age 30, from NYC"},
             ],
-            "outputMessages": [
+            "output": [
                 {
                     "role": "assistant",
                     "content": '{"name": "John Doe", "age": 30, "city": "NYC"}',
@@ -738,7 +738,7 @@ class TestRatePromptLlmCallMutation:
             "inputMessages": [
                 {"role": "user", "content": "What is 2 + 2?"},
             ],
-            "outputMessages": [
+            "output": [
                 {"role": "assistant", "content": "2 + 2 = 5"},
             ],
         }
@@ -767,7 +767,7 @@ class TestRatePromptLlmCallMutation:
                 {"role": "system", "content": "You are an assistant."},
                 {"role": "user", "content": "Look up the weather."},
             ],
-            "outputMessages": [
+            "output": [
                 {
                     "role": "assistant",
                     "content": None,
