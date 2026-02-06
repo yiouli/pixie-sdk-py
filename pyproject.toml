@@ -5,7 +5,7 @@ packages = [
     { include = "langfuse" },
 ]
 
-version = "0.2.13"
+version = "0.2.14"
 description = "Interactive debugging tool for AI applications"
 authors = ["Yiou Li <yol@gopixie.ai>"]
 license = "MIT"
@@ -38,7 +38,7 @@ dotenv = ">=0.9.9"
 janus = ">=2.0.0"
 websockets = ">=15.0.1"
 docstring-parser = "^0.17.0"
-pixie-prompts = {version = "^0.1.11", extras = ["server"]}
+pixie-prompts = {version = "^0.1.12", extras = ["server"]}
 dspy = "^3.1.2"
 piccolo = {extras = ["sqlite"], version = "^1.30.0"}
 
