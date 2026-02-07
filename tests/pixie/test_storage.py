@@ -16,6 +16,7 @@ from pixie.storage.types import (
     LlmCallRecordInput,
     LlmCallRecordUpdate,
     RecordFilters,
+    ToolDefinition,
 )
 from pixie.storage.operations import (
     _serialize_json,
@@ -767,3 +768,189 @@ class TestLlmCallRecordOperations:
         assert results[0].app_info.id == "app-x"
         assert results[0].rating is not None
         assert results[0].rating.value == "good"
+
+    @pytest.mark.asyncio
+    async def test_create_llm_call_record_with_tools(
+        self,
+        test_db,
+        sample_app_info: AppInfoRecord,
+    ):
+        """Should create an LLM call record with tool definitions."""
+        tools = [
+            ToolDefinition(
+                name="get_weather",
+                description="Get the weather for a location",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "location": {"type": "string"},
+                    },
+                    "required": ["location"],
+                },
+            ),
+            ToolDefinition(
+                name="get_lat_lng",
+                description="Get coordinates for a location",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "location": {"type": "string"},
+                    },
+                },
+            ),
+        ]
+        input_data = LlmCallRecordInput(
+            span_id="span-tools-001",
+            trace_id="trace-tools-001",
+            run_source="apps",
+            app_info=sample_app_info,
+            llm_input={"messages": [{"role": "user", "content": "Weather?"}]},
+            llm_output={"content": "It's sunny!"},
+            tools=tools,
+            metadata={},
+        )
+
+        result = await create_llm_call_record(input_data)
+
+        assert result.span_id == "span-tools-001"
+        assert result.tools is not None
+        assert len(result.tools) == 2
+        assert result.tools[0].name == "get_weather"
+        assert result.tools[0].description == "Get the weather for a location"
+        assert result.tools[0].parameters is not None
+        assert result.tools[0].parameters["type"] == "object"
+        assert result.tools[1].name == "get_lat_lng"
+
+    @pytest.mark.asyncio
+    async def test_get_llm_call_record_with_tools(
+        self,
+        test_db,
+        sample_app_info: AppInfoRecord,
+    ):
+        """Should retrieve an LLM call record with tools intact."""
+        tools = [
+            ToolDefinition(
+                name="search",
+                description="Search the web",
+            ),
+        ]
+        input_data = LlmCallRecordInput(
+            span_id="span-tools-002",
+            trace_id="trace-tools-002",
+            run_source="apps",
+            app_info=sample_app_info,
+            llm_input={},
+            llm_output={},
+            tools=tools,
+            metadata={},
+        )
+        await create_llm_call_record(input_data)
+
+        result = await get_llm_call_record("span-tools-002")
+
+        assert result is not None
+        assert result.tools is not None
+        assert len(result.tools) == 1
+        assert result.tools[0].name == "search"
+        assert result.tools[0].description == "Search the web"
+        assert result.tools[0].parameters is None
+
+    @pytest.mark.asyncio
+    async def test_create_llm_call_record_without_tools(
+        self,
+        test_db,
+        sample_app_info: AppInfoRecord,
+    ):
+        """Should create an LLM call record without tools (null)."""
+        input_data = LlmCallRecordInput(
+            span_id="span-no-tools",
+            trace_id="trace-no-tools",
+            run_source="apps",
+            app_info=sample_app_info,
+            llm_input={},
+            llm_output={},
+            tools=None,
+            metadata={},
+        )
+
+        result = await create_llm_call_record(input_data)
+
+        assert result.span_id == "span-no-tools"
+        assert result.tools is None
+
+    @pytest.mark.asyncio
+    async def test_create_llm_call_record_with_output_type(
+        self,
+        test_db,
+        sample_app_info: AppInfoRecord,
+    ):
+        """Should create an LLM call record with output_type JSON schema."""
+        output_type = {
+            "type": "object",
+            "properties": {
+                "temperature": {"type": "number"},
+                "description": {"type": "string"},
+            },
+            "required": ["temperature"],
+        }
+        input_data = LlmCallRecordInput(
+            span_id="span-output-type",
+            trace_id="trace-output-type",
+            run_source="apps",
+            app_info=sample_app_info,
+            llm_input={},
+            llm_output={},
+            output_type=output_type,
+            metadata={},
+        )
+
+        result = await create_llm_call_record(input_data)
+
+        assert result.span_id == "span-output-type"
+        assert result.output_type is not None
+        assert isinstance(result.output_type, dict)
+        assert result.output_type.get("type") == "object"
+        properties = result.output_type.get("properties")
+        assert isinstance(properties, dict)
+        assert "temperature" in properties
+
+    @pytest.mark.asyncio
+    async def test_get_llm_call_records_by_run_with_tools(
+        self,
+        test_db,
+        sample_app_info: AppInfoRecord,
+    ):
+        """Should retrieve LLM call records by run with tools intact."""
+        tools = [
+            ToolDefinition(
+                name="calculator",
+                description="Do math",
+                parameters={
+                    "type": "object",
+                    "properties": {"expr": {"type": "string"}},
+                },
+            ),
+        ]
+        for i in range(3):
+            input_data = LlmCallRecordInput(
+                span_id=f"span-run-tools-{i}",
+                trace_id=f"trace-run-tools-{i}",
+                run_id="run-with-tools",
+                run_source="apps",
+                app_info=sample_app_info,
+                llm_input={},
+                llm_output={},
+                tools=tools if i < 2 else None,  # Only first 2 have tools
+                metadata={},
+            )
+            await create_llm_call_record(input_data)
+
+        results = await get_llm_call_records_by_run("run-with-tools")
+
+        assert len(results) == 3
+        with_tools = [r for r in results if r.tools is not None]
+        without_tools = [r for r in results if r.tools is None]
+        assert len(with_tools) == 2
+        assert len(without_tools) == 1
+        assert with_tools[0].tools is not None
+        assert with_tools[0].tools[0].name == "calculator"

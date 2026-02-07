@@ -39,6 +39,8 @@ class LlmCallRecord(Table, db=DB):
     prompt_info = JSON(null=True)  # Serialized PromptInfoRecord (includes prompt_id)
     llm_input = JSON(null=True)
     llm_output = JSON(null=True)
+    tools = JSON(null=True)  # Serialized list of ToolDefinition
+    output_type = JSON(null=True)  # JSON schema for structured output
     model_name = Varchar(length=255, default="unknown")
     model_parameters = JSON(null=True)
     start_time = BigInt(null=True)  # Unix timestamp in nanoseconds

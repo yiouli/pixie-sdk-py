@@ -19,6 +19,7 @@ from pixie.storage.types import (
     AppInfoRecord as PydanticAppInfoRecord,
     SessionInfoRecord as PydanticSessionInfoRecord,
     PromptInfoRecord as PydanticPromptInfoRecord,
+    ToolDefinition as PydanticToolDefinition,
     RunRecord as PydanticRunRecord,
     RunRecordDetails as PydanticRunRecordDetails,
     LlmCallRecord as PydanticLlmCallRecord,
@@ -86,6 +87,15 @@ class StorageMessage:
     user_feedback: Optional[str] = None
 
 
+@strawberry.experimental.pydantic.type(model=PydanticToolDefinition)
+class ToolDefinitionType:
+    """Tool/function definition for LLM function calling."""
+
+    name: strawberry.auto
+    description: Optional[str] = None
+    parameters: Optional[JSON] = None
+
+
 @strawberry.experimental.pydantic.type(model=PydanticRunRecord)
 class RunRecordType:
     """Full run record."""
@@ -117,6 +127,8 @@ class LlmCallRecordType:
     prompt_info: Optional[PromptInfoRecordType] = None
     llm_input: JSON
     llm_output: JSON
+    tools: Optional[list[ToolDefinitionType]] = None
+    output_type: Optional[JSON] = None
     model_name: strawberry.auto
     model_parameters: Optional[JSON] = None
     start_time: Optional[str] = None  # String to avoid 32-bit int overflow
@@ -177,6 +189,15 @@ class StorageMessageInput:
     user_feedback: Optional[str] = None
 
 
+@strawberry.experimental.pydantic.input(model=PydanticToolDefinition)
+class ToolDefinitionInput:
+    """Tool/function definition input."""
+
+    name: strawberry.auto
+    description: Optional[str] = None
+    parameters: Optional[JSON] = None
+
+
 @strawberry.experimental.pydantic.input(model=PydanticRunRecord)
 class RunRecordInput:
     """Input for creating a run record."""
@@ -215,6 +236,8 @@ class LlmCallRecordInput:
     prompt_info: Optional[PromptInfoRecordInput] = None
     llm_input: Optional[JSON] = None
     llm_output: Optional[JSON] = None
+    tools: Optional[list[ToolDefinitionInput]] = None
+    output_type: Optional[JSON] = None
     model_name: str = "unknown"
     model_parameters: Optional[JSON] = None
     start_time: Optional[str] = None  # String to avoid 32-bit int overflow
@@ -229,6 +252,8 @@ class LlmCallRecordDetailsInput:
     prompt_info: Optional[PromptInfoRecordInput] = None
     llm_input: Optional[JSON] = None
     llm_output: Optional[JSON] = None
+    tools: Optional[list[ToolDefinitionInput]] = None
+    output_type: Optional[JSON] = None
     model_name: Optional[str] = None
     model_parameters: Optional[JSON] = None
     end_time: Optional[str] = None  # String to avoid 32-bit int overflow

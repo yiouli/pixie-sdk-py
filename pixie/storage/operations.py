@@ -19,6 +19,7 @@ from .types import (
     AppInfoRecord,
     SessionInfoRecord,
     PromptInfoRecord,
+    ToolDefinition,
 )
 
 # Type variable for Pydantic model classes
@@ -119,6 +120,18 @@ def _row_to_run_record(row: dict) -> RunRecord:
     )
 
 
+def _parse_tools(data: str | list | None) -> list[ToolDefinition] | None:
+    """Parse tools from JSON string or list."""
+    if data is None:
+        return None
+    parsed: list
+    if isinstance(data, str):
+        parsed = json.loads(data)
+    else:
+        parsed = data if data else []
+    return [ToolDefinition.model_validate(t) for t in parsed] if parsed else None
+
+
 def _row_to_llm_call_record(row: dict) -> LlmCallRecord:
     """Convert a database row dict to an LlmCallRecord."""
     return LlmCallRecord(
@@ -131,6 +144,8 @@ def _row_to_llm_call_record(row: dict) -> LlmCallRecord:
         prompt_info=_parse_json(row["prompt_info"], PromptInfoRecord),
         llm_input=_parse_json(row["llm_input"]),
         llm_output=_parse_json(row["llm_output"]),
+        tools=_parse_tools(row.get("tools")),
+        output_type=_parse_json(row.get("output_type")),
         model_name=row["model_name"],
         model_parameters=_parse_json(row["model_parameters"]),
         start_time=str(row["start_time"]) if row["start_time"] is not None else None,
@@ -310,6 +325,12 @@ async def create_llm_call_record(input_data: LlmCallRecord) -> LlmCallRecord:
         prompt_info=_serialize_json(input_data.prompt_info),
         llm_input=_serialize_json(input_data.llm_input),
         llm_output=_serialize_json(input_data.llm_output),
+        tools=(
+            json.dumps([t.model_dump() for t in input_data.tools])
+            if input_data.tools
+            else None
+        ),
+        output_type=_serialize_json(input_data.output_type),
         model_name=input_data.model_name or "unknown",
         model_parameters=_serialize_json(input_data.model_parameters),
         start_time=input_data.start_time,
@@ -362,6 +383,12 @@ async def update_llm_call_record(
 
     if update_data.llm_output is not None:
         updates["llm_output"] = _serialize_json(update_data.llm_output)
+
+    if update_data.tools is not None:
+        updates["tools"] = json.dumps([t.model_dump() for t in update_data.tools])
+
+    if update_data.output_type is not None:
+        updates["output_type"] = _serialize_json(update_data.output_type)
 
     if update_data.model_name is not None:
         updates["model_name"] = update_data.model_name

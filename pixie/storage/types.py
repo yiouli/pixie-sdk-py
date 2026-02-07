@@ -112,6 +112,14 @@ class RunRecord(RunRecordDetails):
 # ============================================================================
 
 
+class ToolDefinition(BaseModel):
+    """Tool/function definition for LLM function calling."""
+
+    name: str
+    description: str | None = None
+    parameters: dict[str, JsonValue] | None = None
+
+
 class LlmCallRecordDetails(BaseModel):
     """Details for an LLM call record (used for updates).
 
@@ -125,6 +133,8 @@ class LlmCallRecordDetails(BaseModel):
     prompt_info: PromptInfoRecord | None = None
     llm_input: JsonValue = None
     llm_output: JsonValue = None
+    tools: list[ToolDefinition] | None = None  # Tool definitions for function calling
+    output_type: dict[str, JsonValue] | None = None  # JSON schema for structured output
     model_name: str | None = None
     model_parameters: dict[str, JsonValue] | None = None
     start_time: str | None = None  # Unix timestamp in nanoseconds as string
