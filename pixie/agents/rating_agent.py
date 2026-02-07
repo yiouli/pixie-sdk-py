@@ -316,8 +316,22 @@ class PromptLlmCallEvalInput(BaseModel):
 
 
 class PromptLlmCallEvalSignature(dspy.Signature):
-    """Evaluate the quality of an LLM call given the prompt template description,
-    input messages, output messages, and optional tools/output type configuration."""
+    """Evaluate whether the LLM's immediate response is the correct NEXT STEP given the conversation so far.
+
+    IMPORTANT: You are evaluating a SINGLE turn in what may be a multi-step interaction.
+    The LLM may need multiple tool calls to complete the user's request. Do NOT penalize
+    the response for not producing a final answer if the correct next step is a tool call.
+
+    Rate as Good if:
+    - The immediate tool call or text response is the logical next step
+    - Tool arguments are reasonable and correct
+    - The response moves toward fulfilling the user's request
+
+    Rate as Bad if:
+    - The wrong tool was called, or with clearly wrong arguments
+    - The response is off-topic or nonsensical
+    - A text response was given when a tool call was needed (or vice versa)
+    """
 
     prompt_description: str = dspy.InputField(
         desc="Description of the prompt template used to generate part of the input messages."
@@ -325,14 +339,19 @@ class PromptLlmCallEvalSignature(dspy.Signature):
     input_messages: list[Any] = dspy.InputField(
         desc="The input messages sent to the LLM."
     )
-    output: Any = dspy.InputField(desc="The output returned by the LLM.")
+    output: Any = dspy.InputField(
+        desc="The immediate text/tool usage response returned by the LLM. This is a SINGLE step — not the final result."
+    )
     tools: list[Any] | None = dspy.InputField(
         desc="Tool definitions available to the LLM, if any.", default=None
     )
     output_type: Any | None = dspy.InputField(
         desc="Expected output type/schema configuration, if any.", default=None
     )
-    rating: Rating = dspy.OutputField()
+    rating: Rating = dspy.OutputField(
+        desc="Rate ONLY whether this immediate response is the correct next step. "
+        "Do NOT penalize for not completing the overall task if this is an intermediate step in a multi-step workflow."
+    )
 
 
 async def rate_prompt_llm_call(
