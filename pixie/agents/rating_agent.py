@@ -309,10 +309,10 @@ class PromptLlmCallEvalInput(BaseModel):
     """Input for evaluating an LLM call using prompt template context."""
 
     prompt_description: str
-    input_messages: list[dict]
+    input_messages: list[Any]
     output: Any
-    tools: list[dict] | None = None
-    output_type: dict | None = None
+    tools: list[Any] | None = None
+    output_type: Any | None = None
 
 
 class PromptLlmCallEvalSignature(dspy.Signature):
@@ -322,14 +322,14 @@ class PromptLlmCallEvalSignature(dspy.Signature):
     prompt_description: str = dspy.InputField(
         desc="Description of the prompt template used to generate part of the input messages."
     )
-    input_messages: list[dict] = dspy.InputField(
+    input_messages: list[Any] = dspy.InputField(
         desc="The input messages sent to the LLM."
     )
     output: Any = dspy.InputField(desc="The output returned by the LLM.")
-    tools: list[dict] | None = dspy.InputField(
+    tools: list[Any] | None = dspy.InputField(
         desc="Tool definitions available to the LLM, if any.", default=None
     )
-    output_type: dict | None = dspy.InputField(
+    output_type: Any | None = dspy.InputField(
         desc="Expected output type/schema configuration, if any.", default=None
     )
     rating: Rating = dspy.OutputField()

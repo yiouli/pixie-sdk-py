@@ -760,10 +760,10 @@ class _Mutation:
         """
         eval_input = PydanticPromptLlmCallEvalInput(
             prompt_description=prompt_description,
-            input_messages=[dict(m) for m in input_messages],  # type: ignore[arg-type]
-            output=output,  # type: ignore[arg-type]
-            tools=[dict(t) for t in tools] if tools else None,  # type: ignore[arg-type]
-            output_type=dict(output_type) if output_type else None,  # type: ignore[arg-type]
+            input_messages=input_messages,
+            output=output,
+            tools=tools,
+            output_type=output_type,
         )
 
         result = await execute_rate_prompt_llm_call(eval_input)
@@ -933,9 +933,9 @@ class Subscription:
                     rating_input = PydanticPromptLlmCallEvalInput(
                         prompt_description=prompt_description,
                         input_messages=result.input,  # type: ignore[arg-type]
-                        output=result.output,  # type: ignore[arg-type]
-                        tools=result.tool_calls,  # type: ignore[arg-type]
-                        output_type=call.output_schema,  # type: ignore[arg-type]
+                        output=result.output,
+                        tools=result.tool_calls,
+                        output_type=call.output_schema,
                     )
 
                     rating_result = await execute_rate_prompt_llm_call(rating_input)
@@ -957,11 +957,11 @@ class Subscription:
                     )
                 except Exception as e:
                     logger.error("Error rating LLM call id=%s: %s", call_id, str(e))
-                    # Still mark as RATED but with no rating result
+                    # Still mark as ERROR but with no rating result
                     await update_queue.put(
                         BatchLlmCallUpdate(
                             id=call_id,
-                            status=BatchLlmCallStatus.RATED,
+                            status=BatchLlmCallStatus.ERROR,
                             result=result,
                             error=f"Rating failed: {str(e)}",
                             rating_result=None,
