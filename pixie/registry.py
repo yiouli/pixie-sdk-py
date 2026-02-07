@@ -30,7 +30,30 @@ from langfuse import Langfuse
 from pixie.types import PixieGenerator, InputRequired
 from pixie.utils import extract_schema_from_type
 
-_langfuse = Langfuse()
+# Lazy initialization to avoid side effects at import time
+_langfuse: Optional[Langfuse] = None
+
+
+def _get_langfuse() -> Langfuse:
+    """Get or create the Langfuse client instance.
+
+    Uses lazy initialization to avoid creating a Langfuse client
+    at module import time, which can cause issues in tests.
+    """
+    global _langfuse
+    if _langfuse is None:
+        _langfuse = Langfuse()
+    return _langfuse
+
+
+def reset_langfuse() -> None:
+    """Reset the Langfuse client instance.
+
+    This is intended for testing purposes only.
+    """
+    global _langfuse
+    _langfuse = None
+
 
 logger = logging.getLogger(__name__)
 
@@ -279,7 +302,7 @@ def _wrap_callable_handler(
     ) -> AsyncGenerator[InputRequired | JsonValue, JsonValue]:
         # Check if function accepts no parameters
         sig = inspect.signature(func)
-        span = _langfuse.start_as_current_observation(name=name, as_type="chain")
+        span = _get_langfuse().start_as_current_observation(name=name, as_type="chain")
         span.__enter__()
         try:
             if not sig.parameters:
@@ -306,7 +329,7 @@ def _wrap_callable_handler(
 
 def _start_observation_for_waiting(result: Any):
     if isinstance(result, InputRequired):
-        return _langfuse.start_as_current_observation(
+        return _get_langfuse().start_as_current_observation(
             name="wait_of_input",
             as_type="tool",
         )
@@ -351,7 +374,7 @@ def _wrap_generator_handler(
         else:
             generator = generator_or_awaitable
 
-        span = _langfuse.start_as_current_observation(name=name, as_type="chain")
+        span = _get_langfuse().start_as_current_observation(name=name, as_type="chain")
         try:
             span.__enter__()
             user_input: JsonValue | BaseModel | None = None

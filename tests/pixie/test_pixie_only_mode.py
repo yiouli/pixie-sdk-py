@@ -16,7 +16,43 @@ from langfuse._client.constants import PIXIE_ONLY_MODE_PLACEHOLDER
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    """Remove Langfuse credentials from environment."""
+    """Remove Langfuse credentials from environment.
+
+    Note: litellm (used by dspy) automatically calls dotenv.load_dotenv()
+    at import time, which loads .env file into os.environ. This fixture
+    ensures those variables are removed before tests run.
+    """
+    # Reset the global Langfuse instance in registry to ensure clean state
+    from pixie.registry import reset_langfuse
+
+    reset_langfuse()
+
+    # Reset Langfuse's global singleton cache (LangfuseResourceManager._instances)
+    # This is necessary because Langfuse uses a singleton pattern keyed by public_key,
+    # and previous tests may have created instances with credentials
+    try:
+        from langfuse._client.resource_manager import LangfuseResourceManager
+
+        with LangfuseResourceManager._lock:
+            LangfuseResourceManager._instances.clear()
+    except (ImportError, AttributeError):
+        pass  # Langfuse internals may change, fail gracefully
+
+    # Reset OpenTelemetry's global tracer provider
+    # This is necessary because OTel maintains a global tracer provider that
+    # Langfuse registers with, and it persists across Langfuse instances
+    try:
+        from opentelemetry import trace
+        from opentelemetry.util._once import Once
+
+        # Reset the global tracer provider to allow a new one to be set
+        trace._TRACER_PROVIDER = None
+        trace._TRACER_PROVIDER_SET_ONCE = Once()  # Reset the once guard
+    except (ImportError, AttributeError):
+        pass  # OTel internals may change, fail gracefully
+
+    # Remove any Langfuse credentials that may have been loaded from .env
+    # by litellm or other libraries
     monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
     monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
     monkeypatch.delenv("LANGFUSE_BASE_URL", raising=False)
