@@ -4,7 +4,9 @@ import pytest
 from unittest.mock import AsyncMock, patch
 from strawberry.schema import Schema
 
-from pixie.schema import Query, Mutation, Subscription, MessageInput, Rating
+from pixie.agents.graphql import MessageInput
+from pixie.schema import Query, Mutation, Subscription
+from pixie.strawberry_types import Rating
 from pixie.agents.rating_agent import (
     RatingResult as PydanticRatingResult,
     LlmCallRatingAgentInput,
@@ -113,7 +115,7 @@ class TestRateLlmCallMutation:
         )
 
         with patch(
-            "pixie.schema.execute_rate_llm_call",
+            "pixie.agents.graphql.execute_rate_llm_call",
             new_callable=AsyncMock,
             return_value=expected_result,
         ) as mock_rate:
@@ -191,7 +193,7 @@ class TestRateLlmCallMutation:
         )
 
         with patch(
-            "pixie.schema.execute_rate_llm_call",
+            "pixie.agents.graphql.execute_rate_llm_call",
             new_callable=AsyncMock,
             return_value=expected_result,
         ):
@@ -258,7 +260,7 @@ class TestRateLlmCallMutation:
         )
 
         with patch(
-            "pixie.schema.execute_rate_llm_call",
+            "pixie.agents.graphql.execute_rate_llm_call",
             new_callable=AsyncMock,
             return_value=expected_result,
         ) as mock_rate:
@@ -325,7 +327,7 @@ class TestRateRunMutation:
         )
 
         with patch(
-            "pixie.schema.execute_rate_app_run",
+            "pixie.agents.graphql.execute_rate_app_run",
             new_callable=AsyncMock,
             return_value=expected_result,
         ) as mock_rate:
@@ -400,7 +402,7 @@ class TestRateRunMutation:
         )
 
         with patch(
-            "pixie.schema.execute_rate_app_run",
+            "pixie.agents.graphql.execute_rate_app_run",
             new_callable=AsyncMock,
             return_value=expected_result,
         ):
@@ -438,7 +440,7 @@ class TestRateRunMutation:
         )
 
         with patch(
-            "pixie.schema.execute_rate_app_run",
+            "pixie.agents.graphql.execute_rate_app_run",
             new_callable=AsyncMock,
             return_value=expected_result,
         ):
@@ -483,7 +485,7 @@ class TestRateRunMutation:
         )
 
         with patch(
-            "pixie.schema.execute_rate_app_run",
+            "pixie.agents.graphql.execute_rate_app_run",
             new_callable=AsyncMock,
             return_value=expected_result,
         ) as mock_rate:
@@ -547,7 +549,7 @@ class TestRatingEnumConversion:
             )
 
             with patch(
-                "pixie.schema.execute_rate_app_run",
+                "pixie.agents.graphql.execute_rate_app_run",
                 new_callable=AsyncMock,
                 return_value=expected_result,
             ):
@@ -608,7 +610,7 @@ class TestRatePromptLlmCallMutation:
         )
 
         with patch(
-            "pixie.schema.execute_rate_prompt_llm_call",
+            "pixie.agents.graphql.execute_rate_prompt_llm_call",
             new_callable=AsyncMock,
             return_value=expected_result,
         ) as mock_rate:
@@ -673,7 +675,7 @@ class TestRatePromptLlmCallMutation:
         )
 
         with patch(
-            "pixie.schema.execute_rate_prompt_llm_call",
+            "pixie.agents.graphql.execute_rate_prompt_llm_call",
             new_callable=AsyncMock,
             return_value=expected_result,
         ) as mock_rate:
@@ -717,7 +719,7 @@ class TestRatePromptLlmCallMutation:
         )
 
         with patch(
-            "pixie.schema.execute_rate_prompt_llm_call",
+            "pixie.agents.graphql.execute_rate_prompt_llm_call",
             new_callable=AsyncMock,
             return_value=expected_result,
         ) as mock_rate:
@@ -749,7 +751,7 @@ class TestRatePromptLlmCallMutation:
         )
 
         with patch(
-            "pixie.schema.execute_rate_prompt_llm_call",
+            "pixie.agents.graphql.execute_rate_prompt_llm_call",
             new_callable=AsyncMock,
             return_value=expected_result,
         ):
@@ -797,7 +799,7 @@ class TestRatePromptLlmCallMutation:
         )
 
         with patch(
-            "pixie.schema.execute_rate_prompt_llm_call",
+            "pixie.agents.graphql.execute_rate_prompt_llm_call",
             new_callable=AsyncMock,
             return_value=expected_result,
         ) as mock_rate:

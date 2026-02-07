@@ -8,6 +8,7 @@ from strawberry.scalars import JSON
 import strawberry.experimental.pydantic
 
 from pixie.strawberry_types import (
+    MessageInput,
     Rating as RatingEnum,
     RatedBy as RatedByEnum,
     MessageRole as MessageRoleEnum,
@@ -178,17 +179,6 @@ class PromptInfoRecordInput:
     variables: Optional[JSON] = None
 
 
-@strawberry.experimental.pydantic.input(model=PydanticMessage)
-class StorageMessageInput:
-    """Message input for storage records."""
-
-    role: MessageRoleEnum
-    content: JSON
-    time_unix_nano: Optional[str] = None
-    user_rating: Optional[RatingEnum] = None
-    user_feedback: Optional[str] = None
-
-
 @strawberry.experimental.pydantic.input(model=PydanticToolDefinition)
 class ToolDefinitionInput:
     """Tool/function definition input."""
@@ -206,7 +196,7 @@ class RunRecordInput:
     source: RunSourceEnum | None = None
     app_info: Optional[AppInfoRecordInput] = None
     session_info: Optional[SessionInfoRecordInput] = None
-    messages: list[StorageMessageInput] = strawberry.field(default_factory=list)
+    messages: list[MessageInput] = strawberry.field(default_factory=list)
     prompt_ids: list[str] = strawberry.field(default_factory=list)
     start_time: Optional[str] = None  # String to avoid 32-bit int overflow
     metadata: JSON = strawberry.field(default_factory=dict)
@@ -216,7 +206,7 @@ class RunRecordInput:
 class RunRecordDetailsInput:
     """Input for updating a run record."""
 
-    messages: Optional[list[StorageMessageInput]] = None
+    messages: Optional[list[MessageInput]] = None
     prompt_ids: Optional[list[str]] = None
     end_time: Optional[str] = None  # String to avoid 32-bit int overflow
     rating: Optional[RatingDetailsInput] = None

@@ -404,7 +404,7 @@ class TestStrawberryConversion:
 
     def test_strawberry_conversion_uses_standard_field(self):
         """Test strawberry AppRunUpdate.from_pydantic uses standard field."""
-        from pixie.schema import AppRunUpdate as StrawberryAppRunUpdate
+        from pixie.strawberry_types import AppRunUpdate as StrawberryAppRunUpdate
 
         pydantic_update = AppRunUpdate(
             run_id="test-run",
@@ -422,7 +422,7 @@ class TestStrawberryConversion:
 
     def test_strawberry_conversion_no_schema(self):
         """Test strawberry conversion when no schema present."""
-        from pixie.schema import AppRunUpdate as StrawberryAppRunUpdate
+        from pixie.strawberry_types import AppRunUpdate as StrawberryAppRunUpdate
 
         pydantic_update = AppRunUpdate(
             run_id="test-run",

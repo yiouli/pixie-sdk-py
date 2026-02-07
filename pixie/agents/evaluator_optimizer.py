@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import dspy
+from pydantic import BaseModel
 
 from pixie.agents.rating_agent import (
     PromptLlmCallEvalInput,
@@ -22,6 +23,7 @@ from pixie.agents.rating_agent import (
 from pixie.prompts.prompt_management import get_prompt
 from pixie.storage.operations import get_llm_call_records
 from pixie.storage.types import LlmCallRecord, RecordFilters
+import pixie.sdk as pixie
 
 logger = logging.getLogger(__name__)
 
@@ -219,8 +221,7 @@ def _get_evaluator_filename() -> str:
     Returns:
         Filename in format <timestamp>.json
     """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"{timestamp}.json"
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 async def fetch_training_data(
@@ -295,13 +296,18 @@ def evaluator_metric(
     return predicted_rating == expected_rating
 
 
-async def optimize_evaluator(
-    prompt_id: str,
-    max_bootstrapped_demos: int = 4,
-    max_labeled_demos: int = 4,
-    max_rounds: int = 5,
-    train_limit: int = 100,
-) -> Path:
+class OptimizationConfig(BaseModel):
+    """Configuration for evaluator optimization."""
+
+    prompt_id: str
+    max_bootstrapped_demos: int = 4
+    max_labeled_demos: int = 4
+    max_rounds: int = 5
+    train_limit: int = 100
+
+
+@pixie.app
+async def optimize_evaluator(config: OptimizationConfig) -> str:
     """Optimize the evaluator for a specific prompt using BootstrapFewShot.
 
     Fetches labeled LLM call records, runs optimization, and stores the result.
@@ -319,16 +325,16 @@ async def optimize_evaluator(
     Raises:
         ValueError: If prompt_id is not found or has insufficient training data
     """
-    logger.info("Starting evaluator optimization for prompt '%s'", prompt_id)
+    logger.info("Starting evaluator optimization for prompt '%s'", config.prompt_id)
 
     # Fetch training data
     examples, prompt_description = await fetch_training_data(
-        prompt_id, limit=train_limit
+        config.prompt_id, limit=config.train_limit
     )
 
     if len(examples) < 2:
         raise ValueError(
-            f"Insufficient training data for prompt '{prompt_id}': "
+            f"Insufficient training data for prompt '{config.prompt_id}': "
             f"need at least 2 examples, got {len(examples)}"
         )
 
@@ -351,9 +357,9 @@ async def optimize_evaluator(
         # Create optimizer
         optimizer = dspy.BootstrapFewShot(
             metric=evaluator_metric,
-            max_bootstrapped_demos=max_bootstrapped_demos,
-            max_labeled_demos=max_labeled_demos,
-            max_rounds=max_rounds,
+            max_bootstrapped_demos=config.max_bootstrapped_demos,
+            max_labeled_demos=config.max_labeled_demos,
+            max_rounds=config.max_rounds,
         )
 
         # Run optimization
@@ -386,17 +392,17 @@ async def optimize_evaluator(
             )
 
     # Save the optimized program
-    evaluator_dir = _get_evaluator_dir(prompt_id)
+    evaluator_dir = _get_evaluator_dir(config.prompt_id)
     evaluator_dir.mkdir(parents=True, exist_ok=True)
 
-    filename = _get_evaluator_filename()
+    filename = _get_evaluator_filename() + ".json"
     save_path = evaluator_dir / filename
 
     compiled_program.save(str(save_path), save_program=False)
 
     logger.info("Saved optimized evaluator to '%s'", save_path)
 
-    return save_path
+    return filename
 
 
 def get_latest_optimized_evaluator_path(prompt_id: str) -> Path | None:

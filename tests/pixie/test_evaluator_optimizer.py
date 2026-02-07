@@ -8,6 +8,7 @@ import dspy
 
 from pixie.agents.evaluator_optimizer import (
     EVALUATORS_BASE_DIR,
+    OptimizationConfig,
     _get_evaluator_dir,
     _get_evaluator_filename,
     _record_to_eval_input,
@@ -377,10 +378,8 @@ class TestEvaluatorPath:
     def test_get_evaluator_filename(self):
         """Test generating evaluator filename."""
         filename = _get_evaluator_filename()
-        assert filename.endswith(".json")
         # Should match format YYYYMMDD_HHMMSS.json
-        name_part = filename.replace(".json", "")
-        assert len(name_part) == 15  # 8 + 1 + 6
+        assert len(filename) == 15  # 8 + 1 + 6
 
 
 class TestEvaluatorMetric:
@@ -600,7 +599,9 @@ class TestOptimizeEvaluator:
                 return_value=mock_records,
             ):
                 with pytest.raises(ValueError, match="Insufficient training data"):
-                    await optimize_evaluator("test-prompt")
+                    await optimize_evaluator(
+                        OptimizationConfig(prompt_id="test-prompt")
+                    )
 
     @pytest.mark.asyncio
     async def test_optimize_evaluator_success(
@@ -650,10 +651,13 @@ class TestOptimizeEvaluator:
                             "dspy.BootstrapFewShot", return_value=mock_optimizer
                         ):
                             with patch("dspy.context"):
-                                result = await optimize_evaluator("test-prompt")
+                                result = await optimize_evaluator(
+                                    OptimizationConfig(prompt_id="test-prompt")
+                                )
 
-                                assert result.parent == evaluator_dir
-                                assert result.suffix == ".json"
+                                result_path = Path(result)
+
+                                assert result_path.suffix == ".json"
                                 mock_optimizer.compile.assert_called_once()
                                 mock_program.save.assert_called_once()
 
