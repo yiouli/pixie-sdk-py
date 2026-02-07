@@ -3,13 +3,12 @@ from piccolo.conf.apps import AppRegistry
 
 DB = SQLiteEngine(path="pixie.db")
 
-apps = [
-    "piccolo.apps.user.piccolo_app",
-]
+apps = []
 
 try:
     import piccolo_admin
 
+    apps.append("piccolo.apps.user.piccolo_app")
     apps.append("piccolo_admin.piccolo_app")
 except ImportError:
     pass

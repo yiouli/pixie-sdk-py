@@ -9,9 +9,8 @@ import time
 from urllib.parse import quote
 import webbrowser
 import dotenv
-import httpx
 import uvicorn
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from piccolo.engine import engine_finder
 from strawberry.fastapi import GraphQLRouter
@@ -23,6 +22,9 @@ from pixie.session.server import start_session_server
 from pixie.storage.tables import create_tables
 
 logger = logging.getLogger(__name__)
+
+
+_sdk_server_address = "https://gopixie.ai"  # Default address for the Pixie Web UI
 
 
 def create_app() -> FastAPI:
@@ -37,8 +39,10 @@ def create_app() -> FastAPI:
     # Setup logging first (use global logging mode)
     setup_logging()
 
+    logger.info("Loading apps and prompts...")
     discover_and_load_modules()
 
+    logger.info("Enabling instrumentations...")
     enable_instrumentations()
 
     dotenv.load_dotenv(os.getcwd() + "/.env")
@@ -76,6 +80,7 @@ def create_app() -> FastAPI:
         # Import your Piccolo tables here
         from pixie.storage.tables import RunRecord, LlmCallRecord
 
+        logger.info("Setting up Piccolo Admin...")
         admin_app = create_admin(
             tables=[RunRecord, LlmCallRecord], site_name="Pixie Admin"
         )
@@ -91,10 +96,15 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Matches:
+    # 1. http://localhost followed by an optional port (:8080, :3000, etc.)
+    # 2. http://127.0.0.1 followed by an optional port
+    # 3. https://yourdomain.com (the production domain)
+    origins_regex = r"http://(localhost|127\.0\.0\.1)(:\d+)?|https://gopixie\.ai"
     # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Allows all origins
+        allow_origin_regex=origins_regex,
         allow_credentials=True,
         allow_methods=["*"],  # Allows all methods
         allow_headers=["*"],  # Allows all headers
@@ -111,41 +121,22 @@ def create_app() -> FastAPI:
     if admin_app:
         app.mount("/admin", admin_app)
 
-    REMOTE_URL = "https://gopixie.ai"
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("")
+    logger.info("🎨 Open Pixie Web UI:")
+    logger.info("")
+    logger.info("   %s", _sdk_server_address)
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("")
 
-    @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
-    async def proxy_all(request: Request, path: str):
-        url = f"{REMOTE_URL}/{path}"
-        if request.url.query:
-            url += f"?{request.url.query}"
+    # Open browser after a short delay (in a separate thread)
+    def open_browser():
+        time.sleep(1)  # Wait for server to start
+        webbrowser.open(_sdk_server_address)
 
-        logger.debug("Proxying request to: %s", url)
-
-        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-            response = await client.request(
-                method=request.method,
-                url=url,
-                headers={
-                    k: v
-                    for k, v in request.headers.items()
-                    if k.lower() not in ["host"]
-                },
-                content=await request.body(),
-            )
-
-            # Explicitly remove compression-related headers
-            headers = {
-                k: v
-                for k, v in response.headers.items()
-                if k.lower()
-                not in ["content-encoding", "content-length", "transfer-encoding"]
-            }
-
-            return Response(
-                content=response.content,
-                status_code=response.status_code,
-                headers=headers,
-            )
+    threading.Thread(target=open_browser, daemon=True).start()
 
     return app
 
@@ -165,8 +156,6 @@ def start_server(
         log_mode: Logging mode - "default", "verbose", or "debug"
         storage_directory: Directory to store prompt definitions
     """
-    from pixie.registry import list_applications
-
     # Setup logging (will be called again in create_app for reload scenarios)
     setup_logging(log_mode)
 
@@ -180,39 +169,13 @@ def start_server(
     logger.info("Server: %s", server_url)
     logger.info("GraphQL: %s/graphql", server_url)
 
-    # Log registered applications
-    apps = list_applications()
-    if apps:
-        logger.info("Registered applications: %d", len(apps))
-        for app_id in apps:
-            logger.info("  • %s", app_id)
-    else:
-        logger.warning("No applications registered yet")
-
     if server_url == "http://127.0.0.1:8000":
         query_param = ""
     else:
         query_param = f'?url={quote(f"{server_url}/graphql", safe="")}'
-    logger.info("")
-    logger.info("=" * 60)
-    logger.info("")
-    logger.info("🎨 Open Pixie Web UI:")
-    logger.info("")
-    logger.info("   %s", f"https://gopixie.ai{query_param}")
-    logger.info("")
-    logger.info("   or")
-    logger.info("")
-    logger.info("   %s", f"{server_url}{query_param}")
-    logger.info("")
-    logger.info("=" * 60)
-    logger.info("")
 
-    # Open browser after a short delay (in a separate thread)
-    def open_browser():
-        time.sleep(1.5)  # Wait for server to start
-        webbrowser.open(server_url)
-
-    threading.Thread(target=open_browser, daemon=True).start()
+    global _sdk_server_address
+    _sdk_server_address = f"https://gopixie.ai{query_param}"
 
     uvicorn.run(
         "pixie.server:create_app",
