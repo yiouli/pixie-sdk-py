@@ -73,6 +73,11 @@ from pixie.agents.rating_agent import (
     find_bad_llm_call as execute_find_bad_llm_call,
     rate_prompt_llm_call as execute_rate_prompt_llm_call,
 )
+from pixie.agents.evaluator_optimizer import (
+    optimize_evaluator as execute_optimize_evaluator,
+    list_optimized_evaluators as get_optimized_evaluators_list,
+    get_latest_optimized_evaluator_path,
+)
 from pixie.strawberry_types import (
     BreakpointTiming,
     BreakpointType,
@@ -126,6 +131,30 @@ class BatchLlmCallsUpdate:
     """Batched status updates for multiple LLM calls. Sent as a single message."""
 
     updates: list[BatchLlmCallUpdate]
+
+
+@strawberry.type
+class OptimizedEvaluatorInfo:
+    """Information about an optimized evaluator version."""
+
+    path: str
+    """Full path to the evaluator file."""
+    filename: str
+    """Filename of the evaluator."""
+    timestamp: Optional[str] = None
+    """ISO timestamp when the evaluator was created."""
+
+
+@strawberry.type
+class OptimizeEvaluatorResult:
+    """Result of evaluator optimization."""
+
+    success: bool
+    """Whether optimization was successful."""
+    path: Optional[str] = None
+    """Path to the saved optimized evaluator file."""
+    error: Optional[str] = None
+    """Error message if optimization failed."""
 
 
 # Global registry for input queues per run
@@ -768,6 +797,92 @@ class _Mutation:
 
         result = await execute_rate_prompt_llm_call(eval_input)
         return RatingResult.from_pydantic(result)
+
+    @strawberry.mutation
+    async def optimize_evaluator(
+        self,
+        prompt_id: str,
+        max_bootstrapped_demos: int = 4,
+        max_labeled_demos: int = 4,
+        max_rounds: int = 5,
+        train_limit: int = 100,
+    ) -> OptimizeEvaluatorResult:
+        """Optimize the evaluator for a specific prompt using labeled data.
+
+        Uses BootstrapFewShot optimization with records from the LLM call storage
+        that have been rated by users or system as good/bad.
+
+        Args:
+            prompt_id: The unique identifier of the prompt to optimize for.
+            max_bootstrapped_demos: Maximum number of bootstrapped demonstrations.
+            max_labeled_demos: Maximum number of labeled demonstrations.
+            max_rounds: Maximum optimization rounds.
+            train_limit: Maximum number of training examples to fetch.
+
+        Returns:
+            OptimizeEvaluatorResult with success status and path or error.
+        """
+        try:
+            path = await execute_optimize_evaluator(
+                prompt_id=prompt_id,
+                max_bootstrapped_demos=max_bootstrapped_demos,
+                max_labeled_demos=max_labeled_demos,
+                max_rounds=max_rounds,
+                train_limit=train_limit,
+            )
+            return OptimizeEvaluatorResult(
+                success=True,
+                path=str(path),
+                error=None,
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to optimize evaluator for prompt '%s': %s", prompt_id, str(e)
+            )
+            return OptimizeEvaluatorResult(
+                success=False,
+                path=None,
+                error=str(e),
+            )
+
+    @strawberry.mutation
+    async def get_optimized_evaluators(
+        self,
+        prompt_id: str,
+    ) -> list[OptimizedEvaluatorInfo]:
+        """List all optimized evaluator versions for a prompt.
+
+        Args:
+            prompt_id: The unique identifier of the prompt.
+
+        Returns:
+            List of OptimizedEvaluatorInfo for each evaluator version.
+        """
+        evaluators = get_optimized_evaluators_list(prompt_id)
+        return [
+            OptimizedEvaluatorInfo(
+                path=e["path"],
+                filename=e["filename"],
+                timestamp=e.get("timestamp"),
+            )
+            for e in evaluators
+        ]
+
+    @strawberry.mutation
+    async def get_latest_evaluator_path(
+        self,
+        prompt_id: str,
+    ) -> Optional[str]:
+        """Get the path to the latest optimized evaluator for a prompt.
+
+        Args:
+            prompt_id: The unique identifier of the prompt.
+
+        Returns:
+            Path to the latest evaluator file, or None if no evaluator exists.
+        """
+        path = get_latest_optimized_evaluator_path(prompt_id)
+        return str(path) if path else None
 
 
 def _convert_trace_to_union(trace_dict: dict | None) -> Optional[TraceDataUnion]:
