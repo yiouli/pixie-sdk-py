@@ -13,6 +13,13 @@ class FindBadResponseInput(BaseModel):
     reasoning_for_negative_rating: str
 
 
+class FindBadResponseResult(BaseModel):
+    """Result of finding the problematic response in a conversation."""
+
+    bad_response_index: int
+    thoughts: str
+
+
 class LlmCallRatingAgentInput(dspy.Signature):
     app_description: str = dspy.InputField()
     interaction_logs_before_llm_call: list[Message] = dspy.InputField()
@@ -154,7 +161,7 @@ class FindBadResponseAgent(dspy.Module):
         )
 
 
-async def find_bad_response(input: FindBadResponseInput) -> int:
+async def find_bad_response(input: FindBadResponseInput) -> FindBadResponseResult:
     """DSPy chain-of-thought agent to identify the main assistant response in the conversation
     that leads a negative rating."""
     with dspy.context(lm=dspy.LM("openai/gpt-4o-mini")):
@@ -164,7 +171,10 @@ async def find_bad_response(input: FindBadResponseInput) -> int:
             conversation=input.conversation,
             reasoning_for_negative_rating=input.reasoning_for_negative_rating,
         )
-        return res.bad_ai_response_index
+        return FindBadResponseResult(
+            bad_response_index=res.bad_ai_response_index,
+            thoughts=res.reasoning,
+        )
 
 
 class LlmCallSpan(BaseModel):
@@ -180,6 +190,13 @@ class FindBadLlmCallInput(BaseModel):
     conversation: list[Message]
     trace: list[LlmCallSpan | dict]
     reasoning_for_negative_rating: str
+
+
+class FindBadLlmCallResult(BaseModel):
+    """Result of finding the problematic LLM call span in a trace."""
+
+    bad_span_index: int
+    thoughts: str
 
 
 class FindBadLlmCallAgentInput(dspy.Signature):
@@ -286,7 +303,7 @@ class FindBadLlmCallAgent(dspy.Module):
         raise ValueError("Failed to identify the bad LLM call after multiple attempts.")
 
 
-async def find_bad_llm_call(input: FindBadLlmCallInput) -> int:
+async def find_bad_llm_call(input: FindBadLlmCallInput) -> FindBadLlmCallResult:
     """DSPy chain-of-thought agent to identify the LLM call span in a trace
     that is most likely responsible for a problematic assistant response."""
     with dspy.context(lm=dspy.LM("openai/gpt-4o-mini")):
@@ -297,7 +314,10 @@ async def find_bad_llm_call(input: FindBadLlmCallInput) -> int:
             trace=input.trace,
             reasoning_for_negative_rating=input.reasoning_for_negative_rating,
         )
-        return res.bad_llm_call_index
+        return FindBadLlmCallResult(
+            bad_span_index=res.bad_llm_call_index,
+            thoughts=res.reasoning,
+        )
 
 
 # ============================================================================

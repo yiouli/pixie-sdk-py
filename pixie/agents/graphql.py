@@ -120,6 +120,26 @@ class LlmCallSpanInput:
 
 
 @strawberry.type
+class FindBadResponseResult:
+    """Result of finding a bad response in a conversation."""
+
+    bad_response_index: int
+    """Index of the problematic assistant message in the conversation."""
+    thoughts: str
+    """Reasoning behind identifying this message as the bad response."""
+
+
+@strawberry.type
+class FindBadLlmCallResult:
+    """Result of finding a bad LLM call span in a trace."""
+
+    bad_span_index: int
+    """Index of the problematic LLM call span in the trace."""
+    thoughts: str
+    """Reasoning behind identifying this span as the bad LLM call."""
+
+
+@strawberry.type
 class AgentMutation:
     """GraphQL mutations for agent ratings and optimization."""
 
@@ -178,7 +198,7 @@ class AgentMutation:
         ai_description: str,
         conversation: list[MessageInput],
         reasoning_for_negative_rating: str,
-    ) -> int:
+    ) -> FindBadResponseResult:
         """Find the problematic assistant message in a conversation."""
 
         messages = [msg.to_pydantic() for msg in conversation]
@@ -190,7 +210,10 @@ class AgentMutation:
         )
 
         result = await execute_find_bad_response(find_input)
-        return result
+        return FindBadResponseResult(
+            bad_response_index=result.bad_response_index,
+            thoughts=result.thoughts,
+        )
 
     @strawberry.mutation
     async def find_bad_llm_call(
@@ -199,7 +222,7 @@ class AgentMutation:
         conversation: list[MessageInput],
         trace: list[JSON],
         reasoning_for_negative_rating: str,
-    ) -> int:
+    ) -> FindBadLlmCallResult:
         """Find the problematic LLM call span in a trace that led to a bad response."""
 
         messages = [msg.to_pydantic() for msg in conversation]
@@ -215,7 +238,10 @@ class AgentMutation:
         )
 
         result = await execute_find_bad_llm_call(find_input)
-        return result
+        return FindBadLlmCallResult(
+            bad_span_index=result.bad_span_index,
+            thoughts=result.thoughts,
+        )
 
     @strawberry.mutation
     async def rate_prompt_llm_call(
