@@ -9,11 +9,11 @@ import strawberry
 import strawberry.experimental.pydantic
 from strawberry.scalars import JSON
 
-from pixie.agents.evaluator_optimizer import (
+from pixie.agents.optimizers import (
     list_optimized_evaluators as get_optimized_evaluators_list,
     get_latest_optimized_evaluator_path,
 )
-from pixie.agents.rating_agent import (
+from pixie.agents.evaluators import (
     RatingResult as PydanticRatingResult,
     LlmCallRatingAgentInput as PydanticLlmCallRatingInput,
     AppRunRatingAgentInput as PydanticAppRunRatingInput,

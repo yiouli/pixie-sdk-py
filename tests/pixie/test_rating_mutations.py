@@ -7,7 +7,7 @@ from strawberry.schema import Schema
 from pixie.agents.graphql import MessageInput
 from pixie.schema import Query, Mutation, Subscription
 from pixie.strawberry_types import Rating
-from pixie.agents.rating_agent import (
+from pixie.agents.evaluators import (
     RatingResult as PydanticRatingResult,
     LlmCallRatingAgentInput,
     AppRunRatingAgentInput,
