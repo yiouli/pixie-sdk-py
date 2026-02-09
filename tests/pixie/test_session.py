@@ -22,7 +22,6 @@ from pixie.session.types import SessionUpdate
 from pixie.session.client import print as session_print, input as session_input, session
 from pixie.types import InputRequired
 
-
 # Test timeout for socket operations
 TIMEOUT = 10.0
 
@@ -684,34 +683,107 @@ class TestSessionClientFunctions:
                 mock_notify.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_session_input_string(self):
-        """Test that session.input requests string input."""
+    async def test_session_print_from_user_sends_user_input(self):
+        """Test that session.print with from_user=True sends user_input instead of data."""
         with patch("pixie.session.client.execution_context") as mock_ctx:
             with patch("pixie.session.client.notify_server") as mock_notify:
-                with patch("pixie.session.client.wait_for_input") as mock_wait:
+                mock_notify.return_value = None
+
+                mock_exec_ctx = MagicMock()
+                mock_exec_ctx.run_id = "test-run-123"
+                mock_ctx.get_current_context.return_value = mock_exec_ctx
+
+                await session_print("User message", from_user=True)
+
+                mock_notify.assert_called_once()
+                call_args = mock_notify.call_args[0][0]
+                assert isinstance(call_args, SessionUpdate)
+                assert call_args.session_id == "test-run-123"
+                assert call_args.status == "running"
+                assert call_args.user_input == "User message"
+                assert call_args.data is None  # data should not be set
+
+    @pytest.mark.asyncio
+    async def test_session_print_console_print_false(self):
+        """Test that session.print does not print to console when console_print=False."""
+        with patch("pixie.session.client.execution_context") as mock_ctx:
+            with patch("pixie.session.client.notify_server") as mock_notify:
+                with patch("pixie.session.client._console_print") as mock_print:
                     mock_notify.return_value = None
-                    mock_wait.return_value = "user input"
 
                     mock_exec_ctx = MagicMock()
                     mock_exec_ctx.run_id = "test-run-123"
                     mock_ctx.get_current_context.return_value = mock_exec_ctx
 
-                    result = await session_input("Enter your name: ")
+                    await session_print("Hello", console_print=False)
 
-                    assert result == "user input"
+                    mock_print.assert_not_called()
 
-                    # Should have two notify_server calls: waiting and running with input
-                    assert mock_notify.call_count == 2
+    @pytest.mark.asyncio
+    async def test_session_print_console_print_true_default(self):
+        """Test that session.print prints to console with [assistant] prefix by default."""
+        with patch("pixie.session.client.execution_context") as mock_ctx:
+            with patch("pixie.session.client.notify_server") as mock_notify:
+                with patch("pixie.session.client._console_print") as mock_print:
+                    mock_notify.return_value = None
 
-                    # First call: waiting status
-                    first_call = mock_notify.call_args_list[0][0][0]
-                    assert first_call.status == "waiting"
-                    assert first_call.data == "Enter your name: "
+                    mock_exec_ctx = MagicMock()
+                    mock_exec_ctx.run_id = "test-run-123"
+                    mock_ctx.get_current_context.return_value = mock_exec_ctx
 
-                    # Second call: running status with user input
-                    second_call = mock_notify.call_args_list[1][0][0]
-                    assert second_call.status == "running"
-                    assert second_call.user_input == "user input"
+                    await session_print("Assistant response")
+
+                    mock_print.assert_called_once_with("[assistant] Assistant response")
+
+    @pytest.mark.asyncio
+    async def test_session_print_from_user_console_print_true(self):
+        """Test that session.print prints to console with [user] prefix when from_user=True."""
+        with patch("pixie.session.client.execution_context") as mock_ctx:
+            with patch("pixie.session.client.notify_server") as mock_notify:
+                with patch("pixie.session.client._console_print") as mock_print:
+                    mock_notify.return_value = None
+
+                    mock_exec_ctx = MagicMock()
+                    mock_exec_ctx.run_id = "test-run-123"
+                    mock_ctx.get_current_context.return_value = mock_exec_ctx
+
+                    await session_print("User input", from_user=True)
+
+                    mock_print.assert_called_once_with("[user] User input")
+
+    @pytest.mark.asyncio
+    async def test_session_input_string(self):
+        """Test that session.input requests string input."""
+        with patch("pixie.session.client.execution_context") as mock_ctx:
+            with patch("pixie.session.client.notify_server") as mock_notify:
+                with patch("pixie.session.client.wait_for_input") as mock_wait:
+                    with patch(
+                        "pixie.session.client.waiting_for_input"
+                    ) as mock_waiting:
+                        mock_notify.return_value = None
+                        mock_wait.return_value = "user input"
+                        mock_waiting.return_value = MagicMock()  # Mock context manager
+
+                        mock_exec_ctx = MagicMock()
+                        mock_exec_ctx.run_id = "test-run-123"
+                        mock_ctx.get_current_context.return_value = mock_exec_ctx
+
+                        result = await session_input("Enter your name: ")
+
+                        assert result == "user input"
+
+                        # Should have two notify_server calls: waiting and running with input
+                        assert mock_notify.call_count == 2
+
+                        # First call: waiting status
+                        first_call = mock_notify.call_args_list[0][0][0]
+                        assert first_call.status == "waiting"
+                        assert first_call.data == "Enter your name: "
+
+                        # Second call: running status with user input
+                        second_call = mock_notify.call_args_list[1][0][0]
+                        assert second_call.status == "running"
+                        assert second_call.user_input == "user input"
 
     @pytest.mark.asyncio
     async def test_session_input_typed(self):
@@ -719,34 +791,40 @@ class TestSessionClientFunctions:
         with patch("pixie.session.client.execution_context") as mock_ctx:
             with patch("pixie.session.client.notify_server") as mock_notify:
                 with patch("pixie.session.client.wait_for_input") as mock_wait:
-                    mock_notify.return_value = None
-                    user_model = UserModel(name="Test", age=20)
-                    mock_wait.return_value = user_model
+                    with patch(
+                        "pixie.session.client.waiting_for_input"
+                    ) as mock_waiting:
+                        mock_notify.return_value = None
+                        user_model = UserModel(name="Test", age=20)
+                        mock_wait.return_value = user_model
+                        mock_waiting.return_value = MagicMock()  # Mock context manager
 
-                    mock_exec_ctx = MagicMock()
-                    mock_exec_ctx.run_id = "test-run-123"
-                    mock_ctx.get_current_context.return_value = mock_exec_ctx
+                        mock_exec_ctx = MagicMock()
+                        mock_exec_ctx.run_id = "test-run-123"
+                        mock_ctx.get_current_context.return_value = mock_exec_ctx
 
-                    result = await session_input(
-                        "Enter user data: ",
-                        expected_type=UserModel,
-                    )
+                        result = await session_input(
+                            "Enter user data: ",
+                            expected_type=UserModel,
+                        )
 
-                    assert isinstance(result, UserModel)
-                    assert result.name == "Test"
+                        assert isinstance(result, UserModel)
+                        assert result.name == "Test"
 
-                    # Should have two notify_server calls: waiting and running with input
-                    assert mock_notify.call_count == 2
+                        # Should have two notify_server calls: waiting and running with input
+                        assert mock_notify.call_count == 2
 
-                    # First call: waiting status
-                    first_call = mock_notify.call_args_list[0][0][0]
-                    assert first_call.status == "waiting"
-                    assert first_call.data == "Enter user data: "
+                        # First call: waiting status
+                        first_call = mock_notify.call_args_list[0][0][0]
+                        assert first_call.status == "waiting"
+                        assert first_call.data == "Enter user data: "
 
-                    # Second call: running status with user input (serialized)
-                    second_call = mock_notify.call_args_list[1][0][0]
-                    assert second_call.status == "running"
-                    assert second_call.user_input == user_model.model_dump(mode="json")
+                        # Second call: running status with user input (serialized)
+                        second_call = mock_notify.call_args_list[1][0][0]
+                        assert second_call.status == "running"
+                        assert second_call.user_input == user_model.model_dump(
+                            mode="json"
+                        )
 
     @pytest.mark.asyncio
     async def test_session_input_no_context_raises(self):
@@ -763,28 +841,32 @@ class TestSessionClientFunctions:
         with patch("pixie.session.client.execution_context") as mock_ctx:
             with patch("pixie.session.client.notify_server") as mock_notify:
                 with patch("pixie.session.client.wait_for_input") as mock_wait:
-                    mock_notify.return_value = None
-                    mock_wait.return_value = {"key": "value", "number": 42}
+                    with patch(
+                        "pixie.session.client.waiting_for_input"
+                    ) as mock_waiting:
+                        mock_notify.return_value = None
+                        mock_wait.return_value = {"key": "value", "number": 42}
+                        mock_waiting.return_value = MagicMock()  # Mock context manager
 
-                    mock_exec_ctx = MagicMock()
-                    mock_exec_ctx.run_id = "test-run-456"
-                    mock_ctx.get_current_context.return_value = mock_exec_ctx
+                        mock_exec_ctx = MagicMock()
+                        mock_exec_ctx.run_id = "test-run-456"
+                        mock_ctx.get_current_context.return_value = mock_exec_ctx
 
-                    result = await session_input("Enter data: ")
+                        result = await session_input("Enter data: ")
 
-                    assert result == {"key": "value", "number": 42}
+                        assert result == {"key": "value", "number": 42}
 
-                    # Verify two notifies: waiting and running with user_input
-                    assert mock_notify.call_count == 2
+                        # Verify two notifies: waiting and running with user_input
+                        assert mock_notify.call_count == 2
 
-                    waiting_call = mock_notify.call_args_list[0][0][0]
-                    assert waiting_call.status == "waiting"
-                    assert waiting_call.data == "Enter data: "
+                        waiting_call = mock_notify.call_args_list[0][0][0]
+                        assert waiting_call.status == "waiting"
+                        assert waiting_call.data == "Enter data: "
 
-                    running_call = mock_notify.call_args_list[1][0][0]
-                    assert running_call.status == "running"
-                    assert running_call.user_input == {"key": "value", "number": 42}
-                    assert running_call.session_id == "test-run-456"
+                        running_call = mock_notify.call_args_list[1][0][0]
+                        assert running_call.status == "running"
+                        assert running_call.user_input == {"key": "value", "number": 42}
+                        assert running_call.session_id == "test-run-456"
 
 
 class TestSessionDecorator:

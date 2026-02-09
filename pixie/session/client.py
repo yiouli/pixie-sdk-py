@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 import inspect
 from functools import wraps
 import logging
@@ -22,10 +23,11 @@ from pixie.session.rpc import (
 from pixie.session.types import SessionInfo, SessionUpdate
 from pixie.types import InputRequired, InputType
 
-
 logger = logging.getLogger(__name__)
 
 _langfuse = Langfuse()
+
+_console_print = print  # Keep reference to original print function for internal use
 
 
 def _get_description_from_docstring(func: Callable) -> str | None:
@@ -45,22 +47,58 @@ def _get_description_from_docstring(func: Callable) -> str | None:
     return docstring.short_description
 
 
-async def print(data: str | JsonValue) -> None:
+async def print(
+    data: str | JsonValue,
+    *,
+    from_user: bool = False,
+    console_print: bool = True,
+) -> None:
     exec_ctx = execution_context.get_current_context()
     if not exec_ctx:
         return
 
-    await notify_server(
-        SessionUpdate(
-            session_id=exec_ctx.run_id,
-            status="running",
-            time_unix_nano=str(time.time_ns()),
-            data=data,
+    if from_user:
+        await notify_server(
+            SessionUpdate(
+                session_id=exec_ctx.run_id,
+                status="running",
+                time_unix_nano=str(time.time_ns()),
+                user_input=data,
+            )
         )
-    )
+    else:
+        await notify_server(
+            SessionUpdate(
+                session_id=exec_ctx.run_id,
+                status="running",
+                time_unix_nano=str(time.time_ns()),
+                data=data,
+            )
+        )
+    if console_print:
+        role = "user" if from_user else "assistant"
+        _console_print(f"[{role}] {data}")
 
 
 T = TypeVar("T", bound=BaseModel)
+
+
+@asynccontextmanager
+async def waiting_for_input():
+    with _langfuse.start_as_current_observation(
+        name="wait_for_input",
+        as_type="tool",
+    ):
+        yield
+    exc_ctx = execution_context.get_current_context()
+    if exc_ctx:
+        await notify_server(
+            SessionUpdate(
+                session_id=exc_ctx.run_id,
+                status="running",
+                time_unix_nano=str(time.time_ns()),
+            )
+        )
 
 
 @overload
@@ -99,10 +137,7 @@ async def input(
 
     await notify_server(update)
 
-    with _langfuse.start_as_current_observation(
-        name="wait_for_input",
-        as_type="tool",
-    ):
+    async with waiting_for_input():
         ret = await wait_for_input(req)
     await notify_server(
         SessionUpdate(
