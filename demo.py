@@ -32,7 +32,9 @@ async def my_program():
     await pixie.print("How can I assist you today? Type exit to end the conversation.")
     messages: list[ModelMessage] = []
     while True:
-        user_input = await pixie.input(expected_type=str)
+        # user_input = await pixie.input(expected_type=str)
+        user_input = await asyncio.to_thread(input, "> ")
+        await pixie.print(user_input, from_user=True)
         if user_input == "exit":
             break
         response = await agent.run(
