@@ -57,7 +57,7 @@ async def my_chatbot():
         await pixie.print(user_msg, from_user=True)
         response = await agent.run(user_msg, message_history=messages)
         messages = response.all_messages()
-        await print(response.output)
+        await pixie.print(response.output)
 
 ```
 
