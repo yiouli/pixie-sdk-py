@@ -360,7 +360,7 @@ class AgentSubscription:
                 )
                 return
 
-            if result and prompt_description:
+            if result:
                 await update_queue.put(
                     BatchLlmCallUpdate(
                         id=call_id,
@@ -373,7 +373,8 @@ class AgentSubscription:
 
                 try:
                     rating_input = PydanticPromptLlmCallEvalInput(
-                        prompt_description=prompt_description,
+                        prompt_description=prompt_description
+                        or "No description provided",
                         input_messages=result.input,  # type: ignore[arg-type]
                         output=result.output,
                         tools=result.tool_calls,
