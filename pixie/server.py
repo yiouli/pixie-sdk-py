@@ -4,10 +4,7 @@ import argparse
 from contextlib import asynccontextmanager
 import os
 import logging
-import threading
-import time
 from urllib.parse import quote
-import webbrowser
 import dotenv
 import uvicorn
 from fastapi import FastAPI
@@ -130,13 +127,6 @@ def create_app() -> FastAPI:
     logger.info("")
     logger.info("=" * 60)
     logger.info("")
-
-    # Open browser after a short delay (in a separate thread)
-    def open_browser():
-        time.sleep(1)  # Wait for server to start
-        webbrowser.open(_sdk_server_address)
-
-    threading.Thread(target=open_browser, daemon=True).start()
 
     return app
 

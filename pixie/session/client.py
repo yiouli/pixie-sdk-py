@@ -285,7 +285,15 @@ def session(func: T_Func) -> T_Func:
         @wraps(func)
         async def async_gen_wrapper(*args, **kwargs):
             session_id = uuid4().hex
-            task, langfuse = await _session_setup(session_id)
+            try:
+                task, langfuse = await _session_setup(session_id)
+            except Exception as e:
+                logger.error(f"Pixie session setup failed: {e}")
+                logger.error("Please make sure Pixie server is running")
+                async for value in func(*args, **kwargs):
+                    yield value
+                return
+
             gen = None
             span = _langfuse.start_as_current_observation(
                 name=func.__name__, as_type="chain"
@@ -308,7 +316,13 @@ def session(func: T_Func) -> T_Func:
         @wraps(func)
         async def async_func_wrapper(*args, **kwargs):
             session_id = uuid4().hex
-            task, langfuse = await _session_setup(session_id)
+            try:
+                task, langfuse = await _session_setup(session_id)
+            except Exception as e:
+                logger.warning(f"Fail to connect to Pixie server: {e}")
+                logger.warning("Please make sure Pixie server is running")
+                return await cast(Callable[..., Awaitable[Any]], func)(*args, **kwargs)
+
             span = _langfuse.start_as_current_observation(
                 name=func.__name__, as_type="chain"
             )

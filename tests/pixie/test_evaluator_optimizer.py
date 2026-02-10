@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import dspy
 
-from pixie.agents.evaluator_optimizer import (
+from pixie.agents.optimizers import (
     EVALUATORS_BASE_DIR,
     OptimizationConfig,
     _get_evaluator_dir,
@@ -20,7 +20,7 @@ from pixie.agents.evaluator_optimizer import (
     get_latest_optimized_evaluator_path,
     list_optimized_evaluators,
     load_optimized_evaluator,
-    optimize_evaluator,
+    optimize_prompt_llm_call_evaluator,
 )
 from pixie.storage.types import (
     LlmCallRecord,
@@ -438,11 +438,11 @@ class TestFetchTrainingData:
         ]
 
         with patch(
-            "pixie.agents.evaluator_optimizer.get_prompt",
+            "pixie.agents.optimizers.get_prompt",
             return_value=sample_prompt_registration,
         ):
             with patch(
-                "pixie.agents.evaluator_optimizer.get_llm_call_records",
+                "pixie.agents.optimizers.get_llm_call_records",
                 new_callable=AsyncMock,
                 return_value=mock_records,
             ) as mock_get_records:
@@ -459,7 +459,7 @@ class TestFetchTrainingData:
     @pytest.mark.asyncio
     async def test_fetch_training_data_prompt_not_found(self):
         """Test error when prompt is not found."""
-        with patch("pixie.agents.evaluator_optimizer.get_prompt", return_value=None):
+        with patch("pixie.agents.optimizers.get_prompt", return_value=None):
             with pytest.raises(ValueError, match="not found in registry"):
                 await fetch_training_data("nonexistent-prompt")
 
@@ -469,7 +469,7 @@ class TestFetchTrainingData:
         sample_prompt_registration.description = None
 
         with patch(
-            "pixie.agents.evaluator_optimizer.get_prompt",
+            "pixie.agents.optimizers.get_prompt",
             return_value=sample_prompt_registration,
         ):
             with pytest.raises(ValueError, match="has no description"):
@@ -482,7 +482,7 @@ class TestListOptimizedEvaluators:
     def test_list_evaluators_empty_dir(self, tmp_path: Path):
         """Test listing when no evaluators exist."""
         with patch(
-            "pixie.agents.evaluator_optimizer._get_evaluator_dir",
+            "pixie.agents.optimizers._get_evaluator_dir",
             return_value=tmp_path / "nonexistent",
         ):
             result = list_optimized_evaluators("test-prompt")
@@ -498,7 +498,7 @@ class TestListOptimizedEvaluators:
         (evaluator_dir / "20240202_130000.json").write_text("{}")
 
         with patch(
-            "pixie.agents.evaluator_optimizer._get_evaluator_dir",
+            "pixie.agents.optimizers._get_evaluator_dir",
             return_value=evaluator_dir,
         ):
             result = list_optimized_evaluators("test-prompt")
@@ -515,7 +515,7 @@ class TestGetLatestEvaluatorPath:
     def test_get_latest_no_evaluators(self, tmp_path: Path):
         """Test when no evaluators exist."""
         with patch(
-            "pixie.agents.evaluator_optimizer._get_evaluator_dir",
+            "pixie.agents.optimizers._get_evaluator_dir",
             return_value=tmp_path / "nonexistent",
         ):
             result = get_latest_optimized_evaluator_path("test-prompt")
@@ -531,7 +531,7 @@ class TestGetLatestEvaluatorPath:
         (evaluator_dir / "20240202_130000.json").write_text("{}")
 
         with patch(
-            "pixie.agents.evaluator_optimizer._get_evaluator_dir",
+            "pixie.agents.optimizers._get_evaluator_dir",
             return_value=evaluator_dir,
         ):
             result = get_latest_optimized_evaluator_path("test-prompt")
@@ -551,7 +551,7 @@ class TestDeleteOptimizedEvaluator:
         evaluator_file.write_text("{}")
 
         with patch(
-            "pixie.agents.evaluator_optimizer._get_evaluator_dir",
+            "pixie.agents.optimizers._get_evaluator_dir",
             return_value=evaluator_dir,
         ):
             result = delete_optimized_evaluator("test-prompt", "20240201_120000.json")
@@ -565,7 +565,7 @@ class TestDeleteOptimizedEvaluator:
         evaluator_dir.mkdir(parents=True)
 
         with patch(
-            "pixie.agents.evaluator_optimizer._get_evaluator_dir",
+            "pixie.agents.optimizers._get_evaluator_dir",
             return_value=evaluator_dir,
         ):
             result = delete_optimized_evaluator("test-prompt", "nonexistent.json")
@@ -577,7 +577,9 @@ class TestOptimizeEvaluator:
     """Tests for the main optimization function."""
 
     @pytest.mark.asyncio
-    async def test_optimize_insufficient_data(self, sample_prompt_registration):
+    async def test_optimize_prompt_llm_call_evaluator_insufficient_data(
+        self, sample_prompt_registration
+    ):
         """Test error when insufficient training data."""
         mock_records = [
             LlmCallRecord(
@@ -590,21 +592,21 @@ class TestOptimizeEvaluator:
         ]
 
         with patch(
-            "pixie.agents.evaluator_optimizer.get_prompt",
+            "pixie.agents.optimizers.get_prompt",
             return_value=sample_prompt_registration,
         ):
             with patch(
-                "pixie.agents.evaluator_optimizer.get_llm_call_records",
+                "pixie.agents.optimizers.get_llm_call_records",
                 new_callable=AsyncMock,
                 return_value=mock_records,
             ):
                 with pytest.raises(ValueError, match="Insufficient training data"):
-                    await optimize_evaluator(
+                    await optimize_prompt_llm_call_evaluator(
                         OptimizationConfig(prompt_id="test-prompt")
                     )
 
     @pytest.mark.asyncio
-    async def test_optimize_evaluator_success(
+    async def test_optimize_prompt_llm_call_evaluator_success(
         self, sample_prompt_registration, tmp_path: Path
     ):
         """Test successful evaluator optimization."""
@@ -627,16 +629,16 @@ class TestOptimizeEvaluator:
 
         # Mock all the necessary functions
         with patch(
-            "pixie.agents.evaluator_optimizer.get_prompt",
+            "pixie.agents.optimizers.get_prompt",
             return_value=sample_prompt_registration,
         ):
             with patch(
-                "pixie.agents.evaluator_optimizer.get_llm_call_records",
+                "pixie.agents.optimizers.get_llm_call_records",
                 new_callable=AsyncMock,
                 return_value=mock_records,
             ):
                 with patch(
-                    "pixie.agents.evaluator_optimizer._get_evaluator_dir",
+                    "pixie.agents.optimizers._get_evaluator_dir",
                     return_value=evaluator_dir,
                 ):
                     # Mock DSPy components
@@ -651,7 +653,7 @@ class TestOptimizeEvaluator:
                             "dspy.BootstrapFewShot", return_value=mock_optimizer
                         ):
                             with patch("dspy.context"):
-                                result = await optimize_evaluator(
+                                result = await optimize_prompt_llm_call_evaluator(
                                     OptimizationConfig(prompt_id="test-prompt")
                                 )
 
@@ -668,7 +670,7 @@ class TestLoadOptimizedEvaluator:
     def test_load_no_evaluator_exists(self, tmp_path: Path):
         """Test loading when no evaluator exists."""
         with patch(
-            "pixie.agents.evaluator_optimizer.get_latest_optimized_evaluator_path",
+            "pixie.agents.optimizers.get_latest_optimized_evaluator_path",
             return_value=None,
         ):
             result = load_optimized_evaluator("test-prompt")
@@ -682,7 +684,7 @@ class TestLoadOptimizedEvaluator:
         mock_program = MagicMock(spec=dspy.ChainOfThought)
 
         with patch(
-            "pixie.agents.evaluator_optimizer.get_latest_optimized_evaluator_path",
+            "pixie.agents.optimizers.get_latest_optimized_evaluator_path",
             return_value=evaluator_file,
         ):
             with patch("dspy.ChainOfThought", return_value=mock_program):

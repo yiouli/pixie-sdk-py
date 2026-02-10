@@ -5,12 +5,9 @@ from pydantic import BaseModel
 from pixie.storage.types import Message, Rating
 
 
-class FindBadResponseInput(BaseModel):
-    """Input for finding the problematic response in a conversation."""
-
-    ai_description: str
-    conversation: list[Message]
-    reasoning_for_negative_rating: str
+class RatingResult(BaseModel):
+    thoughts: str
+    rating: Rating
 
 
 class LlmCallRatingAgentInput(dspy.Signature):
@@ -27,11 +24,6 @@ class LlmCallRatingAgentSignature(LlmCallRatingAgentInput):
     """Rate the quality of a specific LLM call within an application execution."""
 
     rating: Rating = dspy.OutputField()
-
-
-class RatingResult(BaseModel):
-    thoughts: str
-    rating: Rating
 
 
 async def rate_llm_call(rating_input: LlmCallRatingAgentInput) -> RatingResult:
@@ -61,13 +53,18 @@ async def rate_app_run(rating_input: AppRunRatingAgentInput) -> RatingResult:
         return RatingResult(thoughts=res.reasoning, rating=res.rating)
 
 
-class FindBadResponseAgentInput(dspy.Signature):
+class FindBadIndexResult(BaseModel):
+    bad_index: int
+    thoughts: str
+
+
+class FindBadResponseInputSignature(dspy.Signature):
     ai_description: str = dspy.InputField()
     conversation: list[Message] = dspy.InputField()
     reasoning_for_negative_rating: str = dspy.InputField()
 
 
-class FindBadResponseSignature(FindBadResponseAgentInput):
+class FindBadResponseSignature(FindBadResponseInputSignature):
     """Identify the index of the main assistant message in the conversation,
     that leads to the negative user rating for the conversation with AI."""
 
@@ -94,13 +91,14 @@ class FindBadResponseAgent(dspy.Module):
         ai_description: str,
         conversation: list[Message],
         reasoning_for_negative_rating: str,
-    ) -> FindBadResponseSignature:
+    ) -> dspy.Prediction:
         res = await self.find_bad_response.acall(
             ai_description=ai_description,
             conversation=conversation,
             reasoning_for_negative_rating=reasoning_for_negative_rating,
         )
         target_index = res.bad_ai_response_index
+        reasoning = res.reasoning
 
         # If the index is out of bounds, try to fix it
         wrong_indices = []
@@ -133,28 +131,35 @@ class FindBadResponseAgent(dspy.Module):
                         f"Message at index {target_index} is not from AI: [{message.role}]'{content_preview}...'"
                     )
                 else:
-                    return FindBadResponseSignature(
-                        ai_description=ai_description,
-                        conversation=conversation,
-                        reasoning_for_negative_rating=reasoning_for_negative_rating,
-                        bad_ai_response_index=target_index,
+                    return dspy.Prediction(
+                        result=FindBadIndexResult(
+                            bad_index=target_index,
+                            thoughts=reasoning,
+                        )
                     )
             tries += 1
 
-            target_index = (
-                await self.fix_index.acall(
-                    conversation=conversation,
-                    wrong_indices=wrong_indices,
-                    reasons_for_wrong_indices=reasons_for_wrong_indices,
-                )
-            ).bad_ai_message_index
+            reasoning += (
+                f"\n\nLet me think about this further. "
+                f"{target_index} is not the problematic index because {reasons_for_wrong_indices[-1]}"
+            )
+            fix_result = await self.fix_index.acall(
+                conversation=conversation,
+                wrong_indices=wrong_indices,
+                reasons_for_wrong_indices=reasons_for_wrong_indices,
+            )
+            target_index = fix_result.bad_ai_message_index
+            reasoning += (
+                f"\n\nAfter reconsideration, I think the problematic index might be {target_index}, "
+                f"because {fix_result.reasoning}."
+            )
 
         raise ValueError(
             "Failed to identify the bad AI response after multiple attempts."
         )
 
 
-async def find_bad_response(input: FindBadResponseInput) -> int:
+async def find_bad_response(input: FindBadResponseInputSignature) -> FindBadIndexResult:
     """DSPy chain-of-thought agent to identify the main assistant response in the conversation
     that leads a negative rating."""
     with dspy.context(lm=dspy.LM("openai/gpt-4o-mini")):
@@ -164,7 +169,7 @@ async def find_bad_response(input: FindBadResponseInput) -> int:
             conversation=input.conversation,
             reasoning_for_negative_rating=input.reasoning_for_negative_rating,
         )
-        return res.bad_ai_response_index
+        return res.result
 
 
 class LlmCallSpan(BaseModel):
@@ -180,6 +185,13 @@ class FindBadLlmCallInput(BaseModel):
     conversation: list[Message]
     trace: list[LlmCallSpan | dict]
     reasoning_for_negative_rating: str
+
+
+class FindBadLlmCallResult(BaseModel):
+    """Result of finding the problematic LLM call span in a trace."""
+
+    bad_span_index: int
+    thoughts: str
 
 
 class FindBadLlmCallAgentInput(dspy.Signature):
@@ -226,7 +238,7 @@ class FindBadLlmCallAgent(dspy.Module):
         conversation: list[Message],
         trace: list[LlmCallSpan | dict],
         reasoning_for_negative_rating: str,
-    ) -> FindBadLlmCallSignature:
+    ) -> dspy.Prediction:
         res = await self.find_bad_llm_call.acall(
             ai_description=ai_description,
             conversation=conversation,
@@ -234,6 +246,7 @@ class FindBadLlmCallAgent(dspy.Module):
             reasoning_for_negative_rating=reasoning_for_negative_rating,
         )
         target_index = res.bad_llm_call_index
+        reasoning = res.reasoning
 
         # If the index is out of bounds or not an LLM call span, try to fix it
         wrong_indices = []
@@ -266,27 +279,33 @@ class FindBadLlmCallAgent(dspy.Module):
                         f"Span at index {target_index} is not an LLM call span (span_type='{span_type}')."
                     )
                 else:
-                    return FindBadLlmCallSignature(
-                        ai_description=ai_description,
-                        conversation=conversation,
-                        trace=trace,
-                        reasoning_for_negative_rating=reasoning_for_negative_rating,
-                        bad_llm_call_index=target_index,
+                    return dspy.Prediction(
+                        result=FindBadIndexResult(
+                            bad_index=target_index,
+                            thoughts=reasoning,
+                        )
                     )
             tries += 1
 
-            target_index = (
-                await self.fix_index.acall(
-                    trace=trace,
-                    wrong_indices=wrong_indices,
-                    reasons_for_wrong_indices=reasons_for_wrong_indices,
-                )
-            ).bad_llm_call_index
+            reasoning += (
+                f"\n\nLet me think about this further. "
+                f"{target_index} is not the problematic index because {reasons_for_wrong_indices[-1]}"
+            )
+            fix_result = await self.fix_index.acall(
+                trace=trace,
+                wrong_indices=wrong_indices,
+                reasons_for_wrong_indices=reasons_for_wrong_indices,
+            )
+            target_index = fix_result.bad_llm_call_index
+            reasoning += (
+                f"\n\nAfter reconsideration, I think the problematic index might be {target_index}, "
+                f"because {fix_result.reasoning}."
+            )
 
         raise ValueError("Failed to identify the bad LLM call after multiple attempts.")
 
 
-async def find_bad_llm_call(input: FindBadLlmCallInput) -> int:
+async def find_bad_llm_call(input: FindBadLlmCallInput) -> FindBadIndexResult:
     """DSPy chain-of-thought agent to identify the LLM call span in a trace
     that is most likely responsible for a problematic assistant response."""
     with dspy.context(lm=dspy.LM("openai/gpt-4o-mini")):
@@ -297,7 +316,7 @@ async def find_bad_llm_call(input: FindBadLlmCallInput) -> int:
             trace=input.trace,
             reasoning_for_negative_rating=input.reasoning_for_negative_rating,
         )
-        return res.bad_llm_call_index
+        return res.result
 
 
 # ============================================================================

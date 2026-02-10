@@ -31,7 +31,6 @@ from pixie.session.constants import SESSION_RPC_SERVER_HOST
 from pixie.session.types import SessionInfo, SessionUpdate
 from pixie.types import InputRequired, InputType
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -712,10 +711,12 @@ async def notify_server(update: SessionUpdate) -> None:
     Args:
         update: The SessionUpdate to send.
 
-    Raises:
-        RuntimeError: If not connected to server.
     """
-    state = _get_client_state()
+    try:
+        state = _get_client_state()
+    except RuntimeError:
+        logger.warning("Cannot notify Pixie server: not connected")
+        return
 
     data = update.model_dump_json().encode()
     logger.debug(f"Sending SessionUpdate to server: {data.decode()}")

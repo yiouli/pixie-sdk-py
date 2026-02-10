@@ -367,15 +367,15 @@ class TestClientServerCommunication:
 
     @pytest.mark.asyncio
     async def test_notify_server_not_connected(self, cleanup):
-        """Test that notify_server raises when not connected."""
-        with pytest.raises(RuntimeError, match="not connected"):
-            await notify_server(
-                SessionUpdate(
-                    session_id="test",
-                    status="running",
-                    time_unix_nano="1234567890000000000",
-                )
+        """Test that notify_server logs warning when not connected."""
+        # Should not raise, just log warning
+        await notify_server(
+            SessionUpdate(
+                session_id="test",
+                status="running",
+                time_unix_nano="1234567890000000000",
             )
+        )
 
 
 class TestInputFlow:
@@ -1176,6 +1176,27 @@ class TestSessionDecorator:
 
                                 # Should disconnect after explicit close
                                 mock_disconnect.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_changed_files_when_not_connected(self):
+        """Test that @session runs code normally when not connected, print is no-op, input raises."""
+        with patch("pixie.session.client.connect_to_server") as mock_connect:
+            with patch("pixie.session.client.notify_server") as mock_notify:
+                with patch("pixie.session.client.execution_context") as mock_ctx:
+                    mock_connect.side_effect = RuntimeError("Failed to connect")
+                    mock_ctx.get_current_context.return_value = None
+
+                    @session
+                    async def get_changed_files():
+                        await session_print("Getting changed files")
+                        result = await session_input("Enter file path")
+                        return result
+
+                    with pytest.raises(RuntimeError, match="No execution context"):
+                        await get_changed_files()
+
+                    # Since no execution context, print does nothing, notify not called
+                    mock_notify.assert_not_called()
 
 
 class TestSessionObservationLogic:

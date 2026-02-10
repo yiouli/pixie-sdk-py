@@ -15,7 +15,7 @@ from typing import Any
 import dspy
 from pydantic import BaseModel
 
-from pixie.agents.rating_agent import (
+from pixie.agents.evaluators import (
     PromptLlmCallEvalInput,
     PromptLlmCallEvalSignature,
     RatingResult,
@@ -307,7 +307,7 @@ class OptimizationConfig(BaseModel):
 
 
 @pixie.app
-async def optimize_evaluator(config: OptimizationConfig) -> str:
+async def optimize_prompt_llm_call_evaluator(config: OptimizationConfig) -> str:
     """Optimize the evaluator for a specific prompt using BootstrapFewShot.
 
     Fetches labeled LLM call records, runs optimization, and stores the result.
