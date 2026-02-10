@@ -4,27 +4,14 @@
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/discord/1459772566528069715?style=flat-square&logo=Discord&logoColor=white&label=Discord&color=%23434EE4)](https://discord.gg/YMNYu6Z3)
 
-**Web UI for AI agents manual testing.**
+**Generate Evals from debugging LLM Applications**
 
-This is the equivalent of LangSmith Studio/Google ADK Web, but for AI agents built in all kinds of ways without the framework constraint. Easy to setup, support multi-turn interactions, Human-in-the-loop, live tracing, and more.
-
-## Why?
-
-Manually testing AI applications is time-consuming and cumbersome.
-Especially for early stage development, it doesn’t make sense to build e2e product just to test, or setup automated tests/evals.
-So the process ends up being a lot of inputting awkwardly into the command line, and looking through walls of logs in different places.
+Evals takes a lot of effort to setup, and the results are not always helpful. What if we can generate evals automatically based on how you debug your LLM applications?
 
 ## Demo
 
-[Demo Video](https://github.com/user-attachments/assets/8c164f1f-9f0f-4a4e-a1f2-ba0c3ca6f58c)
+[Demo](https://github.com/user-attachments/assets/84472190-cd50-4e9a-9494-e30b43457031)
 
-## Features
-
-- **Interactive Testing**: Support for two way interaction with your application, plus the ability to pause/resume/stop.
-- **Real-time Observability**: Application traces are streamed in real-time while you debug.
-- **Structured Input/Output**: Native support for structured input/output using Pydantic models.
-- **Data Privacy**: Communications are only between your browser and your server, your data stays private.
-- **Framework Support**: Out-of-the-box support for popular AI development frameworks like Pydantic AI, OpenAI Agents SDK, LangChain, LangGraph, and more.
 
 ## Get Started
 
@@ -36,20 +23,7 @@ In your project folder, install `pixie-sdk` package:
 pip install pixie-sdk
 ```
 
-Create _.env_ file in your project folder and add LLM API key(s):
-
-```ini
-# .env
-OPENAI_API_KEY=...
-```
-
-Add AI Development framework depdendencies as needed:
-
-```bash
-pip install pydantic-ai-slim[openai]
-```
-
-Start the local server for debugging by running:
+Start the local debug server by running:
 
 ```bash
 pixie
@@ -57,13 +31,13 @@ pixie
 
 ### 2. Connect Your Application
 
-Add `@pixie.app` decorator to your main application function:
+Add `@pixie.session` decorator to any code you'd like to debug, use `pixie.print(...)` to log data to the debugger UI.
 
 ```python
 # my_chatbot.py
+import asyncio
 from pydantic_ai import Agent
-
-import pixie
+import pixie.sdk as pixie
 
 # You can implement your application using any major AI development framework
 agent = Agent(
@@ -73,24 +47,24 @@ agent = Agent(
 )
 
 
-@pixie.app
+@pixie.session
 async def my_chatbot():
     """Chatbot application example."""
-    yield "How can I help you today?"
+    await pixie.print("How can I help you today?")
     messages = []
     while True:
-        user_msg = yield pixie.InputRequired(str)
+        user_msg = await asyncio.to_thread(input)
+        await pixie.print(user_msg, from_user=True)
         response = await agent.run(user_msg, message_history=messages)
         messages = response.all_messages()
-        yield response.output
+        await print(response.output)
 
 ```
-
-You should see in the log of `pixie` server that your app is registered.
 
 ### 3. Debug with web UI
 
 Visit the web UI [gopixie.ai](https://gopixie.ai) to start debugging.
+Run your application as normal while `pixie` debug server is running, and your session would show up in the debugger UI.
 
 ## Important Links
 
