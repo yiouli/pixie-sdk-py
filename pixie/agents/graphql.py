@@ -17,7 +17,7 @@ from pixie.agents.evaluators import (
     RatingResult as PydanticRatingResult,
     LlmCallRatingAgentInput as PydanticLlmCallRatingInput,
     AppRunRatingAgentInput as PydanticAppRunRatingInput,
-    FindBadResponseInput as PydanticFindBadResponseInput,
+    FindBadResponseInputSignature as PydanticFindBadResponseInput,
     FindBadLlmCallInput as PydanticFindBadLlmCallInput,
     LlmCallSpan as PydanticLlmCallSpan,
     PromptLlmCallEvalInput as PydanticPromptLlmCallEvalInput,
@@ -211,7 +211,7 @@ class AgentMutation:
 
         result = await execute_find_bad_response(find_input)
         return FindBadResponseResult(
-            bad_response_index=result.bad_response_index,
+            bad_response_index=result.bad_index,
             thoughts=result.thoughts,
         )
 
@@ -239,7 +239,7 @@ class AgentMutation:
 
         result = await execute_find_bad_llm_call(find_input)
         return FindBadLlmCallResult(
-            bad_span_index=result.bad_span_index,
+            bad_span_index=result.bad_index,
             thoughts=result.thoughts,
         )
 
